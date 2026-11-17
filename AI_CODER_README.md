@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.0.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.1.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -34,7 +34,9 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 | `metronome.py` | synthesized click WAVs, independent/media clocks, per-song preferences |
 | `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
 | `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
-| `score_layout.py` | worker-only PDF staff geometry and zoom/viewport camera planning |
+| `score_geometry.py` | worker-only PDF vector/raster staves, actual barlines, paper sizes, mild deskew |
+| `score_symbols.py` | positioned PDF navigation text and repeat-dot supplements, audited in memory |
+| `score_layout.py` | PDF-first / validated XML-assisted layout and zoom/viewport camera planning |
 | `score_view.py` | standard-library view geometry validation and cached-path interpolation |
 | `score_gui.py` | PDFium viewer, analysis/settings editor, lightweight playback following |
 
@@ -66,9 +68,13 @@ Scores are paired by normalized stem for convenience, then cached by file conten
 
 Audio alignment is offline: 11,025 Hz mono, chroma/cosine cost, full-sequence DTW, bounded ~3,000×3,000 matrix and slope constraints. Trim low-energy margins. This is not realtime score following or a partial-score subsequence mode. Similarity is a feature diagnostic, not an accuracy probability. OMR and time alignment are estimates until reviewed; do not claim automatic correctness.
 
-Page-only timeline version remains **1**; optional `scroll.version=1` adds camera paths. `score_layout.py` rasterizes PDF to detect 5/6-line staves and matches MusicXML system/staff counts exactly. XML layout is not assumed to be original PDF coordinates. Per-measure widths estimate horizontal positions; this is not exact note-level alignment. Reject unmatched geometry instead of evenly splitting the page.
+Page-only timeline version remains **1**; optional `scroll.version=1` adds camera paths. The layout/recognition engine is **2**, independently included in both timing and view cache signatures. `score_geometry.py` detects PDF staves and barlines independently of XML `<print>` and width metadata, then requires the full original measure count and fixed simultaneous 5/6-line staff pattern to agree. Vector endpoints plus raster visibility reject note stems; nested form matrices, PDF rotation and crop offsets are handled through PDFium coordinates. Raster-only pages use horizontal morphology, cap rejection and bounded small-skew search. Preserve page dimensions, normalized actual bar boxes, layout method and diagnostics in `pdf_layout`. This is bar-level geometry, not exact note-level or tablature pitch recognition.
 
-Each cue's camera frame contains page/source_index/system and position/transition data. Cache key includes base timeline content (excluding old view fields), scroll version, zoom and viewport. Existing reviewed times/offset/flags survive view-only analysis. Never perform OMR, feature extraction or staff detection from playback callbacks.
+If PDF geometry fails, `score_layout.py` can use the earlier XML print/width method only after matching page/staff/system structure, with an explicit warning. If both fail, timing analysis may retain XML page estimates with a warning, but camera planning fails; do not invent equal-width bars. Changing/hidden staves and multi-measure rests need matching print metadata or review.
+
+`score_symbols.py` reads character boxes, not PDF text-stream newlines; only spatially assigned navigation labels and two isolated repeat dots are eligible. It safely parses and supplements XML in memory, never rewriting the user's files. Existing marks take precedence; conflicting DC/DS commands fail. Record additions in `pdf_symbols_added`. Ambiguous destinations, multiple jumps and unsupported notation still require review. Graphical segno/coda without Unicode/text, volta brackets and pitches remain the OMR/XML engine's responsibility. Explicit user routes bypass supplementation; view-only analysis never changes navigation or reviewed cue times/pages.
+
+Each cue's camera frame contains page/source_index/system and position/transition data. Cache key includes base timeline content (excluding old view fields), scroll version, layout engine version, zoom and viewport. Existing reviewed times/offset/flags survive view-only analysis. Never perform OMR, feature extraction or staff detection from playback callbacks.
 
 PDFium renders at the chosen zoom with bounded source image size and a 3-page pixmap cache. A 16 ms timer interpolates precomputed camera frames from media time; pause/stop freezes it. Zoom/viewport mismatch disables automatic movement and asks for reanalysis. Manual wheel/scroll/page changes disable following. Timeline page edits invalidate old scroll geometry. Persistent window/splitter sizes improve cache reuse.
 
@@ -82,7 +88,7 @@ Per-song BPM/meter/origin live under the audio hash; global window/measure-step 
 
 ## Validation and releases
 
-Use the external environment commands in `CONTRIBUTING.md`. Tests cover cache corruption/repair, FFmpeg pitch/duration, GUI cancellation/playback, repeat/coda routes, synthetic DTW, PDF navigation, camera geometry/cache, metronome clocks, and measure boundary seeking. Real-weight tests are opt-in (four model/memory combinations); they exercise inference, not subjective quality.
+Use the external environment commands in `CONTRIBUTING.md`. Tests cover cache corruption/repair, FFmpeg pitch/duration, GUI cancellation/playback, repeat/coda routes, synthetic DTW, PDF navigation, camera geometry/cache, metronome clocks, and measure boundary seeking. Geometry tests include metadata-free mixed/landscape pages, nested forms/crops/rotation, faint skewed raster scans, 5/6-line multi-staff systems, unequal bar widths, short final systems, navigation supplementation and conflict rejection. Fixtures are entirely synthetic. Real-weight tests are opt-in (four model/memory combinations); they exercise inference, not subjective quality.
 
 Apple MPS real-model inference was exercised during development. Windows CPU/CUDA dependencies were resolved for x64; Windows real audio/Java/NVIDIA hardware behavior still needs validation. Do not erase that distinction after an offscreen CI pass.
 

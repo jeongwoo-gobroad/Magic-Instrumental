@@ -26,6 +26,7 @@ Dependencies are installed from their distributors, not copied into this source 
 | [pypdf](https://github.com/py-pdf/pypdf) | PDF structure | BSD-3-Clause |
 | [music21](https://github.com/cuthbertLab/music21) | MusicXML and notation | BSD-3-Clause; this app does not distribute its example music corpus |
 | [librosa](https://github.com/librosa/librosa) | Offline audio alignment | ISC |
+| [SciPy](https://github.com/scipy/scipy/blob/main/LICENSE.txt) | Offline score geometry and image morphology | BSD-3-Clause and bundled notices |
 | [NumPy](https://github.com/numpy/numpy) | Numeric processing | BSD-3-Clause and bundled notices |
 | [SoundFile](https://github.com/bastibe/python-soundfile) | Audio files | BSD-3-Clause; bundled libsndfile has its own LGPL terms |
 | [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg) | FFmpeg executable distribution | BSD-2-Clause wrapper; **FFmpeg binary licensing is separate** |

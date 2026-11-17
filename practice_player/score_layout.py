@@ -12,6 +12,7 @@ from filelock import FileLock
 
 from .cache import hash_file
 from .score import ScoreTimeline, atomic_json, matching_musicxml
+from .score_geometry import LAYOUT_VERSION, detect_pdf_layout
 from .score_view import SCROLL_VERSION, rendered_size, view_profile
 
 
@@ -103,7 +104,7 @@ def staff_boxes(gray, line_counts):
     return boxes
 
 
-def detect_layout(pdf, xml, report=lambda *_: None):
+def _detect_xml_layout(pdf, xml, report=lambda *_: None):
     import pypdfium2
 
     systems = printed_systems(xml)
@@ -161,6 +162,36 @@ def detect_layout(pdf, xml, report=lambda *_: None):
                 for index, _ in system["measures"]:
                     bars[index]["next_top"] = next_top
     return page_sizes, bars
+
+
+def analyze_layout(pdf, xml, report=lambda *_: None):
+    try:
+        return detect_pdf_layout(pdf, xml, report)
+    except ValueError as pdf_error:
+        try:
+            sizes, bars = _detect_xml_layout(pdf, xml, report)
+        except ValueError as xml_error:
+            raise ValueError(
+                f"PDF 자체 배치: {pdf_error}\nMusicXML 보조 배치: {xml_error}"
+            ) from xml_error
+        return (
+            sizes,
+            bars,
+            {
+                "version": LAYOUT_VERSION,
+                "method": "musicxml-assisted",
+                "measure_count": len(bars),
+                "warnings": [
+                    "PDF 마디선을 모두 확정하지 못해 검증한 MusicXML 인쇄 배치를 사용합니다. "
+                    + str(pdf_error)
+                ],
+            },
+        )
+
+
+def detect_layout(pdf, xml, report=lambda *_: None):
+    sizes, bars, _ = analyze_layout(pdf, xml, report)
+    return sizes, bars
 
 
 def plan_camera(cues, end, page_sizes, bars, profile):
@@ -248,7 +279,12 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
     for name in ("scroll", "view_signature"):
         data.pop(name, None)
     digest = sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-    signature = {"version": SCROLL_VERSION, "timing": digest, "profile": profile}
+    signature = {
+        "version": SCROLL_VERSION,
+        "layout": LAYOUT_VERSION,
+        "timing": digest,
+        "profile": profile,
+    }
     key = "view-" + sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
     destination = folder / key / "timeline.json"
     with FileLock(str(folder / ".analysis.lock"), timeout=3600):
@@ -261,8 +297,18 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
                     return destination
             except (ValueError, KeyError, TypeError, OSError):
                 pass
-        sizes, bars = detect_layout(pdf, xml, report)
+        sizes, bars, layout = analyze_layout(pdf, xml, report)
+        if not data.get("reviewed"):
+            for cue in data["cues"]:
+                cue["page"] = bars[cue["source_index"]]["page"]
+            for original in data.get("originals", []):
+                original["page"] = bars[original["source_index"]]["page"]
         data["scroll"] = plan_camera(data["cues"], data["end"], sizes, bars, profile)
+        data["scroll"]["layout_method"] = layout["method"]
+        data["pdf_layout"] = layout
+        for warning in layout.get("warnings", []):
+            if warning not in data.setdefault("warnings", []):
+                data["warnings"].append(warning)
         data["view_signature"] = signature
         if (
             hash_file(audio) != audio_hash

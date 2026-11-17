@@ -35,6 +35,10 @@ Put a matching PDF in `score_targets/`, for example `Practice Song.mp3` and `Pra
 
 PDF viewing is included. PDF music recognition additionally needs [Audiveris](https://audiveris.github.io/audiveris/_pages/tutorials/install/binaries/) and English OCR data (`eng`), installed separately. A matching MusicXML file can replace recognition. Recognition and alignment are estimates requiring review; they are not guaranteed automatic transcription.
 
+Version **1.1.0** detects actual PDF staves and barlines without requiring MusicXML line breaks or measure widths. It handles portrait/landscape and mixed paper sizes, short final systems, five/six-line staves, and mildly skewed scans. Positioned PDF navigation text and repeat-dot pairs can supplement missing OMR marks. Six-line layout detection does not imply automatic tablature pitch recognition. Measure counts and staff configurations must agree with the notation; uncertain layouts use validated XML print metadata or request correction.
+
+After updating, rerun the installer and score analysis. Keep “reuse existing timing” selected to preserve reviewed timing while updating camera paths; clear it to rerun symbol analysis. Source PDFs and MusicXML are never rewritten.
+
 The metronome supports independent use or synchronization using the original BPM multiplied by playback speed, with beat circles, a time signature, and a first-beat offset. It uses a constant entered tempo, not automatic tempo tracking.
 
 ## Media, privacy and licensing

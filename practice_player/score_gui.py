@@ -313,8 +313,25 @@ class ScorePanel(QWidget):
             self.view.zoom = self.zoom.currentData()
             self.view.render()
         state = "보정 저장됨" if plan.data.get("reviewed") else "자동 추정 · 시간표 확인 권장"
-        self.status.setText(f"{len(plan.cues)}개 연주 마디 · {state}")
-        self.status.setToolTip("\n".join(plan.data.get("warnings", [])))
+        geometry = plan.data.get("pdf_layout", {})
+        method = {
+            "pdf-staves-barlines": "PDF 마디선 인식",
+            "musicxml-assisted": "MusicXML 보조 배치",
+        }.get(geometry.get("method"), "")
+        self.status.setText(
+            f"{len(plan.cues)}개 연주 마디 · {state}"
+            + (f"\n{method} · 원본 {geometry['measure_count']}마디" if method else "")
+        )
+        details = []
+        for index, page in enumerate(geometry.get("pages", [])):
+            width, height = page["size_points"]
+            orientation = "가로" if page["orientation"] == "landscape" else "세로"
+            paper = page.get("format", "custom").replace("custom", "사용자 규격")
+            details.append(
+                f"{index + 1}쪽: {paper} {orientation}, {width:g} × {height:g} pt, "
+                f"{page['systems']}줄, 기울기 보정 {page['deskew_degrees']:g}°"
+            )
+        self.status.setToolTip("\n".join(details + plan.data.get("warnings", [])))
         self.set_busy(self.busy)
         self.update_view_status()
         self.timeline_changed.emit()
@@ -464,6 +481,8 @@ class ScorePanel(QWidget):
         reuse_changed(reuse.isChecked())
         hint = QLabel(
             "PDF 인식에는 Audiveris와 영어 OCR 데이터가 필요합니다.\n"
+            "PDF의 규격·보표·마디선을 분석하므로 "
+            "줄바꿈 정보가 없는 MusicXML도 사용할 수 있습니다.\n"
             "복잡한 기호는 인식 후 시간표와 연주 순서를 확인하세요."
         )
         hint.setWordWrap(True)

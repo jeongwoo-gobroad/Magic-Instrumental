@@ -244,10 +244,17 @@ def expand_navigation(measures, xml_measures) -> list[int]:
     return route
 
 
-def parse_notation(xml_path: Path, page_count: int, route_override: str = "") -> dict:
+def parse_notation(
+    xml_path: Path,
+    page_count: int,
+    route_override: str = "",
+    *,
+    document: bytes | None = None,
+    measure_pages: dict | None = None,
+) -> dict:
     from music21 import bar, converter, expressions, repeat, stream, tempo
 
-    data = read_musicxml(xml_path)
+    data = read_musicxml(xml_path) if document is None else document
     tree = ET.fromstring(data)
     # Remove namespace prefixes for interoperability with namespaced MusicXML.
     for node in tree.iter():
@@ -272,7 +279,9 @@ def parse_notation(xml_path: Path, page_count: int, route_override: str = "") ->
     tempo_found = False
     for index, (measure, raw) in enumerate(zip(measures, xml_measures)):
         measure.editorial["source_index"] = index
-        if index and any(x.get("new-page") == "yes" for x in raw.findall("print")):
+        if measure_pages is not None:
+            page = measure_pages[index]
+        elif index and any(x.get("new-page") == "yes" for x in raw.findall("print")):
             page += 1
         if page >= page_count:
             raise ValueError("MusicXML의 페이지 수가 PDF보다 많습니다. 동일 판본을 사용하세요.")
@@ -509,6 +518,7 @@ def analyze_score(
             "route": route_override,
             "music21": "10.5.2",
             "alignment": "chroma-dtw-v3-full-score",
+            "pdf_recognition": 2,
         }
         key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
         destination = folder / key
@@ -522,7 +532,25 @@ def analyze_score(
             except (ValueError, KeyError, OSError):
                 pass
         report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
-        notation = parse_notation(musicxml, len(reader.pages), route_override)
+        from .score_layout import analyze_layout
+        from .score_symbols import supplement_xml
+
+        layout, pages, document, additions, extra_warnings = {}, None, None, [], []
+        try:
+            _, bars, layout = analyze_layout(pdf, musicxml, report)
+        except ValueError as error:
+            extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
+        else:
+            pages = {i: bar["page"] for i, bar in bars.items()}
+            extra_warnings.extend(layout.get("warnings", []))
+            # Geometric evidence is required before adding a missing navigation sign.
+            if layout["method"] == "pdf-staves-barlines" and not route_override:
+                document, additions, notes = supplement_xml(pdf, musicxml, bars)
+                extra_warnings.extend(notes)
+        notation = parse_notation(
+            musicxml, len(reader.pages), route_override, document=document, measure_pages=pages
+        )
+        notation["warnings"].extend(extra_warnings)
         text = " ".join(page.extract_text() or "" for page in reader.pages)
         marks = {mark for cue in notation["originals"] for mark in cue["marks"]}
         # Vector PDFs can reveal navigation words that OCR missed. Fail visibly;
@@ -577,6 +605,8 @@ def analyze_score(
                 "alignment": alignment,
                 "warnings": notation["warnings"],
                 "originals": notation["originals"],
+                "pdf_layout": layout,
+                "pdf_symbols_added": additions,
                 "reviewed": False,
                 "offset": 0.0,
             }
