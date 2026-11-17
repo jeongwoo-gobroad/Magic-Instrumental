@@ -1,0 +1,5 @@
+# A single absolute path OUTSIDE this project. Do not add quotation marks.
+# %LOCALAPPDATA% and %USERPROFILE% are expanded automatically.
+# Copy this file to venv-location.windows.txt to customize before installation.
+# Otherwise install.bat creates that file with this default.
+%LOCALAPPDATA%\Magic-Instrumental\.venv

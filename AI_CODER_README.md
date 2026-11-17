@@ -1,0 +1,89 @@
+# AI Coder handoff — Magic-Instrumental
+
+Public release: **1.0.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+
+## Product requirements
+
+Python desktop GUI for macOS Apple Silicon and Windows x64. Separate vocals locally, play only the instrumental, preserve pitch while changing speed, and reuse full-content SHA-256 caches. Keep originals under `targets/`, matching PDFs/MusicXML under `score_targets/`, results/settings under `processed/`, and downloaded weights under `models/`.
+
+The right PDF panel is resizable. Repeat/navigation recognition, audio alignment, and zoom-specific camera paths are computed **before playback**. Support score zoom up to 600%, reviewed timeline corrections, and adjustable N-measure previous/next seeks in unfolded performance order. The slim top metronome supports independent playback or original BPM × audio rate, beat circles, meter, and first-beat origin.
+
+One-click installers must bootstrap Python without a preinstalled interpreter. No global project packages or in-project venvs. macOS retains `~/.vocal-separator-and-speed-adj/.venv`; Windows reads the single path in ignored `venv-location.windows.txt`, generated from its public example. Never delete user media/caches to prepare a release.
+
+## Entry points and installation
+
+- `install.command` / `install.bat`: pinned uv archive + SHA-256, managed Python, then `bootstrap.py --setup-only`.
+- `start.command` / `start.bat`: first-install fallback when the external environment is absent; otherwise `bootstrap.py --launch-only` without pip/network installation.
+- `installers/runtime.json`: single source of Python/uv pins and download checksums. Official uv downloads its own managed CPython distribution. No PATH, shell profile, or Windows registry changes (`--no-bin --no-registry`).
+- `bootstrap.py`: standard library only, resolve/validate external environment before packages; OS lock and CUDA selection; successful dependency signature marker; persistent explicit CPU/CUDA profile; FFmpeg alias inside venv. Does not overwrite a nonempty non-venv folder.
+- `main.py`: rejects global and project-internal environments before CLI work. CLI imports heavy dependencies lazily.
+- `tools/build_release.py`: allowlisted source-only archive. Keep exclusions synchronized with `.gitignore`. Never publish the user's `venv-location.windows.txt`.
+
+## Modules
+
+| Module | Responsibility |
+|---|---|
+| `config.py` | paths, model commits/checksums/stem names, separation signature, pipeline version |
+| `models.py` | locked downloads, SHA-256 verification, atomic replacement |
+| `engine.py` | CUDA/MPS/CPU selection and pymss inference |
+| `compat.py` | narrowly scoped MPS Mel-band memory workaround |
+| `audio.py` | FFmpeg discovery, decoding, header validation, pitch-preserving atempo export |
+| `cache.py`, `pipeline.py` | content hashing, snapshots/locks, output validation and cache publishing |
+| `cli.py` | gui, doctor, separate, export, score-analyze, version, structured worker events |
+| `gui.py` | Qt main window, QMediaPlayer, QProcess workers, split panel, measure navigation |
+| `metronome.py` | synthesized click WAVs, independent/media clocks, per-song preferences |
+| `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
+| `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
+| `score_layout.py` | worker-only PDF staff geometry and zoom/viewport camera planning |
+| `score_view.py` | standard-library view geometry validation and cached-path interpolation |
+| `score_gui.py` | PDFium viewer, analysis/settings editor, lightweight playback following |
+
+## Separation invariants
+
+Cache: `processed/<full audio SHA-256>/<model>-<signature prefix>/instrumental.wav` plus `manifest.json`. Manifest may contain original filenames; it is private runtime data. Signature includes pipeline version, fixed model revision/files/checksums, engine version, sample rate, chunk/batch/TTA/normalization settings. **Device is excluded** so verified results can be shared between CPU/MPS/CUDA.
+
+Cache hit validates full source bytes plus output size/hash/audio metadata. Do not optimize into mtime/title matching. Cache hit must not require model imports, downloads, or an available GPU. Cache miss copies an input snapshot and verifies its hash to detect concurrent source changes. Source/profiles and model downloads have separate file locks.
+
+Validate finite stereo samples, sample rate and duration (within 0.1 s) before publishing. New cache directories publish by rename. Repair replaces only `instrumental.wav` and `manifest.json`, manifest last, preserving other user exports in the folder. Interrupted scratch output is never a completed cache. `PIPELINE_VERSION` is currently **2**; bump it for semantic separation changes.
+
+The default HyperACE v2 vocals secondary stem is exactly **`instrument`**, synthesized from original minus vocals. The alternative deux stems are **`Vocals` / `Instrumental`**. Use the pinned config's exact spelling. The code GPL does not license model weights; see `THIRD_PARTY_NOTICES.md`. Do not describe an unspecified model license as permission for commercial use or redistribution.
+
+## MPS workaround
+
+pymss-core 0.1.16 Mel-band `scatter_add_equivalent` creates a large dense one-hot batched matmul that can exceed MTLBuffer capacity. `compat.mps_mel_band_fix()` temporarily replaces the model module reference with real-valued `index_add_` band summation **only for MPS**. It restores the reference at context exit and never changes installed packages. CPU/CUDA paths stay upstream. Recheck this narrow internal API before updating pymss-core.
+
+## Playback and workers
+
+GUI main thread never loads inference models. QProcess stdout recognizes `@@PRACTICE@@` JSON records using a byte buffer so split UTF-8 sequences are retained. Ordinary output remains diagnostic text; stderr is bounded. Cancellation/close terminates workers and child Java processes (process groups on macOS, taskkill tree on Windows).
+
+Qt FFmpeg QMediaPlayer provides interactive speed and pitch compensation. Exports use FFmpeg atempo; slow rates chain supported factors. Playback positions, score times, seeks and metronome origin are always **original media seconds**. Do not multiply a seek target by playback rate. Camera/metronome interpolated clocks apply rate only to elapsed wall time since a media anchor.
+
+## Score invariants
+
+Scores are paired by normalized stem for convenience, then cached by file content hashes and analysis settings. PDF/MusicXML/audio are rechecked around analysis. Use defusedxml, bounded MXL reads (32 MB), no archive extraction, PDF page limits, bounded measure/route counts, and an Audiveris timeout. English OCR data absence is an error because textual navigation could be missed.
+
+`music21` parses notes, meter and expressions. Custom `expand_navigation()` also reads `<sound>` navigation marks: generic repeat expansion mishandles some long first endings with D.S. Preserve first/second ending and post-D.C./D.S. repeat behavior tests. Ambiguous multiple jumps require a reviewed explicit route rather than silently invented order.
+
+Audio alignment is offline: 11,025 Hz mono, chroma/cosine cost, full-sequence DTW, bounded ~3,000×3,000 matrix and slope constraints. Trim low-energy margins. This is not realtime score following or a partial-score subsequence mode. Similarity is a feature diagnostic, not an accuracy probability. OMR and time alignment are estimates until reviewed; do not claim automatic correctness.
+
+Page-only timeline version remains **1**; optional `scroll.version=1` adds camera paths. `score_layout.py` rasterizes PDF to detect 5/6-line staves and matches MusicXML system/staff counts exactly. XML layout is not assumed to be original PDF coordinates. Per-measure widths estimate horizontal positions; this is not exact note-level alignment. Reject unmatched geometry instead of evenly splitting the page.
+
+Each cue's camera frame contains page/source_index/system and position/transition data. Cache key includes base timeline content (excluding old view fields), scroll version, zoom and viewport. Existing reviewed times/offset/flags survive view-only analysis. Never perform OMR, feature extraction or staff detection from playback callbacks.
+
+PDFium renders at the chosen zoom with bounded source image size and a 3-page pixmap cache. A 16 ms timer interpolates precomputed camera frames from media time; pause/stop freezes it. Zoom/viewport mismatch disables automatic movement and asks for reanalysis. Manual wheel/scroll/page changes disable following. Timeline page edits invalidate old scroll geometry. Persistent window/splitter sizes improve cache reuse.
+
+Measure seeking uses `ScoreTimeline.playable_measures(duration)` and `measure_target(media_seconds, delta, duration)`. Add ±N to **visit index**, not printed bar number. Handle intro/outro, partial first cue, offset and track bounds. Seek to `ceil(seconds * 1000)` to avoid landing immediately before a fractional boundary. Keep play/pause state unchanged. The score panel's `timeline_changed` signal updates button availability.
+
+## Metronome
+
+Synthesized 30 ms clicks via QSoundEffect; separate audio volume/mute. Meter numerator 1–12, denominator 2/4/8/16; quarter-note BPM 20–400. Independent monotonic clock or media anchor + elapsed × rate; 5 ms precise timer detects boundaries rather than accumulating tick counts. Late ticks/seek jumps must not burst queued clicks. Pause/stop silence the linked clock. Fixed entered tempo only; no automatic tempo/meter change tracking or sample-accurate audio synchronization.
+
+Per-song BPM/meter/origin live under the audio hash; global window/measure-step settings live in `processed/ui.ini`. These files are never public source. Do not auto-start clicks at app launch.
+
+## Validation and releases
+
+Use the external environment commands in `CONTRIBUTING.md`. Tests cover cache corruption/repair, FFmpeg pitch/duration, GUI cancellation/playback, repeat/coda routes, synthetic DTW, PDF navigation, camera geometry/cache, metronome clocks, and measure boundary seeking. Real-weight tests are opt-in (four model/memory combinations); they exercise inference, not subjective quality.
+
+Apple MPS real-model inference was exercised during development. Windows CPU/CUDA dependencies were resolved for x64; Windows real audio/Java/NVIDIA hardware behavior still needs validation. Do not erase that distinction after an offscreen CI pass.
+
+Before public upload: run checks, build allowlisted ZIP, inspect every included path and scan content for private media names, personal home paths, emails and credentials. Never publish logs/manifests/cache checksums from a user's song. Update version + CHANGELOG, user docs and this handoff. License is GPL-3.0-only for original project code/docs; weights/dependencies keep upstream licenses. Users must supply lawfully obtained audio and scores. Public examples must use synthetic data or permitted media.

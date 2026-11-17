@@ -1,0 +1,594 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Offline-only OMR, navigation expansion and score/audio alignment.
+
+Nothing in this module is imported by the playback position callback.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import zipfile
+from collections import Counter
+from hashlib import sha256
+from pathlib import Path
+
+import numpy as np
+from defusedxml import ElementTree as ET
+from filelock import FileLock
+
+from .cache import hash_file
+from .config import Paths
+from .score import SCORE_VERSION, ScoreTimeline, atomic_json, matching_musicxml
+
+
+def audiveris_path() -> str | None:
+    candidates = [os.environ.get("AUDIVERIS_EXECUTABLE", ""), shutil.which("audiveris")]
+    if os.name == "nt":
+        for folder in [os.environ.get("ProgramFiles", ""), os.environ.get("LOCALAPPDATA", "")]:
+            candidates.extend([str(Path(folder) / "Audiveris" / "Audiveris.exe")])
+    else:
+        for folder in [
+            Path.home() / ".vocal-separator-and-speed-adj/tools",
+            Path.home() / "Applications",
+            Path("/Applications"),
+        ]:
+            candidates.append(str(folder / "Audiveris.app/Contents/MacOS/Audiveris"))
+    return next((str(Path(p).resolve()) for p in candidates if p and Path(p).is_file()), None)
+
+
+def run_omr(pdf: Path, output: Path, report) -> Path:
+    executable = audiveris_path()
+    if not executable:
+        raise RuntimeError(
+            "Audiveris가 없습니다. Audiveris를 설치하거나 같은 이름의 MusicXML을 "
+            "score_targets에 넣으세요. README의 악보 설치 안내를 확인하세요."
+        )
+    output.mkdir(parents=True, exist_ok=True)
+    report("PDF의 음표·도돌이표·코다를 사전 인식 중…", None)
+    command = [executable, "-batch", "-export", "-output", str(output), "--", str(pdf)]
+    environment = os.environ.copy()
+    tessdata = Path.home() / ".vocal-separator-and-speed-adj/tools/tessdata"
+    if tessdata.is_dir():
+        environment.setdefault("TESSDATA_PREFIX", str(tessdata))
+    # A distinct process group lets cancellation reap Java, not just the Python worker.
+    with (output / "omr.log").open("wb") as log:
+        process = subprocess.Popen(
+            command,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=os.name != "nt",
+            env=environment,
+        )
+        try:
+            result = process.wait(timeout=1800)
+        except BaseException:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+            else:
+                import signal
+
+                os.killpg(process.pid, signal.SIGTERM)
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                if os.name != "nt":
+                    os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+            raise
+    candidates = sorted(output.rglob("*.mxl")) + sorted(output.rglob("*.musicxml"))
+    log_text = (output / "omr.log").read_text(encoding="utf-8", errors="replace")
+    if "Missing support for 'eng'" in log_text:
+        raise RuntimeError(
+            "영어 OCR 데이터가 없습니다. Audiveris의 Languages에서 eng를 설치하세요. "
+            "문자형 D.S./Coda를 누락한 결과는 사용하지 않습니다."
+        )
+    if result or len(candidates) != 1:
+        raise RuntimeError(
+            f"악보 인식 결과가 하나의 곡으로 생성되지 않았습니다. "
+            f"Audiveris에서 인식 결과를 수정해 MusicXML로 저장하세요. 로그: {output / 'omr.log'}"
+        )
+    return candidates[0]
+
+
+def read_musicxml(path: Path) -> bytes:
+    limit = 32 * 1024 * 1024
+    if path.stat().st_size > limit:
+        raise ValueError("MusicXML이 너무 큽니다 (최대 32 MB).")
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            container_info = archive.getinfo("META-INF/container.xml")
+            if container_info.file_size > 65536:
+                raise ValueError("잘못된 MusicXML 컨테이너입니다.")
+            container = ET.fromstring(archive.read(container_info))
+            rootfile = next(x for x in container.iter() if x.tag.split("}")[-1] == "rootfile")
+            info = archive.getinfo(rootfile.attrib["full-path"])
+            if info.file_size > limit:
+                raise ValueError("압축 해제한 MusicXML이 너무 큽니다.")
+            data = archive.read(info)
+    else:
+        data = path.read_bytes()
+    # Parse before handing anything to music21. No URL loading or archive extraction.
+    ET.fromstring(data)
+    return data
+
+
+def parse_route_override(text: str, count: int) -> list[int]:
+    route = []
+    for item in text.split(","):
+        match = re.fullmatch(r"\s*(\d+)(?:\s*-\s*(\d+))?\s*", item)
+        if not match:
+            raise ValueError(
+                "연주 순서는 1-8,1-6,9-16처럼 입력하세요 (인쇄 마디 번호 대신 원본 순번)."
+            )
+        first, last = int(match[1]), int(match[2] or match[1])
+        if first < 1 or last < first or last > count or len(route) + last - first + 1 > 10000:
+            raise ValueError("연주 순서의 마디 범위가 올바르지 않습니다.")
+        route.extend(range(first - 1, last))
+    return route
+
+
+def expand_navigation(measures, xml_measures) -> list[int]:
+    """Expand barlines/voltas and one DC/DS jump, including open multi-system endings.
+
+    music21.Expander can ignore volta exclusions when a DS is also present; keep
+    the navigation explicit and bounded instead of silently adding an extra verse.
+    """
+    from music21 import bar, repeat
+
+    pairs, stack, endings, active = {}, [], [], None
+    commands, segnos, codas, fines = {}, [], [], set()
+    for index, (measure, raw) in enumerate(zip(measures, xml_measures)):
+        if isinstance(measure.leftBarline, bar.Repeat) and measure.leftBarline.direction == "start":
+            stack.append(index)
+        for node in raw.findall("barline/ending"):
+            if node.get("type") == "start":
+                if active is not None:
+                    raise ValueError("겹치는 반복 엔딩을 확인하세요.")
+                numbers = set()
+                for token in node.get("number", "").split(","):
+                    match = re.fullmatch(r"\s*(\d+)(?:\s*-\s*(\d+))?\s*", token)
+                    if not match:
+                        raise ValueError("반복 엔딩 번호를 인식하지 못했습니다.")
+                    a, b = int(match[1]), int(match[2] or match[1])
+                    if not 1 <= a <= b <= 8:
+                        raise ValueError("반복 엔딩은 1~8회차만 지원합니다.")
+                    numbers.update(range(a, b + 1))
+                active = (index, numbers)
+            elif active is not None:
+                endings.append([active[0], index, active[1], node.get("type")])
+                active = None
+        right = measure.rightBarline
+        if isinstance(right, bar.Repeat) and right.direction == "end":
+            times = int(right.times or 2)
+            if not 2 <= times <= 8:
+                raise ValueError("반복 횟수는 2~8회만 지원합니다.")
+            pairs[index] = (stack.pop() if stack else 0, times)
+        for mark in measure.recurse().getElementsByClass(repeat.RepeatExpression):
+            if isinstance(mark, repeat.Segno):
+                segnos.append(index)
+            elif isinstance(mark, repeat.Coda):
+                codas.append(index)
+            elif isinstance(mark, repeat.Fine):
+                fines.add(index)
+            elif isinstance(mark, repeat.RepeatExpressionCommand):
+                commands[index] = type(mark).__name__
+    if stack or active is not None:
+        raise ValueError("닫히지 않은 도돌이표 또는 반복 엔딩이 있습니다.")
+    if len(commands) > 1:
+        raise ValueError("여러 D.C./D.S. 지시는 연주 순서를 직접 지정하세요.")
+    brackets = []
+    for first, last, numbers, closure in endings:
+        enclosing = [end for end, (start, _) in pairs.items() if start <= first <= end]
+        owner = min(enclosing) if enclosing else max((x for x in pairs if x < first), default=None)
+        if owner is None:
+            raise ValueError("반복 엔딩에 대응하는 도돌이표가 없습니다.")
+        # An open first ending continues until its repeat barline, even over page breaks.
+        if closure == "discontinue" and owner >= last:
+            last = owner
+        brackets.append((first, last, numbers, owner))
+    route, passes = [], {end: 1 for end in pairs}
+    jumped, index, command = False, 0, ""
+    codas = sorted(set(codas))
+    while index < len(measures):
+        if len(route) >= 10000:
+            raise ValueError("반복 이동이 끝나지 않습니다. 연주 순서를 확인하세요.")
+        skipped = False
+        if not jumped:
+            for first, last, numbers, owner in brackets:
+                if first == index and passes[owner] not in numbers:
+                    index = last + 1
+                    skipped = True
+                    break
+        if skipped:
+            continue
+        route.append(index)
+        if jumped and "AlFine" in command and index in fines:
+            break
+        if jumped and "AlCoda" in command and codas and index == codas[0]:
+            index = codas[1]
+            continue
+        if index in commands and not jumped:
+            command = commands[index]
+            if "AlCoda" in command and len(codas) != 2:
+                raise ValueError("To Coda와 Coda 기호 한 쌍이 필요합니다.")
+            if "AlFine" in command and not fines:
+                raise ValueError("Fine 기호를 찾지 못했습니다.")
+            if command.startswith("DalSegno"):
+                if len(set(segnos)) != 1:
+                    raise ValueError("D.S.에 대응하는 세뇨 기호 하나가 필요합니다.")
+                target = segnos[0]
+            elif command.startswith("DaCapo"):
+                target = 0
+            else:
+                raise ValueError(f"지원하지 않는 이동 지시입니다: {command}")
+            if target >= index:
+                raise ValueError("되돌아갈 위치가 D.C./D.S. 앞에 있어야 합니다.")
+            jumped, index = True, target
+            continue
+        if not jumped and index in pairs:
+            first, times = pairs[index]
+            if passes[index] < times:
+                passes[index] += 1
+                for inner in pairs:
+                    if first <= pairs[inner][0] and inner < index:
+                        passes[inner] = 1
+                index = first
+                continue
+        index += 1
+    return route
+
+
+def parse_notation(xml_path: Path, page_count: int, route_override: str = "") -> dict:
+    from music21 import bar, converter, expressions, repeat, stream, tempo
+
+    data = read_musicxml(xml_path)
+    tree = ET.fromstring(data)
+    # Remove namespace prefixes for interoperability with namespaced MusicXML.
+    for node in tree.iter():
+        node.tag = node.tag.split("}")[-1]
+    if tree.tag != "score-partwise":
+        raise ValueError("score-partwise MusicXML이 필요합니다.")
+    score = converter.parseData(ET.tostring(tree, encoding="unicode"), format="musicxml")
+    score.toSoundingPitch(inPlace=True)
+    if not score.parts:
+        raise ValueError("MusicXML에 연주 파트가 없습니다.")
+    control = score.parts[0]
+    measures = list(control.getElementsByClass(stream.Measure))
+    xml_measures = tree.find("part").findall("measure")
+    if not measures or len(measures) != len(xml_measures) or len(measures) > 2000:
+        raise ValueError("악보 마디 구조를 읽지 못했거나 마디가 너무 많습니다.")
+    warnings = []
+    has_coda = any(x.get("tocoda") for x in tree.iter("sound"))
+    has_fine = any(x.get("fine") for x in tree.iter("sound"))
+    originals = []
+    page = 0
+    default_bpm = 120.0
+    tempo_found = False
+    for index, (measure, raw) in enumerate(zip(measures, xml_measures)):
+        measure.editorial["source_index"] = index
+        if index and any(x.get("new-page") == "yes" for x in raw.findall("print")):
+            page += 1
+        if page >= page_count:
+            raise ValueError("MusicXML의 페이지 수가 PDF보다 많습니다. 동일 판본을 사용하세요.")
+        # music21 reads printed words/signs but ignores navigation in <sound>.
+        existing = list(measure.recurse().getElementsByClass(repeat.RepeatExpression))
+        for sound in raw.iter("sound"):
+            additions = []
+            if sound.get("segno") and not any(isinstance(x, repeat.Segno) for x in existing):
+                additions.append((0, repeat.Segno()))
+            if (sound.get("coda") or sound.get("tocoda")) and not any(
+                isinstance(x, repeat.Coda) for x in existing
+            ):
+                additions.append((measure.highestTime if sound.get("tocoda") else 0, repeat.Coda()))
+            if sound.get("fine") and not any(isinstance(x, repeat.Fine) for x in existing):
+                additions.append((measure.highestTime, repeat.Fine()))
+            if (sound.get("dacapo") == "yes" or sound.get("dalsegno")) and not any(
+                isinstance(x, repeat.RepeatExpressionCommand) for x in existing
+            ):
+                stem = "DaCapo" if sound.get("dacapo") == "yes" else "DalSegno"
+                suffix = "AlCoda" if has_coda else "AlFine" if has_fine else ""
+                additions.append((measure.highestTime, getattr(repeat, stem + suffix)()))
+            for offset, addition in additions:
+                measure.insert(offset, addition)
+                existing.append(addition)
+        marks = [type(x).__name__ for x in existing]
+        for side in (measure.leftBarline, measure.rightBarline):
+            if isinstance(side, bar.Repeat):
+                marks.append(f"repeat-{side.direction}")
+        for text in measure.recurse().getElementsByClass(expressions.TextExpression):
+            if re.search(r"(?:D\s*\.\s*[CS]|[Cc]oda|[Ss]egno|[Ff]ine)", str(text.content)):
+                warnings.append(f"{index + 1}번 마디 이동 지시를 확인하세요: {text.content}")
+        for mark in measure.recurse().getElementsByClass(tempo.MetronomeMark):
+            bpm = mark.getQuarterBPM()
+            if bpm and not tempo_found:
+                default_bpm, tempo_found = float(bpm), True
+        length = float(measure.duration.quarterLength)
+        nominal = float(measure.barDuration.quarterLength)
+        if length > nominal:
+            warnings.append(
+                f"{index + 1}번 마디의 인식 음표가 박자를 초과해 박자표 길이로 보정했습니다."
+            )
+            length = nominal
+        if length <= 0:
+            length = float(measure.barDuration.quarterLength)
+        originals.append(
+            {
+                "source_index": index,
+                "measure": measure.measureNumberWithSuffix(),
+                "page": page,
+                "beats": length,
+                "marks": marks,
+            }
+        )
+    if page_count > 1 and page + 1 != page_count:
+        warnings.append("MusicXML 페이지 구분이 PDF와 다릅니다. 시간표의 페이지를 수정하세요.")
+    if route_override:
+        route = parse_route_override(route_override, len(measures))
+        warnings.append("사용자가 지정한 연주 순서를 사용합니다. 기호 자동 해석보다 우선합니다.")
+    else:
+        try:
+            route = expand_navigation(measures, xml_measures)
+        except Exception as error:
+            raise ValueError(
+                "반복/코다 구조가 불완전합니다. MusicXML을 수정하거나 "
+                "연주 순서를 직접 입력하세요. " + str(error)
+            ) from error
+    if not route or len(route) > 10000:
+        raise ValueError("연주 순서가 비어 있거나 반복 횟수가 지나치게 많습니다.")
+    notes_by_bar = [[] for _ in measures]
+    for part in score.parts:
+        part_measures = list(part.getElementsByClass(stream.Measure))
+        if len(part_measures) != len(measures):
+            warnings.append("마디 수가 다른 파트는 음원 정렬에서 제외했습니다.")
+            continue
+        for index, measure in enumerate(part_measures):
+            for note in measure.recurse().notes:
+                start = float(note.getOffsetInHierarchy(measure))
+                length = float(note.duration.quarterLength)
+                if length > 0 and hasattr(note, "pitches"):
+                    notes_by_bar[index].append((start, length, [p.midi % 12 for p in note.pitches]))
+    beat = 0.0
+    visits = Counter()
+    cues, notes = [], []
+    for source_index in route:
+        original = originals[source_index]
+        visits[source_index] += 1
+        cues.append({**original, "beat": beat, "visit": visits[source_index]})
+        for onset, duration, pitches in notes_by_bar[source_index]:
+            notes.append((beat + onset, duration, pitches))
+        beat += original["beats"]
+    return {
+        "cues": cues,
+        "notes": notes,
+        "beats": beat,
+        "bpm": default_bpm,
+        "warnings": sorted(set(warnings)),
+        "originals": originals,
+    }
+
+
+def align_audio(audio: Path, notation: dict, report) -> tuple[list[float], float, dict]:
+    import librosa
+
+    report("음원과 악보의 마디 위치를 사전 정렬 중…", None)
+    # FFmpeg accepts the same broad input formats as the separation pipeline.
+    import tempfile
+
+    import soundfile as sf
+
+    from .audio import run_ffmpeg
+
+    with tempfile.TemporaryDirectory(prefix="practice-align-") as scratch:
+        decoded = Path(scratch) / "mono.wav"
+        run_ffmpeg(
+            [
+                "-i",
+                str(audio),
+                "-vn",
+                "-ac",
+                "1",
+                "-ar",
+                "11025",
+                "-t",
+                "1801",
+                "-c:a",
+                "pcm_f32le",
+                str(decoded),
+            ]
+        )
+        samples, rate = sf.read(decoded, dtype="float32")
+    duration = len(samples) / rate
+    if duration > 1800 or duration < 1:
+        raise ValueError("자동 정렬은 1초~30분 음원을 지원합니다.")
+    hop = max(512, int(np.ceil(len(samples) / 3000)))
+    chroma = librosa.feature.chroma_stft(y=samples, sr=rate, n_fft=4096, hop_length=hop)
+    energy = librosa.feature.rms(y=samples, frame_length=4096, hop_length=hop)[0]
+    active = np.flatnonzero(energy > max(1e-6, float(np.max(energy)) * 0.015))
+    if not len(active):
+        raise ValueError("음원에서 정렬할 소리를 찾지 못했습니다.")
+    first_frame, last_frame = int(active[0]), int(active[-1]) + 1
+    chroma = chroma[:, first_frame:last_frame]
+    energy = energy[first_frame:last_frame]
+    # Restrict matrix size and relative slope; never stretch a single bar over the whole song.
+    count = min(3000, max(32, chroma.shape[1]))
+    grid = np.linspace(0, notation["beats"], count, endpoint=False)
+    reference = np.full((12, count), 0.01, dtype=np.float32)
+    for onset, length, pitches in notation["notes"]:
+        first = np.searchsorted(grid, onset)
+        last = max(first + 1, np.searchsorted(grid, onset + length))
+        for pitch in pitches:
+            reference[int(pitch), first:last] += 1
+    if not np.any(reference > 0.01):
+        raise ValueError("음높이 정보를 인식하지 못했습니다. MusicXML 또는 BPM 모드를 사용하세요.")
+    chroma += 0.01
+    from scipy.spatial.distance import cdist
+
+    cost = cdist(reference.T, chroma.T, metric="cosine")
+    cost[:, energy < max(1e-6, float(np.max(energy)) * 0.015)] += 1.0
+    _, path = librosa.sequence.dtw(
+        C=cost,
+        subseq=False,
+        step_sizes_sigma=np.array([[1, 1], [1, 2], [2, 1]]),
+        weights_add=np.array([0, 0.03, 0.03]),
+        weights_mul=np.array([1, 2, 2]),
+    )
+    path = path[::-1]
+    mapping = np.full(count, np.nan)
+    for i in np.unique(path[:, 0]):
+        mapping[i] = (first_frame + np.median(path[path[:, 0] == i, 1])) * hop / rate
+    valid = np.isfinite(mapping)
+    mapping = np.interp(np.arange(count), np.where(valid)[0], mapping[valid])
+    starts = np.interp([cue["beat"] for cue in notation["cues"]], grid, mapping)
+    # Reject collapsed/ambiguous bars rather than publish impossible playback order.
+    if np.any(np.diff(starts) <= 0.02):
+        raise ValueError(
+            "자동 정렬에서 여러 마디가 같은 시간에 겹쳤습니다. 연주 순서 또는 인식을 수정하세요."
+        )
+    end = min(duration, float(mapping[-1] + hop / rate))
+    similarity = float(1 - np.mean(cost[path[:, 0], path[:, 1]]))
+    return (
+        starts.tolist(),
+        max(end, float(starts[-1]) + 0.01),
+        {
+            "method": "chroma-dtw",
+            "similarity": round(similarity, 4),
+            "audio_duration": duration,
+        },
+    )
+
+
+def analyze_score(
+    audio: Path,
+    pdf: Path,
+    paths: Paths,
+    report=lambda *_: None,
+    *,
+    musicxml: Path | None = None,
+    mode="audio",
+    bpm=120.0,
+    lead_in=0.0,
+    route_override="",
+    force=False,
+) -> Path:
+    from pypdf import PdfReader
+
+    audio, pdf = audio.resolve(strict=True), pdf.resolve(strict=True)
+    reader = PdfReader(pdf)
+    if reader.is_encrypted or not 1 <= len(reader.pages) <= 200:
+        raise ValueError("암호가 없는 1~200페이지 PDF가 필요합니다.")
+    audio_hash, pdf_hash = hash_file(audio), hash_file(pdf)
+    if mode not in {"audio", "tempo"} or not 20 <= bpm <= 400 or not 0 <= lead_in <= 1800:
+        raise ValueError("정렬 설정이 올바르지 않습니다.")
+    folder = paths.processed / audio_hash / "scores" / pdf_hash
+    folder.mkdir(parents=True, exist_ok=True)
+    with FileLock(str(folder / ".analysis.lock"), timeout=3600):
+        musicxml = musicxml or matching_musicxml(pdf)
+        omr_folder = folder / "recognition"
+        if musicxml is None:
+            for name in ("reviewed.musicxml", "score.mxl"):
+                if (omr_folder / name).is_file():
+                    musicxml = omr_folder / name
+                    break
+        if musicxml is None:
+            generated = run_omr(pdf, omr_folder / "work", report)
+            musicxml = omr_folder / "score.mxl"
+            shutil.copyfile(generated, musicxml)
+        xml_hash = hash_file(musicxml)
+        signature = {
+            "version": SCORE_VERSION,
+            "xml": xml_hash,
+            "mode": mode,
+            "bpm": bpm,
+            "lead_in": lead_in,
+            "route": route_override,
+            "music21": "10.5.2",
+            "alignment": "chroma-dtw-v3-full-score",
+        }
+        key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
+        destination = folder / key
+        if not force and (destination / "timeline.json").exists():
+            try:
+                plan = ScoreTimeline.load(destination / "timeline.json")
+                if plan.data["audio_sha256"] == audio_hash and plan.data["pdf_sha256"] == pdf_hash:
+                    atomic_json(folder / "latest.json", {"analysis": key})
+                    report("저장된 악보 사전 분석을 불러왔습니다.", 1.0)
+                    return destination / "timeline.json"
+            except (ValueError, KeyError, OSError):
+                pass
+        report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
+        notation = parse_notation(musicxml, len(reader.pages), route_override)
+        text = " ".join(page.extract_text() or "" for page in reader.pages)
+        marks = {mark for cue in notation["originals"] for mark in cue["marks"]}
+        # Vector PDFs can reveal navigation words that OCR missed. Fail visibly;
+        # guessing a jump here could send the reader to an unrelated page.
+        if (
+            not route_override
+            and re.search(r"D\s*\.\s*S", text, re.I)
+            and not any(mark.startswith("DalSegno") for mark in marks)
+        ):
+            raise ValueError(
+                "PDF에는 D.S.가 있지만 인식 결과에 없습니다. Audiveris/MusicXML에서 "
+                "세뇨·코다를 보정하거나 연주 순서를 직접 입력하세요."
+            )
+        if (
+            not route_override
+            and re.search(r"D\s*\.\s*C", text, re.I)
+            and not any(mark.startswith("DaCapo") for mark in marks)
+        ):
+            raise ValueError(
+                "PDF의 D.C.를 인식하지 못했습니다. MusicXML 또는 연주 순서를 보정하세요."
+            )
+        if mode == "audio":
+            starts, end, alignment = align_audio(audio, notation, report)
+        else:
+            starts = [lead_in + cue["beat"] * 60 / bpm for cue in notation["cues"]]
+            end = lead_in + notation["beats"] * 60 / bpm
+            alignment = {"method": "fixed-tempo", "bpm": bpm, "lead_in": lead_in}
+            notation["warnings"].append(
+                "BPM 기반 추정입니다. 실제 연주 템포·페르마타는 시간표에서 보정하세요."
+            )
+        cues = [
+            {**cue, "start": round(float(start), 4)} for cue, start in zip(notation["cues"], starts)
+        ]
+        if (
+            hash_file(audio) != audio_hash
+            or hash_file(pdf) != pdf_hash
+            or hash_file(musicxml) != xml_hash
+        ):
+            raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
+        plan = ScoreTimeline(
+            {
+                "version": SCORE_VERSION,
+                "audio_sha256": audio_hash,
+                "pdf_sha256": pdf_hash,
+                "pdf_name": pdf.name,
+                "page_count": len(reader.pages),
+                "xml_sha256": hash_file(musicxml),
+                "musicxml_path": str(musicxml),
+                "signature": signature,
+                "cues": cues,
+                "end": end,
+                "alignment": alignment,
+                "warnings": notation["warnings"],
+                "originals": notation["originals"],
+                "reviewed": False,
+                "offset": 0.0,
+            }
+        )
+        # Do not overwrite an edited timeline when explicitly re-running analysis.
+        if destination.exists() and force:
+            import time
+
+            key += f"-{time.time_ns()}"
+            destination = folder / key
+        destination.mkdir(exist_ok=True)
+        plan.save(destination / "timeline.json")
+        atomic_json(folder / "latest.json", {"analysis": key})
+        report("악보 분석 완료 · 시간표와 반복 이동을 확인하세요.", 1.0)
+        return destination / "timeline.json"

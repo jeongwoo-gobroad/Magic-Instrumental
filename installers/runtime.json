@@ -1,0 +1,14 @@
+{
+  "python": "3.12.14",
+  "uv": {
+    "version": "0.13.7",
+    "macos_arm64": {
+      "archive": "uv-aarch64-apple-darwin.tar.gz",
+      "sha256": "81b811b57e4624df7ed3aac148e0359100d9962f3d9dce00aec533dc2e086731"
+    },
+    "windows_x64": {
+      "archive": "uv-x86_64-pc-windows-msvc.zip",
+      "sha256": "0cdc5b38fe5a8168ed6a25814f5ba43c21d313dd3187314fccb37b7cec46e021"
+    }
+  }
+}
