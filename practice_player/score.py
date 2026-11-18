@@ -135,6 +135,22 @@ class ScoreTimeline:
         )
         return target, milliseconds
 
+    def measure_range(self, first: int, last: int, duration: float) -> tuple[int, int]:
+        """Inclusive performed measures -> [start, end) in original-media ms."""
+        if not math.isfinite(duration) or duration <= 0:
+            raise ValueError("음원 길이가 올바르지 않습니다.")
+        limits = self.playable_measures(duration)
+        if (type(first) is not int or type(last) is not int or limits is None
+                or not limits[0] <= first <= last <= limits[1]):
+            raise ValueError("시작·끝 마디를 음원 범위 안에서 순서대로 선택하세요.")
+        offset = float(self.data.get("offset", 0))
+        end = self.starts[last + 1] if last + 1 < len(self.starts) else self.end
+        start_ms = max(0, math.ceil((self.starts[first] + offset) * 1000))
+        end_ms = min(round(duration * 1000), math.ceil((end + offset) * 1000))
+        if start_ms >= end_ms:
+            raise ValueError("선택한 마디 구간이 너무 짧거나 음원 범위 밖입니다.")
+        return start_ms, end_ms
+
     def save(self, path: Path) -> None:
         ScoreTimeline(self.data)
         atomic_json(path, self.data)

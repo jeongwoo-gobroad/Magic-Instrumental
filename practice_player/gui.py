@@ -4,6 +4,7 @@
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
@@ -38,6 +39,7 @@ from .cli import EVENT_PREFIX
 from .config import MODELS, ROOT, Paths
 from .count_in import CountIn
 from .metronome import MetronomeBar
+from .region_loop import RegionLoop
 from .score_gui import ScorePanel
 
 STYLE = """
@@ -85,6 +87,12 @@ class Window(QMainWindow):
         self.job_error = ""
         self.cancelled = False
         self.close_pending = False
+        self._loading_track = False
+        self._region_transition = False
+        self._region_bounds = None
+        self._region_playing = False
+        self._region_generation = 0
+        self._region_closed = False
         self.source_name = ""
         self.source_path = None
         self.pending_source = None
@@ -101,6 +109,10 @@ class Window(QMainWindow):
         self.audio_output.setVolume(0.75)
         self.player = QMediaPlayer(self)
         self.player.setAudioOutput(self.audio_output)
+        self.region_timer = QTimer(self)
+        self.region_timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self.region_timer.setInterval(5)
+        self.region_timer.timeout.connect(self.check_region)
         self.build_ui()
         self.connect_player()
         self.refresh_tracks()
@@ -206,8 +218,8 @@ class Window(QMainWindow):
         stop = QPushButton("처음으로")
         stop.clicked.connect(lambda: self.seek_to(0))
         controls.addWidget(stop)
-        self.loop = QCheckBox("반복")
-        self.loop.toggled.connect(lambda on: self.player.setLoops(-1 if on else 1))
+        self.loop = QCheckBox("곡 전체 반복")
+        self.loop.toggled.connect(self.whole_loop_changed)
         controls.addWidget(self.loop)
         controls.addStretch()
         right.addLayout(controls)
@@ -239,6 +251,12 @@ class Window(QMainWindow):
         self.measure_hint.setObjectName("muted")
         self.measure_hint.setWordWrap(True)
         right.addWidget(self.measure_hint)
+        self.region = RegionLoop(self.preferences)
+        self.region.changed.connect(self.region_changed)
+        self.region.current_requested.connect(
+            lambda start: self.region.select_current(start, self.player.position())
+        )
+        right.addWidget(self.region)
         speed_row = QHBoxLayout()
         speed_row.addWidget(QLabel("재생 속도"))
         self.speed_label = QLabel("1.00×")
@@ -292,6 +310,7 @@ class Window(QMainWindow):
         self.score_panel.analysis_requested.connect(self.analyze_score)
         self.score_panel.seek_requested.connect(self.seek_to)
         self.score_panel.timeline_changed.connect(self.update_measure_controls)
+        self.score_panel.timeline_changed.connect(self.refresh_region)
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
         self.main_splitter.addWidget(controller)
@@ -329,6 +348,11 @@ class Window(QMainWindow):
         self.player.seekableChanged.connect(lambda _: self.update_measure_controls())
         self.player.positionChanged.connect(self.position_changed)
         self.player.playbackStateChanged.connect(self.update_play_button)
+        self.player.playbackStateChanged.connect(self.region_transport_changed)
+        self.player.mediaStatusChanged.connect(self.region_media_status_changed)
+        self.player.sourceChanged.connect(self.region_source_changed)
+        self.player.durationChanged.connect(lambda _: self.refresh_region())
+        self.player.seekableChanged.connect(lambda _: self.refresh_region())
         self.player.errorOccurred.connect(
             lambda _, message: self.show_error(f"재생 오류: {message}")
         )
@@ -485,7 +509,19 @@ class Window(QMainWindow):
             self.close()
 
     def load_result(self, result):
+        self._loading_track = True
+        try:
+            self._load_result(result)
+        finally:
+            self._loading_track = False
+            self.refresh_region()
+
+    def _load_result(self, result):
         self.count_in.cancel()
+        source_hash = result.get("source_hash")
+        self.region.bind_track(
+            self.paths.processed / source_hash / "practice_loop.json" if source_hash else None
+        )
         self.output_path = Path(result["instrumental"])
         self.player.setSource(QUrl.fromLocalFile(str(self.output_path)))
         self.player.setPlaybackRate(self.speed.value() / 100)
@@ -535,6 +571,7 @@ class Window(QMainWindow):
         self.score_panel.set_busy(busy)
         self.play_button.setEnabled(not busy and self.output_path is not None)
         self.update_measure_controls(busy)
+        self.refresh_region(busy=busy)
 
     def cancel_job(self):
         process = self.worker
@@ -555,17 +592,23 @@ class Window(QMainWindow):
         self.player.setPlaybackRate(value / 100)
 
     def toggle_play(self):
+        self._region_generation += 1
         if self.count_in.active:
             self.count_in.cancel()
+            self._region_playing = False
             return
         if self.worker or not self.output_path:
             return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
-            if self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+            bounds = self.region.bounds()
+            if bounds and not bounds[0] <= self.player.position() < bounds[1]:
+                self.seek_to(bounds[0])
+            elif self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
                 self.seek_to(0)
-            if not self.count_in.start():
+            force_count = bool(bounds and self.region.count_each.isChecked())
+            if not self.count_in.start(force=force_count):
                 self.player.play()
 
     def play_after_count(self):
@@ -625,9 +668,14 @@ class Window(QMainWindow):
             self.seek_to(target[1])
 
     def seek_to(self, milliseconds):
+        self._region_generation += 1
         self.count_in.cancel()
+        self._region_playing = self.player.isPlaying()
         if not self.player.isSeekable():
             return
+        bounds = self.region.bounds()
+        if bounds:
+            milliseconds = max(bounds[0], min(milliseconds, bounds[1] - 1))
         # All navigation paths explicitly resynchronize even when seeking within
         # the same beat. Preserve transport state and original-media coordinates.
         self.metronome.begin_seek()
@@ -636,6 +684,96 @@ class Window(QMainWindow):
         finally:
             self.metronome.end_seek(self.player.position())
         self.position_changed(self.player.position())
+
+    def refresh_region(self, *, busy=None):
+        if self._loading_track:
+            return
+        busy = self.worker is not None if busy is None else busy
+        self.region.set_context(
+            self.score_panel.timeline, self.player.duration() / 1000,
+            bool(not busy and self.output_path and self.player.isSeekable()),
+        )
+
+    def region_source_changed(self, *_):
+        self._region_generation += 1
+        self._region_playing = False
+        self.count_in.cancel()
+        if not self._loading_track:
+            self.region.bind_track(None)
+
+    def whole_loop_changed(self, on):
+        if on:
+            self.region.enabled.setChecked(False)
+        self.player.setLoops(-1 if on else 1)
+
+    def region_changed(self, reason):
+        previous = self._region_bounds
+        self._region_generation += 1
+        self.count_in.cancel()
+        bounds = self.region.bounds()
+        self._region_bounds = bounds
+        self.count_in.set_external_enabled(bool(bounds and self.region.count_each.isChecked()))
+        if bounds:
+            self.loop.setChecked(False)
+            self.player.setLoops(1)
+            self.region_timer.start()
+        else:
+            self.region_timer.stop()
+        if reason == "enabled" and bounds:
+            self.player.pause()
+            self.seek_to(bounds[0])
+            self.region.save_selection()
+        elif reason in {"range", "context"} and previous:
+            # Editing a running range must not silently jump/play a different interval.
+            self.player.pause()
+        self._region_playing = self.player.isPlaying()
+
+    def region_transport_changed(self, state):
+        if state == QMediaPlayer.PlaybackState.PlayingState:
+            self._region_playing = True
+        elif state == QMediaPlayer.PlaybackState.PausedState and not self._region_transition:
+            self._region_playing = False
+
+    def region_media_status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            if self._region_bounds and self._region_playing:
+                generation = self._region_generation
+                QTimer.singleShot(0, lambda: self.region_eof(generation))
+        elif status in {QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia,
+                        QMediaPlayer.MediaStatus.LoadingMedia}:
+            self._region_playing = False
+            if not self._region_transition:
+                self.region.enabled.setChecked(False)
+
+    def region_eof(self, generation):
+        if (generation == self._region_generation and self._region_playing
+                and self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia):
+            self.restart_region()
+
+    def check_region(self):
+        if (not self._region_bounds or self._region_transition or self.count_in.active
+                or self.worker or not self.player.isPlaying() or self.metronome.suspended):
+            return
+        start, end = self._region_bounds
+        position = self.metronome.media_seconds(time.monotonic()) * 1000
+        if position >= end or position < start - 1:
+            self.restart_region()
+
+    def restart_region(self):
+        bounds = self.region.bounds()
+        if (not bounds or self._region_transition or self.count_in.active or self.worker
+                or self._region_closed or not self.player.isSeekable()):
+            return
+        self._region_transition = True
+        try:
+            self.player.pause()
+            self.seek_to(bounds[0])
+            if self.region.count_each.isChecked():
+                self.count_in.start(force=True)
+            else:
+                self.player.play()
+        finally:
+            self._region_transition = False
 
     def export_audio(self):
         if not self.output_path or self.worker:
@@ -682,6 +820,9 @@ class Window(QMainWindow):
         self.logs.appendPlainText(message)
 
     def closeEvent(self, event):
+        self._region_closed = True
+        self._region_generation += 1
+        self.region_timer.stop()
         self.count_in.cancel()
         if self.worker:
             self.close_pending = True

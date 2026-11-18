@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.4.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.5.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -34,6 +34,7 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 | `gui.py` | Qt main window, QMediaPlayer, QProcess workers, split panel, measure navigation |
 | `metronome.py` | synthesized click WAVs, independent/media clocks, per-song preferences |
 | `count_in.py` | optional drum count before manual play/resume, phase-preserving count clock, cancellation and original synthesized sounds |
+| `region_loop.py` | performed-measure range controls, inclusive end selection, per-repeat count preference and content/timing-bound restoration |
 | `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
 | `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
 | `omr_runtime.py` | standard-library managed-runtime discovery, signature, cheap launch readiness, dedicated tessdata environment |
@@ -111,13 +112,25 @@ Per-song BPM/meter/origin live under the audio hash; global window/measure-step 
 
 ## Drum count-in
 
-`Window.toggle_play()` delegates manual play/resume to `CountIn.start()` when enabled; count completion emits `finished` into `Window.play_after_count()`. It never advances or rewrites the source audio to create a lead-in. Native loops and seeks during existing playback remain continuous. End-of-media manual replay first seeks to zero. While active, the same play button is labeled cancel. Default off / one bar; global QSettings `count_in/enabled` and `count_in/bars` (1–4) persist across tracks/restarts, without auto-starting playback.
+`Window.toggle_play()` delegates manual play/resume to `CountIn.start()` when enabled; count completion emits `finished` into `Window.play_after_count()`. It never advances or rewrites the source audio to create a lead-in. Native whole-track loops and seeks during existing playback do not insert counts. Region loops have a separate option below. End-of-media manual replay first seeks to zero (or the active region start). While active, the same play button is labeled cancel. Default off / one bar; global QSettings `count_in/enabled` and `count_in/bars` (1–4) persist across tracks/restarts, without auto-starting playback.
 
 The original drum WAVs are synthesized once in a private temporary directory: regular closed-hat noise and accented snare/kick. No sampled third-party recording or additional dependency/download. QSoundEffect gain follows the existing metronome volume/mute. The normal metronome is held through `hold_count_in()` while count-in paints its dots; do not alter its enabled/link setting. A separate 5 ms precise timer runs even with the normal metronome off. Wait for media and audible drum effects to be ready before starting the monotonic clock; timeout after 15 seconds, and fail visibly on sound errors. Muted visual-only counts do not require audio readiness. Preserve the last drum's natural tail on successful handoff; cancellation stops it.
 
 `CountClock` always treats entered BPM as original quarter notes/minute, including when normal metronome linking is off. For N = bars × numerator, period = 240/(BPM × denominator × playbackRate). Let target = (originalPosition − originalFirstBeat) × BPM × denominator / 240, snap near-integer rounding noise, and first = ceil(target) − N. Emit exactly N beats from `first` at period intervals, then finish after (target − first) × period. This preserves actual beat numbering and shortens the final interval for fractional-beat entries; never apply rate twice or shift the user's requested media position. Counts before the first downbeat can use negative beat numbers. At handoff, seed the linked scheduler watermark with the last drum beat to avoid duplicate clicks on entries within its 5 ms initial tolerance. Actual output device/QMediaPlayer start latency is not sample-accurate.
 
-Changing count mode/bars, BPM/meter/origin/link/rate, transport position/source/error/stall, processing, or closing cancels pending play. Volume/mute changes preserve the count clock. No stale timer may start playback after cancellation. Large timer stalls cancel visibly rather than burst missed beats or unexpectedly start music. Tests cover meter/rate math, fractional entries/nonzero origin, natural handoff and duplicate suppression, all cancellation paths, audio preparation/errors, mute/gain, native QMediaPlayer deferred start/cancel and settings restoration. Screenshots use synthetic demo media only; `tools/capture_screenshots.py` now creates three images including the active count.
+Changing count mode/bars, BPM/meter/origin/link/rate, transport position/source/error/stall, processing, or closing cancels pending play. Volume/mute changes preserve the count clock. No stale timer may start playback after cancellation. Large timer stalls cancel visibly rather than burst missed beats or unexpectedly start music. Tests cover meter/rate math, fractional entries/nonzero origin, natural handoff and duplicate suppression, all cancellation paths, audio preparation/errors, mute/gain, native QMediaPlayer deferred start/cancel and settings restoration. Screenshots use synthetic demo media only; `tools/capture_screenshots.py` creates four images including active counts and a measure range.
+
+## Measure-range loops
+
+`RegionLoop` chooses inclusive first/last **performed visit indexes**, with printed measure, visit and performance order visible. `ScoreTimeline.measure_range()` converts these once to original-media `[start_ms, end_ms)`, including the last measure up to the next cue or timeline end. Apply timeline offset once, ceil fractional milliseconds and clip to actual audio duration; reject reversed, collapsed or non-overlapping ranges. Do not derive duration from entered metronome BPM or printed bar numbers.
+
+Enabling pauses and seeks to the selected start; Play begins. Whole-track QMediaPlayer looping and range looping are mutually exclusive. `Window.seek_to()` clamps all app navigation inside an active range and resets the shared metronome segment. A precise 5 ms timer reads the metronome's interpolated original-media clock (even in independent click mode), pauses at the exclusive end and returns to the start. No recognition, hashing or layout analysis runs in the timer. EndOfMedia has a deferred fallback because Qt may stop before the timer; generation, source, closed-state and prior-playing guards prevent stale callbacks from reviving cancelled playback. This is timer/device-latency limited, not sample-accurate gapless audio looping.
+
+`region_loop/count_each` is a global QSettings choice, default off. When on, the first manual entry and every automatic return call `CountIn.start(force=True)` using the same bars/BPM/meter/origin/rate/gain. It does not rewrite the manual count checkbox. When off, automatic returns play directly; manual starts follow the usual checkbox. `set_external_enabled()` makes the shared bars control available when only per-repeat counting is enabled. Mid-beat entries retain original phase through the existing CountClock.
+
+Range/timing/context changes cancel pending counts, turn off looping and pause a previously active range; changing the per-repeat option cancels a pending count without toggling the manual setting. Turning looping off during normal playback continues music. Worker start and source/invalid-media changes disarm looping; never auto-resume after worker completion. Camera/page-only changes with identical timing keep the range. `_loading_track` prevents Qt source signals from restoring the prior song's timeline while binding a new result.
+
+Private `processed/<full audio SHA-256>/practice_loop.json` stores first/last indexes and a timing signature covering audio/PDF hashes, offset, end and cue start/source-index/measure/visit. It excludes camera/page data. Restore only valid indexes under a matching signature; never restore the enabled state. Missing/corrupt settings fall back to the full playable score range. Tests cover repeated visits, partial/clipped/fractional measures, persistence/invalidation, seek clamps, whole/range exclusivity, actual playback loops at changed speed with/without counts, native EOF fallback and cancellation.
 
 ## Validation and releases
 

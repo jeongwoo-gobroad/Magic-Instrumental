@@ -157,7 +157,7 @@ def main():
         result = process(audio, Settings(low_memory=True), paths, offline=True)
         base = analyze_score(audio, pdf, paths, mode="tempo", bpm=120)
         window = Window(paths)
-        window.resize(1600, 1030)
+        window.resize(1600, 1180)
         window.main_splitter.setSizes([620, 950])
         window.show()
         window.pending_source, window.source_name = audio, audio.name
@@ -195,9 +195,20 @@ def main():
             raise RuntimeError("Expected active drum count-in for the screenshot")
         window.grab().save(str(destination / "drum-count-in.png"))
         window.count_in.cancel()
+        window.count_in.enabled.setChecked(False)
+        window.region.first.setCurrentIndex(8)
+        window.region.last.setCurrentIndex(11)
+        window.region.count_each.setChecked(True)
+        window.region.enabled.setChecked(True)
+        window.toggle_play()
+        pump(app, 0.8)
+        if not window.count_in.active or window.region.bounds() is None:
+            raise RuntimeError("Expected active range count-in for the screenshot")
+        window.grab().save(str(destination / "measure-loop.png"))
+        window.count_in.cancel()
         window.close()
         pump(app)
-    print("Saved three actual GUI screenshots with synthetic demo media.")
+    print("Saved four actual GUI screenshots with synthetic demo media.")
 
 
 if __name__ == "__main__":

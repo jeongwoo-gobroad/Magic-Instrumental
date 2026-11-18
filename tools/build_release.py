@@ -26,7 +26,7 @@ PLACEHOLDERS = tuple(f"{folder}/.gitkeep" for folder in (
 ))
 IMAGES = (
     "docs/images/player-overview.png", "docs/images/score-zoom.png",
-    "docs/images/drum-count-in.png",
+    "docs/images/drum-count-in.png", "docs/images/measure-loop.png",
 )
 
 

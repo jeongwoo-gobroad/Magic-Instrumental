@@ -90,6 +90,7 @@ class CountIn(QWidget):
         self.player = metronome.player
         self.preferences = preferences
         self.active = False
+        self.external_enabled = False
         self.clock = None
         self.requested = 0
         self.position = 0
@@ -148,7 +149,7 @@ class CountIn(QWidget):
 
     def settings_changed(self, *_):
         self.cancel()
-        self.bars.setEnabled(self.enabled.isChecked())
+        self.bars.setEnabled(self.enabled.isChecked() or self.external_enabled)
         self.preferences.setValue("count_in/enabled", self.enabled.isChecked())
         self.preferences.setValue("count_in/bars", self.bars.value())
 
@@ -160,9 +161,13 @@ class CountIn(QWidget):
             if gain == 0:
                 sound.stop()
 
-    def start(self) -> bool:
+    def set_external_enabled(self, enabled):
+        self.external_enabled = enabled
+        self.bars.setEnabled(self.enabled.isChecked() or enabled)
+
+    def start(self, *, force=False) -> bool:
         """True means count-in owns this play request, including any failure."""
-        if not self.enabled.isChecked():
+        if not (force or self.enabled.isChecked()):
             return False
         self.cancel()
         for sound in self.sounds:
