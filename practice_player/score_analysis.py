@@ -20,11 +20,16 @@ from filelock import FileLock
 
 from .cache import hash_file
 from .config import Paths
+from .omr_runtime import executable as managed_executable
+from .omr_runtime import managed_ready, managed_root, omr_environment
 from .score import SCORE_VERSION, ScoreTimeline, atomic_json, matching_musicxml
 
 
 def audiveris_path() -> str | None:
-    candidates = [os.environ.get("AUDIVERIS_EXECUTABLE", ""), shutil.which("audiveris")]
+    candidates = [os.environ.get("AUDIVERIS_EXECUTABLE", "")]
+    if managed_ready():
+        candidates.append(str(managed_executable(managed_root())))
+    candidates.append(shutil.which("audiveris"))
     if os.name == "nt":
         for folder in [os.environ.get("ProgramFiles", ""), os.environ.get("LOCALAPPDATA", "")]:
             candidates.extend([str(Path(folder) / "Audiveris" / "Audiveris.exe")])
@@ -42,16 +47,18 @@ def run_omr(pdf: Path, output: Path, report) -> Path:
     executable = audiveris_path()
     if not executable:
         raise RuntimeError(
-            "Audiveris가 없습니다. Audiveris를 설치하거나 같은 이름의 MusicXML을 "
-            "score_targets에 넣으세요. README의 악보 설치 안내를 확인하세요."
+            "Audiveris가 없습니다. install.command 또는 install.bat을 다시 더블클릭하세요. "
+            "같은 이름의 MusicXML을 score_targets에 넣어도 됩니다."
         )
     output.mkdir(parents=True, exist_ok=True)
     report("PDF의 음표·도돌이표·코다를 사전 인식 중…", None)
     command = [executable, "-batch", "-export", "-output", str(output), "--", str(pdf)]
-    environment = os.environ.copy()
-    tessdata = Path.home() / ".vocal-separator-and-speed-adj/tools/tessdata"
-    if tessdata.is_dir():
-        environment.setdefault("TESSDATA_PREFIX", str(tessdata))
+    environment = omr_environment(executable)
+    if Path(executable).resolve() == managed_executable(managed_root()).resolve():
+        # Another Audiveris installation may have saved a different default language.
+        command[1:1] = [
+            "-constant", "org.audiveris.omr.text.Language.defaultSpecification=eng",
+        ]
     # A distinct process group lets cancellation reap Java, not just the Python worker.
     with (output / "omr.log").open("wb") as log:
         process = subprocess.Popen(
@@ -85,7 +92,7 @@ def run_omr(pdf: Path, output: Path, report) -> Path:
     log_text = (output / "omr.log").read_text(encoding="utf-8", errors="replace")
     if "Missing support for 'eng'" in log_text:
         raise RuntimeError(
-            "영어 OCR 데이터가 없습니다. Audiveris의 Languages에서 eng를 설치하세요. "
+            "영어 OCR 데이터가 없습니다. 설치 파일을 다시 더블클릭해 복구하세요. "
             "문자형 D.S./Coda를 누락한 결과는 사용하지 않습니다."
         )
     if result or len(candidates) != 1:

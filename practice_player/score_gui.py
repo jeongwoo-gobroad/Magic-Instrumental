@@ -480,7 +480,7 @@ class ScorePanel(QWidget):
         reuse.toggled.connect(reuse_changed)
         reuse_changed(reuse.isChecked())
         hint = QLabel(
-            "PDF 인식에는 Audiveris와 영어 OCR 데이터가 필요합니다.\n"
+            "PDF 인식 도구와 영어 데이터는 설치 파일에서 자동 준비합니다.\n"
             "PDF의 규격·보표·마디선을 분석하므로 "
             "줄바꿈 정보가 없는 MusicXML도 사용할 수 있습니다.\n"
             "복잡한 기호는 인식 후 시간표와 연주 순서를 확인하세요."

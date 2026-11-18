@@ -11,6 +11,8 @@ import sys
 import venv
 from pathlib import Path
 
+from practice_player.omr_runtime import managed_ready
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -108,6 +110,11 @@ def main() -> int:
         raise RuntimeError(
             "이 버전의 설치가 필요합니다. install.command 또는 install.bat을 실행하세요."
         )
+    if args.launch_only and not managed_ready():
+        raise RuntimeError(
+            "악보 인식 도구 준비가 필요합니다. install.command 또는 install.bat을 "
+            "다시 더블클릭하세요. Audiveris와 영어 데이터도 자동으로 설치합니다."
+        )
     if args.reinstall or previous != signature:
         subprocess.run([str(python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
         if use_cuda:
@@ -158,6 +165,8 @@ def main() -> int:
             shutil.copy2(ffmpeg_path, ffmpeg_alias)
         else:
             ffmpeg_alias.symlink_to(ffmpeg_path)
+    if not args.launch_only:
+        subprocess.run([str(python), "-m", "practice_player.omr_install"], cwd=ROOT, check=True)
     if args.setup_only:
         print("설치 완료. 시작 스크립트로 GUI를 실행하세요.")
         return 0

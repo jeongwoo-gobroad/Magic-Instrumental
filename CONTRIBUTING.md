@@ -54,6 +54,8 @@ Windows에서는 `$env:RUN_MODEL_TESTS = '1'`을 설정한 뒤 같은 pytest 파
 
 직접 의존성은 `requirements.txt`, 플랫폼 전체 잠금은 `requirements-macos.lock.txt`와 `requirements-windows.lock.txt`, Windows CUDA wheel은 `requirements-cuda.txt`입니다. 개발 도구는 `requirements-dev.txt`입니다. Python/uv 버전과 uv 배포물 SHA-256은 `installers/runtime.json`에 고정합니다. 최신 버전 문자열만 교체하지 말고 양쪽 플랫폼 wheel 제공 여부와 실제 설치를 확인하세요.
 
+Audiveris/영어 데이터/원본 라이선스의 버전·다운로드 SHA-256·소스 링크는 `installers/omr.json`에 고정합니다. 양쪽 설치기는 합성 악보를 생성해 Java 실행과 영어 단어 인식을 실제로 검사합니다. Windows는 읽기 전용 MSI 데이터베이스와 CAB 추출만 사용하며 `msiexec` 설치·레지스트리 등록을 실행하지 않습니다. 이 검사 통과는 임의의 실제 악보 인식 정확도나 오디오 장치 검증을 뜻하지 않습니다. 설치 구조/검사 의미가 달라지면 `omr_runtime.INSTALLER_REVISION`도 검토하세요.
+
 공식 uv의 `pip compile`로 Python 3.12와 `aarch64-apple-darwin` / `x86_64-pc-windows-msvc`를 각각 해석하고 `--only-binary :all:`을 사용합니다. Windows CPU/CUDA wheel을 구분해 확인하세요. 앱에는 uv 런타임 import 의존성이 없습니다.
 
 ## 공개 배포

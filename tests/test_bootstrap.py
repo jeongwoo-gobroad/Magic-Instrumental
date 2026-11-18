@@ -56,6 +56,7 @@ def test_missing_windows_config_uses_public_template(monkeypatch, tmp_path):
 
 
 def fake_bootstrap_environment(monkeypatch, tmp_path, profile="default"):
+    monkeypatch.setattr(bootstrap, "managed_ready", lambda: True)
     target = tmp_path / ".venv"
     python = target / "Scripts/python.exe"
     python.parent.mkdir(parents=True)
@@ -117,3 +118,22 @@ def test_switching_to_cuda_updates_install_and_remembered_profile(monkeypatch, t
     assert bootstrap.main() == 0
     assert any(str(ROOT / "requirements-cuda.txt") in command for command in commands)
     assert (target / ".magic-instrumental-profile").read_text() == "cuda"
+
+
+def test_setup_runs_native_installer_even_if_python_requirements_unchanged(monkeypatch, tmp_path):
+    fake_bootstrap_environment(monkeypatch, tmp_path)
+    monkeypatch.setattr(bootstrap.sys, "argv", ["bootstrap.py", "--setup-only"])
+    commands = []
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda command, **kw: commands.append(command))
+    assert bootstrap.main() == 0
+    assert len(commands) == 1
+    assert commands[0][-2:] == ["-m", "practice_player.omr_install"]
+
+
+def test_launch_requires_native_setup_but_never_downloads(monkeypatch, tmp_path):
+    fake_bootstrap_environment(monkeypatch, tmp_path)
+    monkeypatch.setattr(bootstrap, "managed_ready", lambda: False)
+    monkeypatch.setattr(bootstrap.sys, "argv", ["bootstrap.py", "--launch-only"])
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *_a, **_kw: pytest.fail("Downloaded"))
+    with pytest.raises(RuntimeError, match="악보 인식 도구 준비"):
+        bootstrap.main()

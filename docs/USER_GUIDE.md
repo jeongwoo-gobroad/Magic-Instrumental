@@ -20,12 +20,16 @@
 
 ## 악보 설치와 사전 분석
 
-PDF 표시는 기본 설치에 포함됩니다. PDF의 음표와 반복 기호 인식은 **Audiveris**라는 별도 앱이 담당합니다.
+PDF 표시는 앱에서, 음표와 반복 기호 인식은 **Audiveris**에서 담당합니다. **v1.3.0부터 기본 설치 파일이 Audiveris 5.11.0과 포함된 Java, 영어 OCR 데이터를 자동으로 준비·검증합니다.**
 
-1. [공식 Audiveris 설치 페이지](https://audiveris.github.io/audiveris/_pages/tutorials/install/binaries/)에서 운영체제에 맞는 설치 파일을 받습니다. Java가 포함된 공식 설치 패키지를 권장합니다.
-2. Mac은 `Audiveris.app`을 `/Applications` 또는 `~/Applications`에, Windows는 설치기의 기본 `Audiveris` 경로에 설치합니다.
-3. Audiveris를 한 번 열고 **Tools → Install languages**에서 영어(`eng`) OCR 데이터를 설치합니다. D.S./Coda 등의 문자 인식에 필요합니다. [공식 OCR 언어 안내](https://audiveris.github.io/audiveris/_pages/guides/main/languages/)
-4. 앱을 다시 시작합니다. 특수 경로는 실행 환경 변수 `AUDIVERIS_EXECUTABLE`에 실제 실행 파일 경로를 지정할 수 있습니다. OCR 데이터 경로를 따로 관리하면 `TESSDATA_PREFIX`를 사용할 수 있습니다.
+1. Mac은 `install.command`, Windows는 `install.bat`을 더블클릭합니다.
+2. 공식 배포본 다운로드, 파일 검증, 영어가 적힌 합성 악보의 실제 인식 검사가 끝날 때까지 기다립니다. Java 설치나 Audiveris의 언어 메뉴 설정은 필요하지 않습니다.
+3. **설치 완료**가 나오면 `start.command` 또는 `start.bat`으로 앱을 엽니다.
+4. 다운로드나 인식 준비가 실패하면 같은 설치 파일을 다시 실행합니다. 검증된 다운로드는 재사용하고 손상된 설치는 복구합니다. 실패를 무시하고 설치 완료로 처리하지 않습니다.
+
+인식 도구는 Mac `~/.vocal-separator-and-speed-adj/tools/`, Windows `%LOCALAPPDATA%\Magic-Instrumental\tools\` 아래의 버전별 폴더에 있습니다. Windows의 개인 가상환경 경로 설정과 별개입니다. 기존 수동 설치는 보존합니다. 설치 로그는 이 도구 폴더의 `install-omr.log`에 기록되며, 개인 경로가 있으므로 공개 전에 지우세요. 파일 해시·실행·영어 인식 확인은 설치 때 수행하고 평소 실행은 준비 여부만 확인합니다.
+
+개발자가 별도 Audiveris를 사용하려면 `AUDIVERIS_EXECUTABLE`로 지정할 수 있고, 그 경우 `TESSDATA_PREFIX`도 직접 관리할 수 있습니다. 자동 설치본은 검증된 전용 영어 데이터를 항상 사용합니다. 추가 언어 자동 설치는 제공하지 않습니다. [공식 언어 안내](https://audiveris.github.io/audiveris/_pages/guides/main/languages/)
 
 MusicXML 원본이 있으면 PDF와 같은 이름으로 `.musicxml`, `.mxl`, `.xml`을 `score_targets/`에 넣어 OMR을 생략할 수 있습니다. 사전 분석 화면에서 MusicXML을 직접 고를 수도 있습니다. v1.1.0부터 MusicXML에 페이지·줄 구분이나 마디 폭이 없어도 PDF의 실제 마디선을 이용합니다. 다만 같은 악곡·원본 마디 순서·파트/보표 구성이어야 합니다.
 
@@ -78,7 +82,7 @@ PDF 자체에서 용지 크기와 방향, 5선/6선 보표, 마디 경계를 먼
 | Windows NVIDIA 오류 | 드라이버를 확인하거나 `install.bat -Cpu`로 다시 설치합니다. CUDA로 돌아가려면 `install.bat -Cuda`입니다. |
 | 메모리 부족 | 메모리 절약을 켜고 다른 큰 앱을 닫습니다. 장치 명시 오류를 무시하지 마세요. |
 | Windows 환경 경로 오류 | `venv-location.windows.txt`의 주석 외 한 줄, 절대 경로, 따옴표 유무, 프로젝트 밖 위치를 확인합니다. |
-| PDF는 보이지만 기호 분석 불가 | Audiveris와 영어 OCR 데이터를 설치하거나 같은 이름의 MusicXML을 준비합니다. |
+| PDF는 보이지만 기호 분석 불가 | 설치 파일을 다시 더블클릭해 Audiveris·영어 OCR을 검사/복구하거나 같은 이름의 MusicXML을 준비합니다. |
 | 악보가 잘못된 곳으로 이동 | 반복 순서·시작 시간·전체 지연을 검토하고 필요하면 OMR을 보정합니다. |
 | 확대 후 자동 스크롤 중지 | 현재 배율과 패널 크기에서 기존 시간표를 유지한 채 스크롤을 재분석합니다. |
 | 마디 이동 비활성화 | 음원 준비 및 악보 시간표 로드를 먼저 완료합니다. |
@@ -88,4 +92,4 @@ PDF 자체에서 용지 크기와 방향, 5선/6선 보표, 마디 경계를 먼
 
 ## 삭제와 저장 위치
 
-앱을 종료한 뒤 프로젝트 폴더를 삭제하면 앱과 그 안의 원본·캐시도 함께 사라집니다. **직접 준비한 음원·악보와 필요한 내보내기 파일을 먼저 백업하세요.** 외부 환경을 지우려면 Mac의 `~/.vocal-separator-and-speed-adj/`, Windows의 개인 경로 설정에 지정한 환경 및 `%LOCALAPPDATA%\Magic-Instrumental\runtime`을 별도로 정리합니다. 다른 프로젝트와 공유하는 폴더 전체를 삭제하지 마세요.
+앱을 종료한 뒤 프로젝트 폴더를 삭제하면 앱과 그 안의 원본·캐시도 함께 사라집니다. **직접 준비한 음원·악보와 필요한 내보내기 파일을 먼저 백업하세요.** 외부 환경을 지우려면 Mac의 `~/.vocal-separator-and-speed-adj/`, Windows의 개인 경로 설정에 지정한 환경 및 `%LOCALAPPDATA%\Magic-Instrumental\runtime`, `%LOCALAPPDATA%\Magic-Instrumental\tools`를 별도로 정리합니다. 다른 프로젝트와 공유하는 폴더 전체를 삭제하지 마세요.

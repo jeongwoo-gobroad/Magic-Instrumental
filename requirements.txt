@@ -16,5 +16,6 @@ music21==10.5.2
 librosa==1.0.1
 pypdf==7.1.0
 defusedxml==0.7.1
-# PDF-only OMR additionally needs the native Audiveris application + eng OCR data.
-# Its platform installer includes Java; see README. MusicXML input bypasses OMR.
+pillow==13.0.0
+# install.command/install.bat also install and verify native Audiveris + Java + eng.
+# Native download pins: installers/omr.json. MusicXML input bypasses OMR.

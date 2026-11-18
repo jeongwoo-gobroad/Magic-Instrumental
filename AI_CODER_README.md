@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.2.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.3.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -12,9 +12,10 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 
 ## Entry points and installation
 
-- `install.command` / `install.bat`: pinned uv archive + SHA-256, managed Python, then `bootstrap.py --setup-only`.
+- `install.command` / `install.bat`: pinned uv archive + SHA-256, managed Python, then `bootstrap.py --setup-only`; includes private Audiveris/Java/English OCR installation and a real synthetic recognition probe.
 - `start.command` / `start.bat`: first-install fallback when the external environment is absent; otherwise `bootstrap.py --launch-only` without pip/network installation.
 - `installers/runtime.json`: single source of Python/uv pins and download checksums. Official uv downloads its own managed CPython distribution. No PATH, shell profile, or Windows registry changes (`--no-bin --no-registry`).
+- `installers/omr.json`: Audiveris 5.11.0 DMG/console MSI, tessdata revision `ced78752cc61322fb554c280d13360b35b8684e4`, English file and license SHA-256 pins, upstream source URLs. All native downloads go directly to official upstream servers; never include them in the public source bundle.
 - `bootstrap.py`: standard library only, resolve/validate external environment before packages; OS lock and CUDA selection; successful dependency signature marker; persistent explicit CPU/CUDA profile; FFmpeg alias inside venv. Does not overwrite a nonempty non-venv folder.
 - `main.py`: rejects global and project-internal environments before CLI work. CLI imports heavy dependencies lazily.
 - `tools/build_release.py`: allowlisted source-only archive. Keep exclusions synchronized with `.gitignore`. Never publish the user's `venv-location.windows.txt`.
@@ -34,6 +35,9 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 | `metronome.py` | synthesized click WAVs, independent/media clocks, per-song preferences |
 | `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
 | `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
+| `omr_runtime.py` | standard-library managed-runtime discovery, signature, cheap launch readiness, dedicated tessdata environment |
+| `omr_install.py` | verified downloads, native extraction, full installed-file inventory, synthetic English OCR probe, transactional publication |
+| `msi_extract.py` | Windows read-only MSI database / embedded CAB extraction, no installation actions or registry registration |
 | `score_geometry.py` | worker-only PDF vector/raster staves, actual barlines, paper sizes, mild deskew |
 | `score_symbols.py` | positioned PDF navigation text and repeat-dot supplements, audited in memory |
 | `score_layout.py` | PDF-first / validated XML-assisted layout and zoom/viewport camera planning |
@@ -62,6 +66,18 @@ Qt FFmpeg QMediaPlayer provides interactive speed via `setPlaybackRate` and pitc
 
 ## Score invariants
 
+### Native OMR setup
+
+Managed tools live outside the project at macOS `~/.vocal-separator-and-speed-adj/tools/` or Windows `%LOCALAPPDATA%\Magic-Instrumental\tools\`, independently of a custom Windows venv path. `omr-<manifest/revision signature>` contains the unchanged app/JRE, `tessdata/eng.traineddata`, `licenses/`, `sources.json` and a success-only `verified.json` file inventory. `INSTALLER_REVISION=1`; consider bumping when extraction/probe semantics change. This signature is separate from reviewed score timelines and separation caches; do not invalidate those merely for an installer update.
+
+Bootstrap invokes `python -m practice_player.omr_install` using the external venv after Python dependencies. Even if pip requirements are unchanged, running install verifies the native file inventory and exercises the runtime. Launch-only checks readiness without network, OMR or hashing the whole app; absent setup instructs users to rerun the install file. Native download/cache/installation is protected by a file lock. Downloads have SHA-256, HTTPS, time and size limits. Never execute unverified bytes. Stage and verify before replacing a managed version; preserve the prior installation on failure and leave manual/system Audiveris untouched.
+
+macOS mounts the official DMG read-only and copies the unchanged `.app`, retaining symlinks/JRE legal files. The official disk image has an AGPL display/continue prompt; automation supplies the affirmative continuation while saving the complete upstream license locally and documenting this behavior. No Gatekeeper disable or global security edits. Windows reads MSI tables through `msi.dll`, expands embedded CABs with built-in `expand.exe`, and reconstructs only the Audiveris subtree. Do not replace this with an elevated MSI installer or system Java. Native extraction tests cover short/long filenames, directory trees, traversal and duplicate rejection; actual extraction is exercised by Windows CI.
+
+The installation probe generates an original PNG with three five-line staves and the English title `MAGIC PRACTICE` using Pillow's bundled font. It calls the native launcher `-version`, then `-batch -step TEXTS -save` with English explicitly selected and private `TESSDATA_PREFIX`. Require both recognized words in the generated `.omr` XML and completion of TEXTS, not only exit code or presence of a traineddata filename. Timeouts terminate child Java processes. Logs remain private in `tools/install-omr.log`; temporary probe media are removed. This is a native/English OCR readiness test, not proof of arbitrary score transcription accuracy.
+
+`AUDIVERIS_EXECUTABLE` explicitly overrides discovery; otherwise prefer the verified managed launcher, then PATH/legacy manual locations. Managed Audiveris always uses its own verified tessdata despite unrelated inherited `TESSDATA_PREFIX` and passes the English default-language constant for both the probe and real OMR, insulating it from other installations' saved language preferences. Explicit/manual programs retain their custom data environment and language preferences. Never install or perform this probe from GUI playback callbacks.
+
 Scores are paired by normalized stem for convenience, then cached by file content hashes and analysis settings. PDF/MusicXML/audio are rechecked around analysis. Use defusedxml, bounded MXL reads (32 MB), no archive extraction, PDF page limits, bounded measure/route counts, and an Audiveris timeout. English OCR data absence is an error because textual navigation could be missed.
 
 `music21` parses notes, meter and expressions. Custom `expand_navigation()` also reads `<sound>` navigation marks: generic repeat expansion mishandles some long first endings with D.S. Preserve first/second ending and post-D.C./D.S. repeat behavior tests. Ambiguous multiple jumps require a reviewed explicit route rather than silently invented order.
@@ -88,7 +104,7 @@ Checking `linked` arms the click toggle without starting audio. Users can explic
 
 All application seeks must go through `Window.seek_to()`, which calls `begin_seek()` / `end_seek(actual_position)` around QMediaPlayer.setPosition. This resets the click segment even for small seeks within the same beat and preserves playback state. Implicit loops/external large jumps are detected from transport samples; small backwards clock corrections retain the watermark. Pause/resume reanchors without extrapolating paused time. Loading/end/error reset segments; a buffer stall suspends clicking without changing phase. Independent mode ignores audio seeks/stalls. `align_now` uses interpolated original media time while playing, exact position while paused. Track binding resets the scheduler even if the new settings equal the old ones.
 
-Audiveris is a separately installed Java program invoked by CLI, not a bundled Python library. Its source headers permit **AGPL-3.0-or-later**; preserve the README attribution and linked upstream license/source in `THIRD_PARTY_NOTICES.md`.
+Audiveris is a separately installed Java program invoked by CLI, not a bundled Python library. The one-click installer now prepares it automatically. Its source headers permit **AGPL-3.0-or-later**; English tessdata is **Apache-2.0**. Preserve the README attribution, pinned upstream license/source links in `THIRD_PARTY_NOTICES.md`, and original notices/Java legal files in the installation. Automated installation is not itself forbidden, but do not describe separate processes or download-only source releases as a blanket exemption for future binary redistribution, modifications or network services.
 
 Per-song BPM/meter/origin live under the audio hash; global window/measure-step settings live in `processed/ui.ini`. These files are never public source. Do not auto-start clicks at app launch.
 
@@ -96,6 +112,6 @@ Per-song BPM/meter/origin live under the audio hash; global window/measure-step 
 
 Use the external environment commands in `CONTRIBUTING.md`. Tests cover cache corruption/repair, FFmpeg pitch/duration, GUI cancellation/playback, repeat/coda routes, synthetic DTW, PDF navigation, camera geometry/cache, metronome clocks, and measure boundary seeking. Geometry tests include metadata-free mixed/landscape pages, nested forms/crops/rotation, faint skewed raster scans, 5/6-line multi-staff systems, unequal bar widths, short final systems, navigation supplementation and conflict rejection. Fixtures are entirely synthetic. Real-weight tests are opt-in (four model/memory combinations); they exercise inference, not subjective quality.
 
-Apple MPS real-model inference was exercised during development. Windows CPU/CUDA dependencies were resolved for x64; Windows real audio/Java/NVIDIA hardware behavior still needs validation. Do not erase that distinction after an offscreen CI pass.
+Apple MPS real-model inference was exercised during development. Windows CPU/CUDA dependencies were resolved for x64. Both platform installers now exercise the actual Audiveris Java launcher, native OCR libraries and English recognition in CI. Windows physical audio/NVIDIA hardware and desktop security prompts still need validation; do not erase that distinction after a CI pass. Native MSI extraction uses no administrator-only API or installer actions; enterprise application-control policies may still block execution.
 
 Before public upload: run checks, build allowlisted ZIP, inspect every included path and scan content for private media names, personal home paths, emails and credentials. Never publish logs/manifests/cache checksums from a user's song. Update version + CHANGELOG, user docs and this handoff. License is GPL-3.0-only for original project code/docs; weights/dependencies keep upstream licenses. Users must supply lawfully obtained audio and scores. Public examples must use synthetic data or permitted media.

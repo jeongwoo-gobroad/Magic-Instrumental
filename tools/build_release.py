@@ -16,7 +16,8 @@ ROOT_FILES = (
     "bootstrap.py", "main.py", "pyproject.toml", "install.command", "install.bat",
     "start.command", "start.bat", "venv-location.windows.example.txt", "requirements.txt",
     "requirements-dev.txt", "requirements-cuda.txt", "requirements-macos.lock.txt",
-    "requirements-windows.lock.txt", "installers/runtime.json", "installers/macos.sh",
+    "requirements-windows.lock.txt", "installers/runtime.json", "installers/omr.json",
+    "installers/macos.sh",
     "installers/windows.ps1", ".github/workflows/checks.yml",
 )
 PATTERNS = ("practice_player/*.py", "tests/*.py", "docs/*.md", "tools/*.py")

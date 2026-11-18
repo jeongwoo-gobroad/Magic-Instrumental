@@ -36,8 +36,9 @@ Dependencies are installed from their distributors, not copied into this source 
 | [defusedxml](https://github.com/tiran/defusedxml) | XML safety | PSF-2.0 |
 | [uv](https://github.com/astral-sh/uv) | Bootstrap only | MIT OR Apache-2.0; downloaded as a checksum-pinned executable |
 | [CPython](https://docs.python.org/3/license.html) / [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Private Python runtime | Python license and distribution dependency notices; uv downloads this runtime separately |
-| [Audiveris](https://github.com/Audiveris/audiveris) | Optional PDF music recognition | AGPL-3.0-or-later; separate Java application, installed by the user |
-| [Tesseract OCR data](https://github.com/tesseract-ocr/tessdata) | Optional English OCR | Apache-2.0; installed separately for Audiveris |
+| [Pillow](https://github.com/python-pillow/Pillow/blob/main/LICENSE) | Synthetic installation-test image | MIT-CMU and bundled dependency/font notices |
+| [Audiveris](https://github.com/Audiveris/audiveris) | PDF music recognition | AGPL-3.0-or-later; official standalone distribution downloaded by the installer |
+| [Tesseract OCR data](https://github.com/tesseract-ocr/tessdata) | English OCR | Apache-2.0; pinned official eng data downloaded by the installer |
 
 A binary repackager must review and satisfy the licenses of the actual dependencies shipped, including source/notice obligations. This source-only release does not grant rights to redistribute third-party model weights or user media.
 
@@ -46,6 +47,12 @@ A binary repackager must review and satisfy the licenses of the actual dependenc
 Audiveris developers and contributors provide the OMR engine and editor used for score recognition. The application invokes the separately installed Java CLI with `-batch -export`, reads its MusicXML output, and adds this project's independent layout/navigation checks. It does not bundle or modify Audiveris source/binaries. MusicXML input can bypass Audiveris entirely.
 
 License checked 2026-11-18: **AGPL-3.0-or-later**. The [upstream license](https://github.com/Audiveris/audiveris/blob/master/LICENSE) contains AGPL v3; the [Main.java header](https://github.com/Audiveris/audiveris/blob/master/app/src/main/java/org/audiveris/omr/Main.java) explicitly permits version 3 or a later version. Follow the upstream copyright/license notices, corresponding-source obligations and applicable modified-network-version provisions when distributing or modifying that software. Preserve its separate license; this repository's GPL-3.0-only notice does not relicense Audiveris.
+
+Since v1.3.0, `installers/omr.json` pins official **Audiveris 5.11.0** macOS arm64 DMG / Windows x64 console MSI and SHA-256 values. [Corresponding upstream source](https://github.com/Audiveris/audiveris/tree/5.11.0) and [source archive](https://github.com/Audiveris/audiveris/archive/refs/tags/5.11.0.tar.gz). English `eng.traineddata` comes from [tessdata revision ced78752cc61322fb554c280d13360b35b8684e4](https://github.com/tesseract-ocr/tessdata/tree/ced78752cc61322fb554c280d13360b35b8684e4), under its [Apache-2.0 license](https://github.com/tesseract-ocr/tessdata/blob/ced78752cc61322fb554c280d13360b35b8684e4/LICENSE).
+
+The installer downloads these distributions directly from upstream to the user's computer; it does not distribute them from this repository. It copies the unchanged app/runtime files, preserving upstream copyright notices, Java runtime `legal/` content and dependency licenses. It also downloads checksum-verified AGPL and Apache license texts to `licenses/` and records pinned download/source links in `sources.json` beside the managed installation. The official macOS disk image displays its AGPL notice; the automated installer continues past this prompt and preserves the full notice locally. This is not a waiver of upstream conditions.
+
+Automated setup is not itself prohibited. If you change this distribution to ship native binaries, modified code, or a hosted service, review the applicable source, notice and network provisions for that arrangement. A source-only installer and separate CLI process do not provide a blanket exemption for other integrations or redistribution. Bundled Java/Tesseract/Leptonica and other Audiveris dependencies keep their own upstream terms.
 
 ## Media rights
 

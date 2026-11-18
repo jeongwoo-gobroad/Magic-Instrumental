@@ -18,7 +18,11 @@ Python으로 만든 macOS / Windows용 데스크톱 앱입니다. 보컬을 제�
 
 200% 확대에서 저장된 이동 경로를 따라가는 모습입니다. **두 캡처는 실제 앱에 직접 만든 합성 연습곡·예제 악보를 넣어 촬영한 것으로, 개인 음원이나 상업용 악보를 포함하지 않습니다.**
 
-## v1.2.1 메트로놈 동기화·음량
+## v1.3.0 악보 인식 도구 자동 설치
+
+**설치 파일을 더블클릭하면 Audiveris 5.11.0, 포함된 Java, 영어 OCR 데이터까지 준비합니다.** 별도 프로그램 설치나 언어 설정, 명령어 입력이 필요하지 않습니다. 공식 다운로드의 SHA-256을 확인하고 합성 악보의 영어 제목을 실제로 읽는 검사까지 통과해야 설치 완료를 표시합니다. 실패하거나 파일이 손상되면 같은 설치 파일을 다시 실행하세요. 기존 음원·악보·검토한 시간표는 보존됩니다.
+
+## 메트로놈 동기화·음량
 
 **음원과 연동**을 체크하고 원곡 BPM·박자·첫 박 위치를 정하면 음악 재생과 함께 클릭이 시작됩니다. 탐색 막대, 처음으로, 이전/다음 마디, 시간표 이동, 곡 반복에서도 해당 위치의 박과 강박을 유지합니다. 박 중간으로 이동하면 다음 박 경계부터 클릭하며, 일시정지 후 재개와 재생 위치 보정으로 같은 박이 중복 울리는 것을 방지합니다. 음원은 자동으로 재생하지 않습니다. 클릭만 끄려면 메트로놈의 ■를 누르세요. 상단 **음량 0~100%**로 음원과 별도로 클릭 크기를 조절합니다. 기본값은 35%이며, 곡을 바꾸거나 앱을 다시 실행해도 유지됩니다. **무음**은 선택한 음량을 보존하고 소리만 잠시 끕니다.
 
@@ -30,9 +34,9 @@ GP5 인쇄본처럼 줄바꿈 정보가 없는 PDF도 **실제 보표와 마디�
 
 ## 처음 설치하기
 
-Python을 미리 설치할 필요가 없습니다. 설치 파일이 Python **3.12.14**, 필요한 패키지와 FFmpeg를 사용자 전용 폴더에 준비합니다. 관리자 권한이나 전역 Python 패키지 설치가 필요하지 않습니다. 최초 설치에는 인터넷 연결과 수 GB의 여유 공간이 필요합니다. 모델은 첫 곡 처리 시 추가로 다운로드합니다.
+Python이나 Java를 미리 설치할 필요가 없습니다. 설치 파일이 Python **3.12.14**, 필요한 패키지, FFmpeg, **Audiveris와 영어 OCR 데이터**를 사용자 전용 폴더에 준비합니다. 관리자 권한이나 전역 Python 패키지 설치가 필요하지 않습니다. 최초 설치에는 인터넷 연결과 수 GB의 여유 공간이 필요합니다. 모델은 첫 곡 처리 시 추가로 다운로드합니다.
 
-1. 이 페이지의 초록색 **Code → Download ZIP**을 누릅니다.
+1. [최신 릴리스](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest)의 **Magic-Instrumental-버전.zip**을 받습니다. **Code → Download ZIP**으로 개발 중인 소스를 받을 수도 있습니다.
 2. ZIP을 **완전히 압축 해제**합니다. Windows에서는 ZIP 안에서 바로 실행하지 마세요.
 3. 아래에서 운영체제에 맞는 설치 파일을 더블클릭합니다.
 
@@ -48,6 +52,8 @@ Python을 미리 설치할 필요가 없습니다. 설치 파일이 Python **3.1
 **Windows에서 설치 폴더를 바꾸려면:** 설치 전에 `venv-location.windows.example.txt`를 복사해 `venv-location.windows.txt`로 이름을 바꾸고, 주석 아래 한 줄을 원하는 **프로젝트 밖 절대 경로**로 수정하세요. 예: `D:\PythonEnvs\Magic-Instrumental\.venv`. 따옴표는 넣지 않습니다. 생략하면 설치기가 기본 설정 파일을 만듭니다. 이 개인 설정 파일은 Git에 포함되지 않습니다.
 
 가상환경 위치는 Mac에서 `~/.vocal-separator-and-speed-adj/.venv`, Windows 기본값은 `%LOCALAPPDATA%\Magic-Instrumental\.venv`입니다. Mac의 폴더 이름은 이전 설치와의 호환을 위해 유지합니다. Python 본체와 설치 도구도 사용자 폴더 안에 보관하고, 시스템 PATH·셸 설정·Windows Python 레지스트리는 변경하지 않습니다.
+
+악보 인식 도구는 Mac의 `~/.vocal-separator-and-speed-adj/tools/`, Windows의 `%LOCALAPPDATA%\Magic-Instrumental\tools\` 아래에 별도로 보관합니다. Windows 가상환경 위치를 바꿔도 이 도구 위치는 유지됩니다. 다른 곳에 이미 설치한 Audiveris는 덮어쓰지 않습니다. 평소 시작 파일에서는 다운로드나 인식 검사를 반복하지 않습니다.
 
 NVIDIA 드라이버가 감지되는 Windows에서는 CUDA 13.0 PyTorch를 설치합니다. NVIDIA GPU가 없으면 CPU, Apple Silicon에서는 MPS를 사용합니다. GPU 드라이버는 사용자가 준비해야 하며 별도 CUDA Toolkit은 필요하지 않습니다. CPU로 설치하려면 명령 프롬프트에서 `install.bat -Cpu`, CUDA를 명시하려면 `install.bat -Cuda`를 실행하세요. 선택한 설치 방식은 다음 실행에도 유지됩니다. Intel Mac과 Windows ARM은 이 릴리스의 지원 대상이 아닙니다.
 
@@ -69,7 +75,7 @@ MP3, WAV, FLAC, M4A/AAC, OGG/Opus, AIFF, WMA 등 FFmpeg가 디코딩하는 여�
 - **마디 이동:** 유효한 분석 시간표가 있으면 **이전 / N마디씩 / 건너뛰기**로 실제 연주 순서상의 마디를 이동합니다. N은 1~10,000입니다.
 - **메트로놈:** 상단 원형 표시로 박자를 따라갈 수 있습니다. 독립 재생 또는 **음원과 연동**을 선택하고, 원곡 BPM을 입력하면 `원곡 BPM × 음원 배속`으로 움직입니다. 박자 수·분모·첫 박 위치·클릭 음량·무음을 조절할 수 있습니다. 체크하면 음원 재생을 기다렸다 함께 시작하고, 앞뒤 탐색 후에도 첫 박 기준을 유지합니다.
 
-PDF를 **보기만 할 때는 추가 설치가 필요 없습니다.** PDF 기호를 자동 인식하려면 별도 오픈소스 앱 **Audiveris**와 영어 OCR 데이터 `eng`가 필요합니다. [Audiveris 공식 설치 안내](https://audiveris.github.io/audiveris/_pages/tutorials/install/binaries/)의 운영체제별 설치 파일로 설치하고, 한 번 열어 **Tools → Install languages**에서 영어가 설치되었는지 확인하세요. 기본 설치 파일은 Audiveris를 설치하지 않습니다. 같은 이름의 MusicXML(`.musicxml`, `.mxl`, `.xml`)을 함께 준비하면 OMR 단계를 생략할 수 있습니다. [악보 설치·보정 상세 안내](docs/USER_GUIDE.md#악보-설치와-사전-분석)를 참고하세요.
+PDF 표시와 기호 인식에 필요한 준비는 **기본 설치 파일에서 모두 처리합니다.** Audiveris를 따로 열어 영어를 설치할 필요가 없습니다. 같은 이름의 MusicXML(`.musicxml`, `.mxl`, `.xml`)을 함께 준비하면 OMR 단계를 생략할 수 있습니다. [악보 설치·보정 상세 안내](docs/USER_GUIDE.md#악보-설치와-사전-분석)를 참고하세요.
 
 **악보 자동 인식과 음원 정렬은 추정입니다.** 특히 반복·코다 기호, 복잡한 편곡, 훼손된 스캔, 기타 TAB에서 수정이 필요할 수 있습니다. 연주 순서와 시간표를 확인하세요. 배율이나 패널 크기를 바꾸면 기존 마디 시간을 유지한 채 화면 이동 경로만 다시 분석할 수 있습니다. 메트로놈은 사용자가 입력한 일정 BPM을 사용하며 템포 변화를 자동 추적하지 않습니다.
 
@@ -77,7 +83,7 @@ PDF를 **보기만 할 때는 추가 설치가 필요 없습니다.** PDF 기호
 
 ```text
 Magic-Instrumental/
-├── install.command / install.bat    # Python 및 패키지 설치
+├── install.command / install.bat    # Python·패키지·Audiveris·영어 OCR 설치
 ├── start.command / start.bat        # 앱 실행
 ├── targets/                        # 직접 준비한 음원
 ├── score_targets/                  # 직접 준비한 PDF, 선택적 MusicXML
@@ -106,6 +112,8 @@ Apple Silicon에서 설치·GUI·실제 모델 추론을 확인했습니다. Win
 ## Audiveris 사용 및 라이선스
 
 이 프로젝트는 PDF의 음표·음악 기호를 MusicXML로 변환하는 데 **[Audiveris](https://github.com/Audiveris/audiveris)**를 활용합니다. Audiveris 개발자와 기여자들의 작업에 감사드립니다. 별도로 설치한 Java 프로그램을 명령행으로 호출하며, Python 패키지로 내장하거나 Audiveris 실행 파일·소스를 이 배포본에 포함하지 않습니다. 같은 곡의 MusicXML이 있으면 이 인식 단계를 생략합니다.
+
+**자동 다운로드·설치를 제공하는 것 자체가 금지된 것은 아닙니다.** 설치기는 공식 Audiveris 배포본과 Tesseract 영어 데이터를 사용자 PC에서 직접 내려받고, 원본 프로그램과 포함된 Java·외부 구성요소의 고지를 보존합니다. Audiveris의 AGPL 및 영어 데이터의 [Apache-2.0 라이선스](https://github.com/tesseract-ocr/tessdata/blob/ced78752cc61322fb554c280d13360b35b8684e4/LICENSE) 전문과 출처도 도구 폴더의 `licenses/`, `sources.json`에 저장합니다. 이 저장소의 ZIP에는 설치 코드만 포함합니다. 실행 파일을 직접 재포장·재배포하거나 수정한 서비스를 제공하는 경우의 의무는 별도로 확인해야 합니다.
 
 Audiveris는 **GNU Affero General Public License v3 또는 이후 버전 (`AGPL-3.0-or-later`)**입니다. [라이선스 전문](https://github.com/Audiveris/audiveris/blob/master/LICENSE)과 [원본 소스 헤더의 버전 허용 문구](https://github.com/Audiveris/audiveris/blob/master/app/src/main/java/org/audiveris/omr/Main.java)를 확인했습니다. Audiveris를 수정·재배포하거나 서비스로 제공할 때는 해당 라이선스의 소스 제공·고지 및 적용되는 네트워크 이용 조건을 준수해야 합니다. 본 프로젝트의 GPL 표기는 Audiveris의 라이선스를 변경하지 않습니다.
 
