@@ -39,7 +39,15 @@ Version **1.1.0** detects actual PDF staves and barlines without requiring Music
 
 After updating, rerun the installer and score analysis. Keep “reuse existing timing” selected to preserve reviewed timing while updating camera paths; clear it to rerun symbol analysis. Source PDFs and MusicXML are never rewritten.
 
-The metronome supports independent use or synchronization using the original BPM multiplied by playback speed, with beat circles, a time signature, and a first-beat offset. It uses a constant entered tempo, not automatic tempo tracking.
+In **v1.2.0**, checking audio synchronization arms the metronome to follow playback automatically, using the original BPM multiplied by playback speed, beat circles, meter, and a first-downbeat offset. Slider, measure, timeline and restart seeks, plus track loops, re-establish the beat at the destination. Mid-beat seeks wait for the next boundary. Pause/resume and small clock corrections do not duplicate a click. The metronome button can disable clicks independently. This uses a constant entered tempo, not automatic tempo tracking or sample-accurate audio mixing.
+
+Live pitch preservation uses Qt's QMediaPlayer pitch compensation, implemented with [Signalsmith Stretch](https://doc.qt.io/qt-6/qtmultimedia-attribution-signalsmith-stretch.html) in the default FFmpeg backend. WAV/FLAC exports use FFmpeg's WSOLA-based `atempo`; 0.25× chains two 0.5× filters. These are different processors, so live and exported audio need not be identical. Independent semitone transposition is not implemented.
+
+## Audiveris attribution
+
+We use **[Audiveris](https://github.com/Audiveris/audiveris)** for PDF music recognition and MusicXML export, and acknowledge its developers and contributors. The app invokes the separately installed, unmodified Java program through its CLI; no Audiveris source or binary is bundled here. Supplying matching MusicXML bypasses OMR.
+
+Audiveris is **AGPL-3.0-or-later**, as confirmed by its [license](https://github.com/Audiveris/audiveris/blob/master/LICENSE) and [source header](https://github.com/Audiveris/audiveris/blob/master/app/src/main/java/org/audiveris/omr/Main.java). Its own notice, source-disclosure and applicable network-use terms must be followed when modifying, redistributing or providing it as a service. This project's GPL notice does not relicense Audiveris.
 
 ## Media, privacy and licensing
 

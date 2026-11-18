@@ -191,7 +191,7 @@ class Window(QMainWindow):
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 0)
         self.seek.setAccessibleName("재생 위치")
-        self.seek.sliderReleased.connect(lambda: self.player.setPosition(self.seek.value()))
+        self.seek.sliderReleased.connect(lambda: self.seek_to(self.seek.value()))
         right.addWidget(self.seek)
         self.clock = QLabel("00:00 / 00:00")
         self.clock.setObjectName("muted")
@@ -202,7 +202,7 @@ class Window(QMainWindow):
         self.play_button.setEnabled(False)
         controls.addWidget(self.play_button)
         stop = QPushButton("처음으로")
-        stop.clicked.connect(lambda: self.player.setPosition(0))
+        stop.clicked.connect(lambda: self.seek_to(0))
         controls.addWidget(stop)
         self.loop = QCheckBox("반복")
         self.loop.toggled.connect(lambda on: self.player.setLoops(-1 if on else 1))
@@ -283,7 +283,7 @@ class Window(QMainWindow):
         self.score_panel.attach_player(self.player)
         self.score_panel.setMinimumWidth(300)
         self.score_panel.analysis_requested.connect(self.analyze_score)
-        self.score_panel.seek_requested.connect(self.player.setPosition)
+        self.score_panel.seek_requested.connect(self.seek_to)
         self.score_panel.timeline_changed.connect(self.update_measure_controls)
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
@@ -599,10 +599,19 @@ class Window(QMainWindow):
             self.player.duration() / 1000,
         )
         if target is not None:
-            self.player.setPosition(target[1])
-            # Keep the existing playing/paused state. Position signals also anchor
-            # the score camera and linked metronome to the new original-media time.
-            self.position_changed(self.player.position())
+            self.seek_to(target[1])
+
+    def seek_to(self, milliseconds):
+        if not self.player.isSeekable():
+            return
+        # All navigation paths explicitly resynchronize even when seeking within
+        # the same beat. Preserve transport state and original-media coordinates.
+        self.metronome.begin_seek()
+        try:
+            self.player.setPosition(max(0, min(milliseconds, self.player.duration())))
+        finally:
+            self.metronome.end_seek(self.player.position())
+        self.position_changed(self.player.position())
 
     def export_audio(self):
         if not self.output_path or self.worker:

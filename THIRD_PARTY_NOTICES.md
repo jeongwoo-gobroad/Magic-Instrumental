@@ -22,6 +22,7 @@ Dependencies are installed from their distributors, not copied into this source 
 | [pymss](https://github.com/pymss-project/pymss), [pymss-core](https://github.com/pymss-project/pymss-core) | Model inference | MIT; preserve upstream and vendored-component notices |
 | [PyTorch](https://github.com/pytorch/pytorch/blob/main/LICENSE) | CPU/CUDA/MPS tensor runtime | BSD-style license and bundled third-party terms; NVIDIA components retain their own terms |
 | [Qt for Python / PySide6](https://doc.qt.io/qtforpython-6/licenses.html) | Desktop GUI and playback | LGPLv3/GPLv3 and applicable Qt module/third-party terms; commercial alternative is available upstream |
+| [Signalsmith Stretch](https://doc.qt.io/qt-6/qtmultimedia-attribution-signalsmith-stretch.html) | Qt FFmpeg backend pitch compensation | MIT; Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. Distributed inside Qt, not vendored by this project |
 | [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) | PDF rendering | BSD-3-Clause / Apache-2.0 plus PDFium and bundled third-party licenses |
 | [pypdf](https://github.com/py-pdf/pypdf) | PDF structure | BSD-3-Clause |
 | [music21](https://github.com/cuthbertLab/music21) | MusicXML and notation | BSD-3-Clause; this app does not distribute its example music corpus |
@@ -35,10 +36,16 @@ Dependencies are installed from their distributors, not copied into this source 
 | [defusedxml](https://github.com/tiran/defusedxml) | XML safety | PSF-2.0 |
 | [uv](https://github.com/astral-sh/uv) | Bootstrap only | MIT OR Apache-2.0; downloaded as a checksum-pinned executable |
 | [CPython](https://docs.python.org/3/license.html) / [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Private Python runtime | Python license and distribution dependency notices; uv downloads this runtime separately |
-| [Audiveris](https://github.com/Audiveris/audiveris) | Optional PDF music recognition | AGPL-3.0; separate native application, installed by the user |
+| [Audiveris](https://github.com/Audiveris/audiveris) | Optional PDF music recognition | AGPL-3.0-or-later; separate Java application, installed by the user |
 | [Tesseract OCR data](https://github.com/tesseract-ocr/tessdata) | Optional English OCR | Apache-2.0; installed separately for Audiveris |
 
 A binary repackager must review and satisfy the licenses of the actual dependencies shipped, including source/notice obligations. This source-only release does not grant rights to redistribute third-party model weights or user media.
+
+## Audiveris integration
+
+Audiveris developers and contributors provide the OMR engine and editor used for score recognition. The application invokes the separately installed Java CLI with `-batch -export`, reads its MusicXML output, and adds this project's independent layout/navigation checks. It does not bundle or modify Audiveris source/binaries. MusicXML input can bypass Audiveris entirely.
+
+License checked 2026-11-18: **AGPL-3.0-or-later**. The [upstream license](https://github.com/Audiveris/audiveris/blob/master/LICENSE) contains AGPL v3; the [Main.java header](https://github.com/Audiveris/audiveris/blob/master/app/src/main/java/org/audiveris/omr/Main.java) explicitly permits version 3 or a later version. Follow the upstream copyright/license notices, corresponding-source obligations and applicable modified-network-version provisions when distributing or modifying that software. Preserve its separate license; this repository's GPL-3.0-only notice does not relicense Audiveris.
 
 ## Media rights
 

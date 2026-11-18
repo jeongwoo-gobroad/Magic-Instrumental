@@ -117,10 +117,12 @@ def test_gui_measure_buttons_keep_transport_and_sync_dependents(tmp_path, tone):
         window.player.pause()
         window.player.setPosition(1750)
         window.measure_step.setValue(2)
+        window.metronome.scheduler.handled = 999
         window.previous_measure.click()
         assert window.player.position() == 625
         assert window.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
         assert window.metronome.anchor_position == 0.625
+        assert window.metronome.scheduler.handled is None  # paused explicit seek, ready to resume
         assert window.score_panel.current_index == 1
         window.next_measure.click()
         assert window.player.position() == 1625
@@ -134,6 +136,16 @@ def test_gui_measure_buttons_keep_transport_and_sync_dependents(tmp_path, tone):
         assert window.player.playbackRate() == 0.5
         assert window.player.position() >= 2625
         assert window.score_panel.view.page == 1
+        # Slider and score-table seeks share the same explicit resynchronization.
+        window.metronome.scheduler.handled = 999
+        window.seek.setValue(1750)
+        window.seek.sliderReleased.emit()
+        assert window.player.position() == 1750
+        assert window.metronome.scheduler.handled == 3
+        window.metronome.scheduler.handled = 999
+        window.score_panel.seek_requested.emit(250)
+        assert window.player.position() == 250
+        assert window.metronome.scheduler.handled == 0
         window.player.pause()
         window.set_busy(True)
         assert not window.previous_measure.isEnabled()

@@ -18,6 +18,10 @@ Python으로 만든 macOS / Windows용 데스크톱 앱입니다. 보컬을 제�
 
 200% 확대에서 저장된 이동 경로를 따라가는 모습입니다. **두 캡처는 실제 앱에 직접 만든 합성 연습곡·예제 악보를 넣어 촬영한 것으로, 개인 음원이나 상업용 악보를 포함하지 않습니다.**
 
+## v1.2.0 메트로놈 동기화 개선
+
+**음원과 연동**을 체크하고 원곡 BPM·박자·첫 박 위치를 정하면 음악 재생과 함께 클릭이 시작됩니다. 탐색 막대, 처음으로, 이전/다음 마디, 시간표 이동, 곡 반복에서도 해당 위치의 박과 강박을 유지합니다. 박 중간으로 이동하면 다음 박 경계부터 클릭하며, 일시정지 후 재개와 재생 위치 보정으로 같은 박이 중복 울리는 것을 방지합니다. 음원은 자동으로 재생하지 않습니다. 클릭만 끄려면 메트로놈의 ■를 누르세요.
+
 ## v1.1.0 악보 인식 개선
 
 GP5 인쇄본처럼 줄바꿈 정보가 없는 PDF도 **실제 보표와 마디선**을 읽어 마디·페이지·확대 스크롤을 연결합니다. A4/A3/Letter 등 용지 크기, 가로·세로·혼합 규격, 짧은 마지막 줄, 5선/6선 보표, 약간 기울어진 스캔을 처리합니다. PDF에서 위치를 확인한 반복 점과 D.C./D.S./Segno/To Coda/Coda/Fine 문자도 OMR 결과에 보충합니다.
@@ -63,7 +67,7 @@ MP3, WAV, FLAC, M4A/AAC, OGG/Opus, AIFF, WMA 등 FFmpeg가 디코딩하는 여�
 - **악보:** 음원 `targets/Practice Song.mp3`와 같은 이름으로 `score_targets/Practice Song.pdf`를 넣으면 우측에 표시합니다. 가운데 경계를 드래그해 곡 컨트롤러와 악보의 비율을 바꿀 수 있습니다.
 - **확대·자동 스크롤:** 창 크기와 최대 600% 확대 배율을 먼저 정한 뒤 **악보 사전 분석**을 실행합니다. 도돌이표·엔딩·D.C./D.S.·코다, 음원과 마디의 시간 관계, 확대 화면 이동 경로를 재생 전에 계산합니다.
 - **마디 이동:** 유효한 분석 시간표가 있으면 **이전 / N마디씩 / 건너뛰기**로 실제 연주 순서상의 마디를 이동합니다. N은 1~10,000입니다.
-- **메트로놈:** 상단 원형 표시로 박자를 따라갈 수 있습니다. 독립 재생 또는 **음원과 연동**을 선택하고, 원곡 BPM을 입력하면 `원곡 BPM × 음원 배속`으로 움직입니다. 박자 수·분모·첫 박 위치·무음을 조절할 수 있습니다.
+- **메트로놈:** 상단 원형 표시로 박자를 따라갈 수 있습니다. 독립 재생 또는 **음원과 연동**을 선택하고, 원곡 BPM을 입력하면 `원곡 BPM × 음원 배속`으로 움직입니다. 박자 수·분모·첫 박 위치·무음을 조절할 수 있습니다. 체크하면 음원 재생을 기다렸다 함께 시작하고, 앞뒤 탐색 후에도 첫 박 기준을 유지합니다.
 
 PDF를 **보기만 할 때는 추가 설치가 필요 없습니다.** PDF 기호를 자동 인식하려면 별도 오픈소스 앱 **Audiveris**와 영어 OCR 데이터 `eng`가 필요합니다. [Audiveris 공식 설치 안내](https://audiveris.github.io/audiveris/_pages/tutorials/install/binaries/)의 운영체제별 설치 파일로 설치하고, 한 번 열어 **Tools → Install languages**에서 영어가 설치되었는지 확인하세요. 기본 설치 파일은 Audiveris를 설치하지 않습니다. 같은 이름의 MusicXML(`.musicxml`, `.mxl`, `.xml`)을 함께 준비하면 OMR 단계를 생략할 수 있습니다. [악보 설치·보정 상세 안내](docs/USER_GUIDE.md#악보-설치와-사전-분석)를 참고하세요.
 
@@ -92,6 +96,18 @@ Magic-Instrumental/
 설치 중 다운로드가 실패하면 인터넷 연결을 확인하고 설치 파일을 다시 실행하세요. 메모리가 부족하면 앱의 **메모리 절약** 옵션을 사용하세요. NVIDIA 드라이버와 CUDA가 맞지 않으면 드라이버를 갱신하거나 `install.bat -Cpu`로 전환할 수 있습니다. [상세 문제 해결](docs/USER_GUIDE.md#문제-해결) 및 [개발·테스트 안내](CONTRIBUTING.md)를 제공합니다. 이슈에 음원·악보·개인 절대 경로가 포함된 로그를 그대로 올리지 마세요.
 
 Apple Silicon에서 설치·GUI·실제 모델 추론을 확인했습니다. Windows용 의존성 해석과 자동 검증을 제공하지만 Windows 실기기 오디오 및 NVIDIA 추론은 별도 검증이 필요합니다. 모든 음원에서 보컬이 완전히 없어지거나 모든 악보가 정확하게 인식된다고 보장하지 않습니다.
+
+## 배속과 음정 유지
+
+실시간 재생은 Qt `QMediaPlayer`의 배속·피치 보정 기능을 사용합니다. 기본 FFmpeg 백엔드의 피치 보정은 [Signalsmith Stretch](https://doc.qt.io/qt-6/qtmultimedia-attribution-signalsmith-stretch.html)에 기반합니다. 파일 저장은 FFmpeg [`atempo`](https://ffmpeg.org/ffmpeg-filters.html#atempo)의 WSOLA 방식으로 처리하며, 0.25배속은 0.5배속 필터 두 개를 연결합니다. 예를 들어 440Hz 음을 0.5배속으로 처리하면 길이는 약 두 배가 되고 음높이는 유지됩니다.
+
+재생과 저장은 다른 처리기를 사용하므로 결과가 완전히 같지는 않을 수 있습니다. 현재 기능은 배속 중 음정 유지이며 별도의 반음 단위 조옮김은 없습니다. 매우 느린 배속에서는 처리 흔적이 들릴 수 있습니다.
+
+## Audiveris 사용 및 라이선스
+
+이 프로젝트는 PDF의 음표·음악 기호를 MusicXML로 변환하는 데 **[Audiveris](https://github.com/Audiveris/audiveris)**를 활용합니다. Audiveris 개발자와 기여자들의 작업에 감사드립니다. 별도로 설치한 Java 프로그램을 명령행으로 호출하며, Python 패키지로 내장하거나 Audiveris 실행 파일·소스를 이 배포본에 포함하지 않습니다. 같은 곡의 MusicXML이 있으면 이 인식 단계를 생략합니다.
+
+Audiveris는 **GNU Affero General Public License v3 또는 이후 버전 (`AGPL-3.0-or-later`)**입니다. [라이선스 전문](https://github.com/Audiveris/audiveris/blob/master/LICENSE)과 [원본 소스 헤더의 버전 허용 문구](https://github.com/Audiveris/audiveris/blob/master/app/src/main/java/org/audiveris/omr/Main.java)를 확인했습니다. Audiveris를 수정·재배포하거나 서비스로 제공할 때는 해당 라이선스의 소스 제공·고지 및 적용되는 네트워크 이용 조건을 준수해야 합니다. 본 프로젝트의 GPL 표기는 Audiveris의 라이선스를 변경하지 않습니다.
 
 ## 라이선스와 모델
 

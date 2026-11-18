@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.1.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.2.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -58,7 +58,7 @@ pymss-core 0.1.16 Mel-band `scatter_add_equivalent` creates a large dense one-ho
 
 GUI main thread never loads inference models. QProcess stdout recognizes `@@PRACTICE@@` JSON records using a byte buffer so split UTF-8 sequences are retained. Ordinary output remains diagnostic text; stderr is bounded. Cancellation/close terminates workers and child Java processes (process groups on macOS, taskkill tree on Windows).
 
-Qt FFmpeg QMediaPlayer provides interactive speed and pitch compensation. Exports use FFmpeg atempo; slow rates chain supported factors. Playback positions, score times, seeks and metronome origin are always **original media seconds**. Do not multiply a seek target by playback rate. Camera/metronome interpolated clocks apply rate only to elapsed wall time since a media anchor.
+Qt FFmpeg QMediaPlayer provides interactive speed via `setPlaybackRate` and pitch compensation via `setPitchCompensation`, enabled when supported. Qt 6.12 credits Signalsmith Stretch for the default FFmpeg backend. Exports always preserve pitch with FFmpeg WSOLA-based `atempo`; slow rates chain supported factors. Do not imply identical live/export waveforms or semitone transposition support. Playback positions, score times, seeks and metronome origin are always **original media seconds**. Do not multiply a seek target by playback rate. Camera/metronome interpolated clocks apply rate only to elapsed wall time since a media anchor.
 
 ## Score invariants
 
@@ -83,6 +83,12 @@ Measure seeking uses `ScoreTimeline.playable_measures(duration)` and `measure_ta
 ## Metronome
 
 Synthesized 30 ms clicks via QSoundEffect; separate audio volume/mute. Meter numerator 1–12, denominator 2/4/8/16; quarter-note BPM 20–400. Independent monotonic clock or media anchor + elapsed × rate; 5 ms precise timer detects boundaries rather than accumulating tick counts. Late ticks/seek jumps must not burst queued clicks. Pause/stop silence the linked clock. Fixed entered tempo only; no automatic tempo/meter change tracking or sample-accurate audio synchronization.
+
+Checking `linked` arms the click toggle without starting audio. Users can explicitly stop clicks while remaining linked. `ClickScheduler` tracks the highest handled beat within a transport segment: ordinary position corrections, pause/resume and rate changes retain it, preventing duplicate clicks. Initial/mid-beat starts wait for a boundary (5 ms initial tolerance); late ticks only click within min(35 ms, 35% of the wall-clock beat interval). Never catch up with a burst.
+
+All application seeks must go through `Window.seek_to()`, which calls `begin_seek()` / `end_seek(actual_position)` around QMediaPlayer.setPosition. This resets the click segment even for small seeks within the same beat and preserves playback state. Implicit loops/external large jumps are detected from transport samples; small backwards clock corrections retain the watermark. Pause/resume reanchors without extrapolating paused time. Loading/end/error reset segments; a buffer stall suspends clicking without changing phase. Independent mode ignores audio seeks/stalls. `align_now` uses interpolated original media time while playing, exact position while paused. Track binding resets the scheduler even if the new settings equal the old ones.
+
+Audiveris is a separately installed Java program invoked by CLI, not a bundled Python library. Its source headers permit **AGPL-3.0-or-later**; preserve the README attribution and linked upstream license/source in `THIRD_PARTY_NOTICES.md`.
 
 Per-song BPM/meter/origin live under the audio hash; global window/measure-step settings live in `processed/ui.ini`. These files are never public source. Do not auto-start clicks at app launch.
 
