@@ -3,7 +3,7 @@
 
 Run from the external venv: python tools/capture_screenshots.py
 Uses already-downloaded, licensed-by-their-authors model weights for real separation.
-Only two PNG images are published; generated audio/PDF/XML/caches live in a temporary folder.
+Only PNG screenshots are published; generated audio/PDF/XML/caches live in a temporary folder.
 """
 
 import os
@@ -187,9 +187,17 @@ def main():
             pump(app, 0.5)
             window.grab().save(str(destination / filename))
             window.player.pause()
+        window.seek_to(0)
+        window.count_in.enabled.setChecked(True)
+        window.toggle_play()
+        pump(app, 0.8)
+        if not window.count_in.active or window.count_in.clock is None:
+            raise RuntimeError("Expected active drum count-in for the screenshot")
+        window.grab().save(str(destination / "drum-count-in.png"))
+        window.count_in.cancel()
         window.close()
         pump(app)
-    print("Saved two actual GUI screenshots with synthetic demo media.")
+    print("Saved three actual GUI screenshots with synthetic demo media.")
 
 
 if __name__ == "__main__":

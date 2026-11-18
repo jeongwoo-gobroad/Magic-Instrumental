@@ -24,7 +24,10 @@ PATTERNS = ("practice_player/*.py", "tests/*.py", "docs/*.md", "tools/*.py")
 PLACEHOLDERS = tuple(f"{folder}/.gitkeep" for folder in (
     "targets", "score_targets", "processed", "models",
 ))
-IMAGES = ("docs/images/player-overview.png", "docs/images/score-zoom.png")
+IMAGES = (
+    "docs/images/player-overview.png", "docs/images/score-zoom.png",
+    "docs/images/drum-count-in.png",
+)
 
 
 def public_files(root: Path = ROOT) -> list[Path]:

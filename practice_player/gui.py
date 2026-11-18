@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 from .audio import discover
 from .cli import EVENT_PREFIX
 from .config import MODELS, ROOT, Paths
+from .count_in import CountIn
 from .metronome import MetronomeBar
 from .score_gui import ScorePanel
 
@@ -105,6 +106,7 @@ class Window(QMainWindow):
         self.refresh_tracks()
 
     def build_ui(self):
+        self.metronome = MetronomeBar(self.player, preferences=self.preferences)
         root = QWidget()
         layout = QVBoxLayout(root)
         layout.setContentsMargins(14, 10, 14, 10)
@@ -209,6 +211,11 @@ class Window(QMainWindow):
         controls.addWidget(self.loop)
         controls.addStretch()
         right.addLayout(controls)
+        self.count_in = CountIn(self.metronome, self.preferences)
+        self.count_in.active_changed.connect(self.update_play_button)
+        self.count_in.finished.connect(self.play_after_count)
+        self.count_in.failed.connect(self.show_error)
+        right.addWidget(self.count_in)
         measure_row = QHBoxLayout()
         self.previous_measure = QPushButton("◀ 이전")
         self.previous_measure.setAccessibleName("지정한 마디 수만큼 이전으로 이동")
@@ -296,7 +303,6 @@ class Window(QMainWindow):
         self.main_splitter.splitterMoved.connect(
             lambda *_: self.preferences.setValue("splitter", self.main_splitter.saveState())
         )
-        self.metronome = MetronomeBar(self.player, preferences=self.preferences)
         self.score_panel.bpm_provider = lambda: self.metronome.bpm.value()
         top = QScrollArea()
         top.setWidget(self.metronome)
@@ -322,11 +328,7 @@ class Window(QMainWindow):
         self.player.durationChanged.connect(lambda _: self.update_measure_controls())
         self.player.seekableChanged.connect(lambda _: self.update_measure_controls())
         self.player.positionChanged.connect(self.position_changed)
-        self.player.playbackStateChanged.connect(
-            lambda state: self.play_button.setText(
-                "일시정지" if state == QMediaPlayer.PlaybackState.PlayingState else "재생"
-            )
-        )
+        self.player.playbackStateChanged.connect(self.update_play_button)
         self.player.errorOccurred.connect(
             lambda _, message: self.show_error(f"재생 오류: {message}")
         )
@@ -483,6 +485,7 @@ class Window(QMainWindow):
             self.close()
 
     def load_result(self, result):
+        self.count_in.cancel()
         self.output_path = Path(result["instrumental"])
         self.player.setSource(QUrl.fromLocalFile(str(self.output_path)))
         self.player.setPlaybackRate(self.speed.value() / 100)
@@ -516,6 +519,8 @@ class Window(QMainWindow):
         self.start_job(args)
 
     def set_busy(self, busy):
+        if busy:
+            self.count_in.cancel()
         for widget in (
             self.models,
             self.devices,
@@ -550,10 +555,28 @@ class Window(QMainWindow):
         self.player.setPlaybackRate(value / 100)
 
     def toggle_play(self):
+        if self.count_in.active:
+            self.count_in.cancel()
+            return
+        if self.worker or not self.output_path:
+            return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
         else:
+            if self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+                self.seek_to(0)
+            if not self.count_in.start():
+                self.player.play()
+
+    def play_after_count(self):
+        if not self.worker and not self.close_pending and self.output_path:
             self.player.play()
+
+    def update_play_button(self, *_):
+        self.play_button.setText(
+            "카운트 취소" if self.count_in.active else "일시정지"
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState else "재생"
+        )
 
     def position_changed(self, position):
         if not self.seek.isSliderDown():
@@ -602,6 +625,7 @@ class Window(QMainWindow):
             self.seek_to(target[1])
 
     def seek_to(self, milliseconds):
+        self.count_in.cancel()
         if not self.player.isSeekable():
             return
         # All navigation paths explicitly resynchronize even when seeking within
@@ -658,6 +682,7 @@ class Window(QMainWindow):
         self.logs.appendPlainText(message)
 
     def closeEvent(self, event):
+        self.count_in.cancel()
         if self.worker:
             self.close_pending = True
             self.cancel_job()
@@ -670,6 +695,7 @@ class Window(QMainWindow):
         self.preferences.setValue("window_height", self.height())
         self.preferences.setValue("measure_step", self.measure_step.value())
         self.preferences.sync()
+        self.count_in.shutdown()
         self.metronome.shutdown()
         self.score_panel.view.clear()
         self.score_panel.camera_timer.stop()

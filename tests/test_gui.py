@@ -2,6 +2,7 @@
 import shutil
 import time
 
+from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 
 from practice_player.config import Paths, Settings
@@ -121,6 +122,63 @@ def test_click_volume_is_independent_persistent_and_does_not_restart_beats(tmp_p
         assert reopened.metronome.volume.value() == 80
         assert all(abs(s.volume() - 0.8) < 0.001 for s in reopened.metronome.sounds)
         assert not reopened.metronome.enabled
+    finally:
+        reopened.close()
+        app.processEvents()
+
+
+def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_path):
+    app = QApplication.instance() or QApplication([])
+    paths = Paths(tmp_path)
+    window = Window(paths)
+    try:
+        window.load_result({"instrumental": str(tone), "cached": True})
+        wait_until(app, lambda: window.player.duration() > 0)
+        window.audio_output.setVolume(0)
+        window.metronome.mute.setChecked(True)
+        window.metronome.beats.setValue(1)
+        window.metronome.bpm.setValue(400)
+        count = window.count_in
+        assert not count.enabled.isChecked()
+        count.enabled.setChecked(True)
+        window.toggle_play()
+        assert count.active and window.player.position() == 0
+        assert window.play_button.text() == "카운트 취소"
+        assert window.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState
+        wait_until(app, lambda: window.player.isPlaying())
+        assert not count.active and window.play_button.text() == "일시정지"
+        wait_until(app, lambda: window.player.position() > 20)
+        window.toggle_play()
+        assert window.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        window.toggle_play()
+        assert count.active
+        window.seek_to(1000)
+        assert not count.active and window.player.position() == 1000
+        assert window.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
+        window.toggle_play()
+        window.toggle_play()  # pressing the same button again cancels pending playback
+        assert not count.active and not window.player.isPlaying()
+        count.enabled.setChecked(False)
+        window.toggle_play()
+        wait_until(app, lambda: window.player.isPlaying())
+        window.player.pause()
+        count.enabled.setChecked(True)
+        count.bars.setValue(2)
+        window.toggle_play()
+        window.set_busy(True)
+        assert not count.active
+        window.set_busy(False)
+        window.toggle_play()
+        assert count.active
+    finally:
+        window.close()
+        app.processEvents()
+    assert not window.count_in.active and not window.player.isPlaying()
+    reopened = Window(paths)
+    try:
+        assert reopened.count_in.enabled.isChecked() and reopened.count_in.bars.value() == 2
+        assert not reopened.count_in.active
+        assert reopened.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState
     finally:
         reopened.close()
         app.processEvents()

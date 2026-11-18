@@ -73,6 +73,7 @@ class MetronomeBar(QWidget):
         self.last_sample = self.anchor_position
         self.seeking = False
         self.suspended = False
+        self.count_in_active = False
         self._click_dir = tempfile.TemporaryDirectory(prefix="practice-click-")
         self.sounds = []
         for frequency in (1100, 1700):
@@ -362,8 +363,18 @@ class MetronomeBar(QWidget):
             color = "#ffcf78" if i == 0 else "#8cddc5"
             dot.setStyleSheet(f"font-size: 20px; color: {color if i == beat else '#45546a'};")
 
+    def hold_count_in(self, active):
+        self.count_in_active = active
+        self.silence()
+        self.last_beat = None
+        self.paint_beat(None)
+        if not active:
+            self.reanchor(self.player.position())
+            if self.linked.isChecked():
+                self.scheduler.reset()
+
     def tick(self):
-        if not self.enabled:
+        if not self.enabled or self.count_in_active:
             return
         now = time.monotonic()
         linked = self.linked.isChecked()

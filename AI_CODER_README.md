@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.3.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.4.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -33,6 +33,7 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 | `cli.py` | gui, doctor, separate, export, score-analyze, version, structured worker events |
 | `gui.py` | Qt main window, QMediaPlayer, QProcess workers, split panel, measure navigation |
 | `metronome.py` | synthesized click WAVs, independent/media clocks, per-song preferences |
+| `count_in.py` | optional drum count before manual play/resume, phase-preserving count clock, cancellation and original synthesized sounds |
 | `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
 | `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
 | `omr_runtime.py` | standard-library managed-runtime discovery, signature, cheap launch readiness, dedicated tessdata environment |
@@ -107,6 +108,16 @@ All application seeks must go through `Window.seek_to()`, which calls `begin_see
 Audiveris is a separately installed Java program invoked by CLI, not a bundled Python library. The one-click installer now prepares it automatically. Its source headers permit **AGPL-3.0-or-later**; English tessdata is **Apache-2.0**. Preserve the README attribution, pinned upstream license/source links in `THIRD_PARTY_NOTICES.md`, and original notices/Java legal files in the installation. Automated installation is not itself forbidden, but do not describe separate processes or download-only source releases as a blanket exemption for future binary redistribution, modifications or network services.
 
 Per-song BPM/meter/origin live under the audio hash; global window/measure-step settings live in `processed/ui.ini`. These files are never public source. Do not auto-start clicks at app launch.
+
+## Drum count-in
+
+`Window.toggle_play()` delegates manual play/resume to `CountIn.start()` when enabled; count completion emits `finished` into `Window.play_after_count()`. It never advances or rewrites the source audio to create a lead-in. Native loops and seeks during existing playback remain continuous. End-of-media manual replay first seeks to zero. While active, the same play button is labeled cancel. Default off / one bar; global QSettings `count_in/enabled` and `count_in/bars` (1–4) persist across tracks/restarts, without auto-starting playback.
+
+The original drum WAVs are synthesized once in a private temporary directory: regular closed-hat noise and accented snare/kick. No sampled third-party recording or additional dependency/download. QSoundEffect gain follows the existing metronome volume/mute. The normal metronome is held through `hold_count_in()` while count-in paints its dots; do not alter its enabled/link setting. A separate 5 ms precise timer runs even with the normal metronome off. Wait for media and audible drum effects to be ready before starting the monotonic clock; timeout after 15 seconds, and fail visibly on sound errors. Muted visual-only counts do not require audio readiness. Preserve the last drum's natural tail on successful handoff; cancellation stops it.
+
+`CountClock` always treats entered BPM as original quarter notes/minute, including when normal metronome linking is off. For N = bars × numerator, period = 240/(BPM × denominator × playbackRate). Let target = (originalPosition − originalFirstBeat) × BPM × denominator / 240, snap near-integer rounding noise, and first = ceil(target) − N. Emit exactly N beats from `first` at period intervals, then finish after (target − first) × period. This preserves actual beat numbering and shortens the final interval for fractional-beat entries; never apply rate twice or shift the user's requested media position. Counts before the first downbeat can use negative beat numbers. At handoff, seed the linked scheduler watermark with the last drum beat to avoid duplicate clicks on entries within its 5 ms initial tolerance. Actual output device/QMediaPlayer start latency is not sample-accurate.
+
+Changing count mode/bars, BPM/meter/origin/link/rate, transport position/source/error/stall, processing, or closing cancels pending play. Volume/mute changes preserve the count clock. No stale timer may start playback after cancellation. Large timer stalls cancel visibly rather than burst missed beats or unexpectedly start music. Tests cover meter/rate math, fractional entries/nonzero origin, natural handoff and duplicate suppression, all cancellation paths, audio preparation/errors, mute/gain, native QMediaPlayer deferred start/cancel and settings restoration. Screenshots use synthetic demo media only; `tools/capture_screenshots.py` now creates three images including the active count.
 
 ## Validation and releases
 

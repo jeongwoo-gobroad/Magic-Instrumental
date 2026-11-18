@@ -33,6 +33,10 @@ On Windows, the installer creates `venv-location.windows.txt` from its example. 
 
 ## Practice
 
+**v1.4.0: optional drum count-in.** Enable **드럼 카운트** below the play button and select **1–4 bars**. The count uses the top bar's original quarter-note BPM, meter, first-downbeat offset and current playback rate; then music starts from its existing position. At 120 BPM, 4/4 and one bar, this takes 2 seconds at 1× or 4 seconds at 0.5×. The mode defaults off and is remembered across app restarts.
+
+Count-in works independently of the audio-sync checkbox and shares metronome volume/mute. Normal metronome clicks are held during the drum count; beat circles show progress. Mid-beat entries preserve the track's beat numbering and shorten the final interval to match the requested position. Press the play button again to cancel. Seeking, track/tempo/meter/speed changes, disabling the mode, or starting processing also cancel pending playback. Manual resume counts again; ongoing playback seeks and automatic loops remain continuous. Device-dependent playback latency remains; this is not sample-accurate recording synchronization. [Count-in screenshot](docs/images/drum-count-in.png)
+
 Put your audio in `targets/`. Refresh, select it, prepare the track, then play. Instrumentals are cached by the complete file SHA-256 and processing settings; changing a filename does not require separation again. Common FFmpeg audio formats are supported; DRM-protected downloads are not.
 
 Put a matching PDF in `score_targets/`, for example `Practice Song.mp3` and `Practice Song.pdf`. Resize the right-hand score panel and choose the zoom **before** analyzing. Repeat signs, endings, D.C./D.S./coda navigation, audio alignment, and scrolling paths are computed ahead of playback. Adjustable measure skips follow performance order, including repeat visits.
