@@ -296,7 +296,7 @@ class Window(QMainWindow):
         self.main_splitter.splitterMoved.connect(
             lambda *_: self.preferences.setValue("splitter", self.main_splitter.saveState())
         )
-        self.metronome = MetronomeBar(self.player)
+        self.metronome = MetronomeBar(self.player, preferences=self.preferences)
         self.score_panel.bpm_provider = lambda: self.metronome.bpm.value()
         top = QScrollArea()
         top.setWidget(self.metronome)

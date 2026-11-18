@@ -59,9 +59,10 @@ class ClickScheduler:
 
 
 class MetronomeBar(QWidget):
-    def __init__(self, player, parent=None):
+    def __init__(self, player, parent=None, *, preferences=None):
         super().__init__(parent)
         self.player = player
+        self.preferences = preferences
         self.settings_path = None
         self.enabled = False
         self.last_beat = None
@@ -95,7 +96,6 @@ class MetronomeBar(QWidget):
                 )
             effect = QSoundEffect(self)
             effect.setSource(QUrl.fromLocalFile(str(path)))
-            effect.setVolume(0.35)
             self.sounds.append(effect)
         row = QHBoxLayout(self)
         row.setContentsMargins(10, 4, 10, 4)
@@ -106,6 +106,21 @@ class MetronomeBar(QWidget):
         self.toggle.setCheckable(True)
         self.toggle.toggled.connect(self.set_running)
         row.addWidget(self.toggle)
+        row.addWidget(QLabel("음량"))
+        self.volume = QSpinBox()
+        self.volume.setRange(0, 100)
+        self.volume.setSingleStep(5)
+        self.volume.setSuffix("%")
+        self.volume.setAccessibleName("메트로놈 음량")
+        self.volume.setToolTip("클릭 음량만 조절합니다. 곡을 바꾸거나 앱을 다시 열어도 유지됩니다.")
+        try:
+            volume = int(preferences.value("metronome/volume", 35)) if preferences else 35
+            if not 0 <= volume <= 100:
+                raise ValueError("invalid click volume")
+        except (ValueError, TypeError, OverflowError):
+            volume = 35
+        self.volume.setValue(volume)
+        row.addWidget(self.volume)
         row.addWidget(QLabel("박자"))
         self.beats = QSpinBox()
         self.beats.setRange(1, 12)
@@ -150,7 +165,11 @@ class MetronomeBar(QWidget):
         self.align.clicked.connect(self.align_now)
         row.addWidget(self.align)
         self.mute = QCheckBox("무음")
+        self.mute.setToolTip("선택한 음량은 유지하고 클릭 소리만 잠시 끕니다.")
         row.addWidget(self.mute)
+        self.volume.valueChanged.connect(self.update_volume)
+        self.mute.toggled.connect(self.update_volume)
+        self.update_volume()
         for spin in (self.beats, self.bpm, self.origin):
             spin.valueChanged.connect(self.reset)
         self.unit.currentIndexChanged.connect(self.reset)
@@ -220,6 +239,16 @@ class MetronomeBar(QWidget):
     def silence(self):
         for sound in self.sounds:
             sound.stop()
+
+    def update_volume(self, *_):
+        # Gain changes must never reset the beat phase or touch the music output.
+        level = 0 if self.mute.isChecked() else self.volume.value() / 100
+        for sound in self.sounds:
+            sound.setVolume(level)
+        if level == 0:
+            self.silence()
+        if self.preferences is not None:
+            self.preferences.setValue("metronome/volume", self.volume.value())
 
     def align_now(self):
         self.origin.setValue(self.media_seconds(time.monotonic()))
@@ -360,7 +389,7 @@ class MetronomeBar(QWidget):
             self.paint_beat(None)
             return
         dot = number % self.beats.value()
-        if click and not self.mute.isChecked():
+        if click and not self.mute.isChecked() and self.volume.value() > 0:
             self.sounds[1 if dot == 0 else 0].play()
         if number != self.last_beat:
             self.last_beat = number

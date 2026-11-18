@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.2.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.2.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -82,7 +82,7 @@ Measure seeking uses `ScoreTimeline.playable_measures(duration)` and `measure_ta
 
 ## Metronome
 
-Synthesized 30 ms clicks via QSoundEffect; separate audio volume/mute. Meter numerator 1–12, denominator 2/4/8/16; quarter-note BPM 20–400. Independent monotonic clock or media anchor + elapsed × rate; 5 ms precise timer detects boundaries rather than accumulating tick counts. Late ticks/seek jumps must not burst queued clicks. Pause/stop silence the linked clock. Fixed entered tempo only; no automatic tempo/meter change tracking or sample-accurate audio synchronization.
+Synthesized 30 ms clicks via QSoundEffect; dedicated 0–100% click volume (default 35%) and mute, independent of QAudioOutput music gain. `MetronomeBar` accepts the window QSettings through `preferences=`; persist integer percent under `metronome/volume` in `processed/ui.ini`, globally across tracks, including standalone use. Missing/invalid saved values fall back to 35%. Mute applies zero effective gain while retaining the selected value. Zero gain stops pending clicks and skips new audio dispatch; visual beats continue. Volume/mute changes must never reset the scheduler or alter the music output. Meter numerator 1–12, denominator 2/4/8/16; quarter-note BPM 20–400. Independent monotonic clock or media anchor + elapsed × rate; 5 ms precise timer detects boundaries rather than accumulating tick counts. Late ticks/seek jumps must not burst queued clicks. Pause/stop silence the linked clock. Fixed entered tempo only; no automatic tempo/meter change tracking or sample-accurate audio synchronization.
 
 Checking `linked` arms the click toggle without starting audio. Users can explicitly stop clicks while remaining linked. `ClickScheduler` tracks the highest handled beat within a transport segment: ordinary position corrections, pause/resume and rate changes retain it, preventing duplicate clicks. Initial/mid-beat starts wait for a boundary (5 ms initial tolerance); late ticks only click within min(35 ms, 35% of the wall-clock beat interval). Never catch up with a burst.
 
