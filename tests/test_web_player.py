@@ -50,6 +50,16 @@ def web_url():
     root = Path(__file__).resolve().parents[1]
 
     class Quiet(SimpleHTTPRequestHandler):
+        def do_GET(self):
+            # A CDN can still serve yesterday's unversioned HTML after a deployment.
+            if self.path == "/index.html":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(b"<title>Previous player</title>")
+                return
+            super().do_GET()
+
         def log_message(self, *_):
             pass
 
@@ -164,7 +174,7 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
-def test_pdf_count_loop_and_offline_reload(page, study_files):
+def test_pdf_count_loop_and_offline_reload(page, web_url, study_files):
     open_study(page, study_files["pdf"])
     assert page.locator("#part").inner_text() == "PDF 악보"
     page.locator(".metronome summary").click()
@@ -208,6 +218,8 @@ def test_pdf_count_loop_and_offline_reload(page, study_files):
     page.wait_for_function("navigator.serviceWorker.controller !== null")
     page.context.set_offline(True)
     page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    page.goto(web_url + "index.html")
     page.wait_for_function("typeof MagicPlayer !== 'undefined'")
     open_study(page, study_files["pdf"])
     page.locator("#play").click()

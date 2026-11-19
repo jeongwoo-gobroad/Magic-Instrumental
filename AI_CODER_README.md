@@ -8,6 +8,8 @@ The score panel can fold its preparation controls while keeping the score, follo
 
 ## Product requirements
 
+The service worker fetches the player HTML by revision and verifies its SHA-256 before caching the same response under both entry URLs. Keep the active player available if the new download fails. Browser tests simulate a stale unversioned index and reopen both entries offline.
+
 Python desktop GUI for macOS Apple Silicon and Windows x64. Separate vocals locally, play only the instrumental, preserve pitch while changing speed, and reuse full-content SHA-256 caches. Keep originals under `targets/`, matching PDFs/MusicXML/GP3–5 under `score_targets/`, results/settings under `processed/`, and downloaded weights under `models/`.
 
 The right PDF panel is resizable. Repeat/navigation recognition, audio alignment, and zoom-specific camera paths are computed **before playback**. Support score zoom up to 600%, reviewed timeline corrections, and adjustable N-measure previous/next seeks in unfolded performance order. The slim top metronome supports independent playback or original BPM × audio rate, beat circles, meter, and first-beat origin.

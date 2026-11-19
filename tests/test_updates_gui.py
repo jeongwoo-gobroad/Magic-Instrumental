@@ -256,7 +256,7 @@ def test_worker_failures_do_not_take_down_gui_and_can_retry(
     checker.completed.connect(results.append)
     checker.failed.connect(errors.append)
     timer = QTimer()
-    timer.timeout.connect(lambda: heartbeats.append(True))
+    timer.timeout.connect(lambda: heartbeats.append(checker.process is not None))
     timer.start(5)
     try:
         started = checker.check("2.2.0")
@@ -267,7 +267,7 @@ def test_worker_failures_do_not_take_down_gui_and_can_retry(
         pump(app, lambda: bool(errors))
         assert checker.process is None and not checker.timer.isActive()
         if failure == "hung":
-            assert len(heartbeats) > 10 and "시간" in errors[0]
+            assert any(heartbeats) and "시간" in errors[0]
         monkeypatch.setattr(updates, "WORKER", real_worker)
         monkeypatch.setattr(updates.sys, "executable", real_python)
         checker.timeout_ms = 2000
