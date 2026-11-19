@@ -115,12 +115,12 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     assert page.evaluate("MagicPlayer.state().playing")
     assert page.evaluate("MagicPlayer.state().position") >= before_part
     page.locator("#seek").focus()
+    # Playwright's range fill emits both input and change. A second synthetic change
+    # can cancel the asynchronous resume started by the first commit in WebKit.
     page.locator("#seek").fill("3")
-    page.locator("#seek").dispatch_event("change")
     page.wait_for_timeout(600)
     assert float(page.locator("#seek").input_value()) > 3.2
     page.locator("#speed").fill("50")
-    page.locator("#speed").dispatch_event("change")
     page.wait_for_timeout(400)
     before = page.evaluate("MagicPlayer.state().position")
     page.wait_for_timeout(1000)

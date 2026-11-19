@@ -222,6 +222,8 @@ Updates preserve original folder paths. Before replacing code, copy every affect
 
 The web PDF loop integration check observes a real return to the loop start and at least 0.4 audio-clock seconds held there during the repeat count. Do not substitute a fixed sleep from the Play click: output preparation latency can place that sample just before the loop boundary on a busy runner. Keep the held-position and subsequent pause/offline assertions.
 
+Playwright `fill()` on a range input emits both `input` and `change` (verified in Chromium and WebKit). Do not dispatch a second synthetic `change` after filling seek/speed sliders: that duplicate commit can race the first asynchronous resume and invalidate a playback test. Number inputs still need their intended commit event. Retain actual audio frequency, media-clock rate and Session synchronization assertions.
+
 
 ## v2.3 startup update notice and support footer
 

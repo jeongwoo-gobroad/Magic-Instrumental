@@ -107,7 +107,6 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         leader.locator("#loop").check()
         leader.locator("#loopCount").check()
         leader.locator("#speed").fill("150")
-        leader.locator("#speed").dispatch_event("change")
         leader.locator("#play").click()
         leader.wait_for_function("MagicPlayer.state().playing", timeout=7000)
         leader.wait_for_timeout(6000)
