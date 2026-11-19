@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep the Magic-Instrumental DuckDNS IPv4 address current
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=5min
+AccuracySec=10s
+RandomizedDelaySec=15s
+Unit=magic-duckdns.service
+
+[Install]
+WantedBy=timers.target

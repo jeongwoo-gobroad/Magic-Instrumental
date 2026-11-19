@@ -65,6 +65,8 @@ Forward TCP 80 and 13579 to the server. A domain provider's CAA restrictions can
 
 References: [MDN mixed content](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Mixed_content), [AudioWorklet secure context](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet), [Let's Encrypt challenges](https://letsencrypt.org/docs/challenge-types/), [CAA restrictions](https://letsencrypt.org/docs/caa/), [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
 
+For DuckDNS, the optional [automatic IPv4 updater](DUCKDNS.md) provides a five-minute systemd timer, root-only credential loading, bounded retries and a last-success status file. It runs separately from Session and requires no changes to desktop installations.
+
 ## Timing and practical limits
 
 Synchronize the host's system clock with NTP before service startup. The relay takes a UTC epoch and advances it monotonically during the process lifetime; device wall-clock errors do not become playback offsets. Browser probes estimate clock offset using low-RTT samples. The slowest participant's observed delay determines a 1–5 second reservation lead. Every ready participant must acknowledge receipt. Delay above the supported threshold, missing acknowledgements and foreground/audio loss halt rather than silently starting late.

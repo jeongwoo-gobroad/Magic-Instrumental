@@ -1,0 +1,27 @@
+[Unit]
+Description=Magic-Instrumental DuckDNS IPv4 update
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/magic-duckdns/token
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+EnvironmentFile=/etc/magic-duckdns/config
+LoadCredential=duckdns-token:/etc/magic-duckdns/token
+ExecStart=/usr/bin/python3 /usr/local/lib/magic-duckdns/duckdns_update.py
+StateDirectory=magic-duckdns
+StateDirectoryMode=0700
+UMask=0077
+TimeoutStartSec=120
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
