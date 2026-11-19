@@ -16,7 +16,7 @@ const setStatus = text => { $('status').textContent = text; $('sessionFileStatus
 const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
 function phaseAt(input) {
   const step = 60 / number('bpm', 20, 400, 120) * 4 / Number($('unit').value);
-  const beat = (input - number('origin', 0, 1800, 0)) / step;
+  const beat = (input - number('origin', -30, 1800, 0)) / step;
   return {step, beat, whole: Math.floor(beat + 1e-7), phase: ((beat % 1) + 1) % 1};
 }
 async function audioReady() {
@@ -127,7 +127,7 @@ function beatsBetween(s, from, to) {
   if (!metro || !$('linked').checked) return;
   const start = Math.max(from, s.out), finish = Math.min(to, s.until);
   if (finish <= start) return;
-  const step = phaseAt(s.input).step, origin = number('origin', 0, 1800, 0);
+  const step = phaseAt(s.input).step, origin = number('origin', -30, 1800, 0);
   let n = Math.max(0, Math.ceil((s.input + (start - s.out) * s.rate - origin) / step - 1e-7));
   for (;; n++) {
     const when = s.out + (origin + n * step - s.input) / s.rate;
@@ -179,7 +179,7 @@ function updateMetroState() {
     else if (!$('linked').checked) text = '메트로놈 단독 재생 중';
     else if (!playing) text = '반주 대기 중';
     else if (segment && ctx.currentTime < segment.out) text = segment.countBeats ? '드럼 카운트 후 반주와 시작' : '반주 시작 준비 중';
-    else if (nowPosition() < number('origin', 0, 1800, 0)) text = '설정한 첫 박을 기다리는 중';
+    else if (nowPosition() < number('origin', -30, 1800, 0)) text = '설정한 첫 박을 기다리는 중';
     else text = '반주와 함께 재생 중';
   }
   if ($('metroState').textContent !== text) $('metroState').textContent = text;
@@ -189,7 +189,7 @@ function updateDots() {
   if (ctx && playing && segment && ctx.currentTime < segment.out && ctx.currentTime >= segment.countStart) {
     beat = segment.firstCountBeat + Math.floor((ctx.currentTime - segment.countStart) / segment.beatSeconds);
   } else if (ctx && metro) {
-    if ($('linked').checked && playing && position >= number('origin', 0, 1800, 0)) beat = phaseAt(position).whole;
+    if ($('linked').checked && playing && position >= number('origin', -30, 1800, 0)) beat = phaseAt(position).whole;
     if (!$('linked').checked && ctx.currentTime >= independentOrigin) beat = Math.floor((ctx.currentTime - independentOrigin) / phaseAt(0).step);
   }
   const dots = [...$('dots').children];
@@ -288,7 +288,7 @@ async function openFile(file) {
     $('partSelect').value = next.activePart.track; $('partChoice').hidden = next.parts.length < 2;
     $('seek').max = duration; $('seek').value = 0; $('loop').checked = false; $('key').value = '0';
     const p = next.manifest.practice || {};
-    for (const [id, lo, hi, fallback] of [['bpm',20,400,120],['beats',1,16,4],['origin',0,1800,0]]) $(id).value = Number.isFinite(p[id]) ? clamp(p[id],lo,hi) : fallback;
+    for (const [id, lo, hi, fallback] of [['bpm',20,400,120],['beats',1,16,4],['origin',-30,1800,0]]) $(id).value = Number.isFinite(p[id]) ? clamp(p[id],lo,hi) : fallback;
     $('unit').value = [2,4,8,16].includes(p.unit) ? p.unit : 4;
     for (const id of ['loopStart', 'loopEnd']) $(id).replaceChildren();
     const offset = next.timing.offset;

@@ -10,11 +10,11 @@ WEB = ROOT / "web_player"
 
 
 def build():
-    pins = json.loads((WEB / "vendor/provenance.json").read_text())
+    pins = json.loads((WEB / "vendor/provenance.json").read_text(encoding='utf-8'))
     for name, digest in pins["files"].items():
         if hashlib.sha256((WEB / "vendor" / name).read_bytes()).hexdigest() != digest:
             raise ValueError(f"Vendor checksum mismatch: {name}")
-    vendor = (WEB / "vendor/SignalsmithStretch.js").read_text()
+    vendor = (WEB / "vendor/SignalsmithStretch.js").read_text(encoding='utf-8')
     # 1.3.2 uses currentTime to discard scheduled future segments even when an
     # explicit output is supplied. Retain previous segments and only advance
     # the current segment at actual currentTime. See THIRD_PARTY_NOTICES.md.
@@ -30,16 +30,16 @@ def build():
     vendor = vendor.replace(
         before, "while (this.timeMap.length > 1 && this.timeMap[1].output <= currentTime) {", 1
     )
-    template = (WEB / "template.html").read_text()
+    template = (WEB / "template.html").read_text(encoding='utf-8')
     for key, content in {
-        "STYLE": (WEB / "style.css").read_text(),
+        "STYLE": (WEB / "style.css").read_text(encoding='utf-8'),
         "VENDOR": vendor,
-        "ARCHIVE": (WEB / "archive.js").read_text(),
-        "APP": (WEB / "app.js").read_text(),
-        "ENSEMBLE": (WEB / "ensemble.js").read_text(),
+        "ARCHIVE": (WEB / "archive.js").read_text(encoding='utf-8'),
+        "APP": (WEB / "app.js").read_text(encoding='utf-8'),
+        "ENSEMBLE": (WEB / "ensemble.js").read_text(encoding='utf-8'),
     }.items():
         template = template.replace(f"/*{key}*/", content)
-    (WEB / "index.html").write_text(template)
+    (WEB / "index.html").write_text(template, encoding='utf-8', newline='\n')
     digest = hashlib.sha256(template.encode()).hexdigest()[:16]
     worker = f"""/* SPDX-License-Identifier: GPL-3.0-only */
 const CACHE = 'magic-v2-{digest}';
@@ -55,7 +55,7 @@ self.addEventListener('fetch', event => {{
   event.respondWith(caches.match(event.request).then(saved => saved || fetch(event.request)));
 }});
 """
-    (WEB / "sw.js").write_text(worker)
+    (WEB / "sw.js").write_text(worker, encoding='utf-8', newline='\n')
     return WEB / "index.html"
 
 
