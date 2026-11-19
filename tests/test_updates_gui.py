@@ -53,6 +53,8 @@ def endpoint():
             config["requests"].append((self.path, dict(self.headers)))
             time.sleep(config["delay"])
             self.send_response(config["status"])
+            if config.get("location"):
+                self.send_header("Location", config["location"])
             self.end_headers()
             try:
                 self.wfile.write(config["body"])
@@ -164,7 +166,7 @@ def test_shutdown_aborts_pending_check_without_late_ui_signal(app, endpoint):
     checker.failed.connect(events.append)
     checker.check()
     checker.stop()
-    assert checker.reply is None and not checker.timer.isActive()
+    assert checker.process is None and not checker.timer.isActive()
     assert not checker.check()
     until = time.monotonic() + 0.4
     while time.monotonic() < until:
@@ -227,3 +229,89 @@ def test_native_handoff_uses_file_paths_and_refuses_git_checkout(tmp_path, monke
     (root / ".git").mkdir()
     with pytest.raises(RuntimeError, match="Git"):
         updates.open_updater(root)
+
+
+@pytest.mark.parametrize("failure", ["hung", "killed", "exit", "oversize", "missing_python"])
+def test_worker_failures_do_not_take_down_gui_and_can_retry(
+    app, endpoint, tmp_path, monkeypatch, failure
+):
+    url, _ = endpoint
+    real_worker, real_python = updates.WORKER, updates.sys.executable
+    worker = tmp_path / "worker.py"
+    scripts = {
+        "hung": "import time; time.sleep(30)",
+        "killed": "import time; time.sleep(30)",
+        "exit": "import os; os._exit(7)",
+        "oversize": "print('x' * 20000, flush=True)",
+        "missing_python": "",
+    }
+    worker.write_text(scripts[failure])
+    monkeypatch.setattr(updates, "WORKER", worker)
+    if failure == "missing_python":
+        monkeypatch.setattr(updates.sys, "executable", str(tmp_path / "missing-python"))
+    checker = updates.ReleaseChecker(endpoint=url, timeout_ms=300)
+    results, errors, heartbeats = [], [], []
+    checker.completed.connect(results.append)
+    checker.failed.connect(errors.append)
+    timer = QTimer()
+    timer.timeout.connect(lambda: heartbeats.append(True))
+    timer.start(5)
+    try:
+        assert checker.check("2.2.0")
+        if failure == "killed":
+            pump(app, lambda: checker.process.processId() > 0)
+            checker.process.kill()
+        pump(app, lambda: bool(errors))
+        assert checker.process is None and not checker.timer.isActive()
+        if failure == "hung":
+            assert len(heartbeats) > 10 and "시간" in errors[0]
+        monkeypatch.setattr(updates, "WORKER", real_worker)
+        monkeypatch.setattr(updates.sys, "executable", real_python)
+        checker.timeout_ms = 2000
+        assert checker.check("2.2.0")
+        pump(app, lambda: bool(results))
+        assert len(errors) == 1 and results[0]["available"]
+    finally:
+        timer.stop()
+        checker.stop()
+        checker.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_running_worker_is_killed_on_window_shutdown(app, endpoint):
+    url, config = endpoint
+    config["delay"] = 0.4
+    checker = updates.ReleaseChecker(endpoint=url)
+    events = []
+    checker.completed.connect(events.append)
+    checker.failed.connect(events.append)
+    try:
+        checker.check()
+        pump(app, lambda: bool(config["requests"]))
+        process = checker.process
+        assert process.processId() > 0
+        checker.stop()
+        assert checker.process is None
+        assert process.state() == updates.QProcess.ProcessState.NotRunning
+        assert not events
+    finally:
+        checker.stop()
+        checker.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_release_worker_rejects_redirects_without_following(app, endpoint):
+    # urllib's default redirect following must not replace the official endpoint.
+    url, config = endpoint
+    config.update(status=302, location=url + "/elsewhere")
+    checker = updates.ReleaseChecker(endpoint=url)
+    errors = []
+    checker.failed.connect(errors.append)
+    try:
+        checker.check()
+        pump(app, lambda: bool(errors))
+        assert len(config["requests"]) == 1
+    finally:
+        checker.stop()
+        checker.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

@@ -96,6 +96,12 @@ try {
     exit 0
 } catch {
     Write-Host "Magic-Instrumental failed: $($_.Exception.Message)" -ForegroundColor Red
-    Write-Host 'Check the network connection and venv-location.windows.txt, then run install.bat again.'
+    if ($Mode -eq 'Launch') {
+        Write-Host 'The app could not start. Close it, double-click update.bat, then try start.bat again.'
+        Write-Host 'Keep your targets, score_targets and processed folders. Do not delete your files.'
+        Write-Host 'If this continues, send the error above to the support address in README.md.'
+    } else {
+        Write-Host 'Check the error above, network connection and venv-location.windows.txt, then retry install.bat.'
+    }
     exit 1
 }

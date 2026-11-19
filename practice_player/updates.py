@@ -3,53 +3,25 @@
 
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QObject, QProcess, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
 
 from . import __version__
+from .release_check import API, RELEASES, numeric_version
+from .release_check import MAX_RESPONSE as MAX_RESPONSE
+from .release_check import release_info as parse_release
 
-REPO = "jeongwoo-gobroad/Magic-Instrumental"
-API = f"https://api.github.com/repos/{REPO}/releases/latest"
-RELEASES = f"https://github.com/{REPO}/releases/"
-MAX_RESPONSE = 1024 * 1024
-
-
-def numeric_version(value):
-    if not isinstance(value, str) or not re.fullmatch(r"\d{1,4}\.\d{1,4}\.\d{1,4}", value):
-        raise ValueError("정식 버전 번호가 아닙니다.")
-    return tuple(map(int, value.split(".")))
+WORKER = Path(__file__).with_name("release_check.py")
+MAX_WORKER_OUTPUT = 16 * 1024
+CHECK_FAILED = "새 버전 확인 불가 · 다시 확인할 수 있습니다. 연습은 계속할 수 있습니다."
 
 
-def release_info(data: bytes, current=__version__):
-    release = json.loads(data)
-    tag = release["tag_name"]
-    if (
-        release.get("draft") is not False
-        or release.get("prerelease") is not False
-        or not isinstance(tag, str)
-        or not tag.startswith("v")
-    ):
-        raise ValueError("공개 정식 버전이 아닙니다.")
-    latest = tag[1:]
-    available = numeric_version(latest) > numeric_version(current)
-    # A newly created release may not yet have its updater inputs uploaded.
-    assets = {item["name"]: item for item in release["assets"]}
-    for name in (f"Magic-Instrumental-{latest}.zip", "PUBLIC_FILES.json", "SHA256SUMS.txt"):
-        asset = assets[name]
-        if (
-            asset.get("state") != "uploaded"
-            or asset.get("size", 0) <= 0
-            or asset.get("browser_download_url") != RELEASES + f"download/{tag}/{name}"
-        ):
-            raise ValueError("업데이트 파일이 아직 준비되지 않았습니다.")
-    # Never display release-body HTML or follow a URL supplied by the response.
-    return {"latest": latest, "available": available, "url": RELEASES + f"tag/{tag}"}
+def release_info(data, current=__version__):
+    return parse_release(data, current)
 
 
 class ReleaseChecker(QObject):
@@ -60,89 +32,99 @@ class ReleaseChecker(QObject):
         super().__init__(parent)
         self.endpoint = endpoint
         self.timeout_ms = timeout_ms
-        self.manager = QNetworkAccessManager(self)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self._timeout)
-        self.reply = None
+        self.process = None
         self.buffer = bytearray()
+        self.failure = ""
         self.current = __version__
         self.closed = False
 
     def check(self, current=__version__):
-        if self.closed or self.reply is not None:
+        if self.closed or self.process is not None:
             return False
         self.current = current
         self.buffer.clear()
-        request = QNetworkRequest(QUrl(self.endpoint))
-        request.setRawHeader(b"User-Agent", b"Magic-Instrumental")
-        request.setRawHeader(b"Accept", b"application/vnd.github+json")
-        request.setAttribute(
-            QNetworkRequest.Attribute.RedirectPolicyAttribute,
-            QNetworkRequest.RedirectPolicy.ManualRedirectPolicy,
-        )
-        request.setAttribute(
-            QNetworkRequest.Attribute.CookieLoadControlAttribute, QNetworkRequest.LoadControl.Manual
-        )
-        request.setAttribute(
-            QNetworkRequest.Attribute.CookieSaveControlAttribute, QNetworkRequest.LoadControl.Manual
-        )
-        request.setTransferTimeout(self.timeout_ms)
-        reply = self.manager.get(request)
-        self.reply = reply
-        reply.setReadBufferSize(MAX_RESPONSE + 1)
-        reply.readyRead.connect(lambda: self._read(reply))
-        reply.finished.connect(lambda: self._finish(reply))
+        self.failure = ""
+        process = QProcess(self)
+        self.process = process
+        # No shell, site packages, PYTHONPATH or Qt networking in the child.
+        process.setProgram(sys.executable)
+        process.setArguments([
+            "-I", "-S", str(WORKER), "--current", current, "--endpoint", self.endpoint,
+        ])
+        process.setStandardErrorFile(QProcess.nullDevice())
+        process.readyReadStandardOutput.connect(lambda: self._read(process))
+        process.finished.connect(lambda code, status: self._finish(process, code, status))
+        process.errorOccurred.connect(lambda error: self._error(process, error))
         self.timer.start(self.timeout_ms)
+        process.start()
         return True
 
-    def _read(self, reply):
-        if self.reply is not reply:
+    def _read(self, process):
+        if self.process is not process:
             return
-        self.buffer.extend(bytes(reply.readAll()))
-        if len(self.buffer) > MAX_RESPONSE:
-            self._fail("버전 정보를 확인하지 못했습니다. 다시 확인해 주세요.")
+        data = bytes(process.readAllStandardOutput())
+        if len(self.buffer) + len(data) > MAX_WORKER_OUTPUT:
+            self._kill(CHECK_FAILED)
+        elif not self.failure:
+            self.buffer.extend(data)
 
-    def _finish(self, reply):
-        if self.reply is not reply:
-            return
-        self._read(reply)
-        if self.reply is not reply:
-            return
-        self.reply = None
+    def _release(self, process):
         self.timer.stop()
-        status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
-        error = reply.error()
-        reply.deleteLater()
-        if error != QNetworkReply.NetworkError.NoError or status != 200:
-            self.failed.emit(
-                "새 버전 확인 불가 · 인터넷 연결 후 다시 확인하세요. 연습은 계속할 수 있습니다."
-            )
+        self.process = None
+        process.deleteLater()
+
+    def _finish(self, process, code, status):
+        if self.process is not process:
+            return
+        self._read(process)
+        self._release(process)
+        if self.closed:
+            return
+        if self.failure or code != 0 or status != QProcess.ExitStatus.NormalExit:
+            self.failed.emit(self.failure or CHECK_FAILED)
             return
         try:
-            info = release_info(bytes(self.buffer), self.current)
+            result = json.loads(bytes(self.buffer))
+            latest = result["latest"]
+            available = numeric_version(latest) > numeric_version(self.current)
+            # Even child output cannot supply an arbitrary link or UI markup.
+            info = {"latest": latest, "available": available, "url": RELEASES + f"tag/v{latest}"}
         except (ValueError, KeyError, TypeError, UnicodeError):
-            self.failed.emit("새 버전 정보를 확인하지 못했습니다. 잠시 후 다시 확인해 주세요.")
+            self.failed.emit(CHECK_FAILED)
             return
         self.completed.emit(info)
 
-    def _fail(self, message):
+    def _error(self, process, error):
+        if self.process is process and error == QProcess.ProcessError.FailedToStart:
+            # FailedToStart does not emit finished. CrashExit does; reap it there.
+            self._release(process)
+            if not self.closed:
+                self.failed.emit(CHECK_FAILED)
+
+    def _kill(self, message):
         self.timer.stop()
-        reply, self.reply = self.reply, None
-        if reply is not None:
-            reply.abort()
-            reply.deleteLater()
-        if not self.closed:
-            self.failed.emit(message)
+        self.failure = message
+        if self.process is not None:
+            self.process.kill()
+        # Wait for finished before enabling retry: at most one child at a time.
 
     def _timeout(self):
-        self._fail(
+        self._kill(
             "새 버전 확인 시간이 지났습니다. 연습은 계속할 수 있으며 다시 확인할 수 있습니다."
         )
 
     def stop(self):
         self.closed = True
-        self._fail("")
+        self._kill("")
+        process = self.process
+        if process is not None:
+            # Shutdown only; no synchronous wait during normal GUI operation.
+            process.waitForFinished(1000)
+            if self.process is process and process.state() == QProcess.ProcessState.NotRunning:
+                self._release(process)
 
 
 def open_updater(root: Path):

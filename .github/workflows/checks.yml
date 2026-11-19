@@ -20,6 +20,7 @@ jobs:
       QT_MEDIA_BACKEND: ffmpeg
       PYTHONUTF8: '1'
       MAGIC_RENDER_CHECK_DIR: render-checks
+      RUN_UPDATE_HTTPS_TESTS: '1'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install macOS without system Python
