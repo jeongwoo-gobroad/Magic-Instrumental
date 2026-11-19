@@ -165,10 +165,27 @@ def test_pdf_count_loop_and_offline_reload(page, study_files):
     page.locator("#play").click()
     page.wait_for_timeout(450)
     assert page.evaluate("MagicPlayer.state().position") == pytest.approx(2, abs=0.01)
-    page.wait_for_timeout(1500)
-    assert 2.2 < page.evaluate("MagicPlayer.state().position") < 4
-    page.wait_for_timeout(1550)
-    assert page.evaluate("MagicPlayer.state().position") == pytest.approx(2, abs=0.1)
+    page.wait_for_function("MagicPlayer.state().position > 2.2 && "
+                           "MagicPlayer.state().position < 4", timeout=5000)
+    # Observe the actual audio clock across the repeat boundary. Device startup latency
+    # can put a fixed wall-clock sleep just before the end instead of inside the count.
+    page.evaluate("""() => {
+      window.loopProof = {returned: false, held: false, finished: false};
+      let previous = MagicPlayer.state().position, returnedAt = null;
+      const timer = setInterval(() => {
+        const position = MagicPlayer.state().position, time = MagicPlayer.context().currentTime;
+        if (returnedAt === null && previous > 2.2 && Math.abs(position - 2) < .05) {
+          returnedAt = time; loopProof.returned = true;
+        }
+        if (returnedAt !== null && time >= returnedAt + .4) {
+          loopProof.held = Math.abs(position - 2) < .05 && MagicPlayer.state().playing;
+          loopProof.finished = true; clearInterval(timer);
+        }
+        previous = position;
+      }, 20);
+    }""")
+    page.wait_for_function("window.loopProof.finished", timeout=8000)
+    assert page.evaluate("loopProof.returned && loopProof.held")
     page.locator("#play").click()
     before = page.evaluate("MagicPlayer.state().position")
     page.wait_for_timeout(1300)
