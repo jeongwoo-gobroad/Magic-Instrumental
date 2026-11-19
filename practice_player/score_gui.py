@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """PDF display and review UI; playback only reads an already computed schedule."""
 
+import json
 import time
 from collections import OrderedDict
 from copy import deepcopy
@@ -135,6 +136,7 @@ class PdfView(QScrollArea):
 
 
 class ScorePanel(QWidget):
+    gp_prepare_requested = Signal(dict)
     analysis_requested = Signal(dict)
     seek_requested = Signal(int)
     timeline_changed = Signal()
@@ -145,6 +147,8 @@ class ScorePanel(QWidget):
         self.audio = None
         self.source_hash = ""
         self.pdf = None
+        self.gp_source = None
+        self.gp_info = None
         self.timeline = None
         self.timeline_path = None
         self.busy = False
@@ -161,7 +165,7 @@ class ScorePanel(QWidget):
         layout.setContentsMargins(8, 10, 8, 10)
         row = QHBoxLayout()
         row.addWidget(QLabel("악보"))
-        self.choose = QPushButton("PDF 선택")
+        self.choose = QPushButton("PDF / GP 열기")
         self.choose.clicked.connect(self.choose_pdf)
         row.addWidget(self.choose)
         self.refresh = QPushButton("다시 찾기")
@@ -176,6 +180,12 @@ class ScorePanel(QWidget):
         self.name = QLabel("곡을 준비하면 같은 이름의 악보를 찾습니다.")
         self.name.setWordWrap(True)
         layout.addWidget(self.name)
+        self.parts = QComboBox()
+        self.parts.setAccessibleName("GP 악기 파트 선택")
+        self.parts.setToolTip("연습할 파트를 이름으로 선택하세요. 변경 후 사전 분석이 필요합니다.")
+        self.parts.setVisible(False)
+        self.parts.activated.connect(self.change_part)
+        layout.addWidget(self.parts)
         row = QHBoxLayout()
         self.analyze = QPushButton("악보 사전 분석")
         self.analyze.clicked.connect(self.analysis_options)
@@ -252,28 +262,64 @@ class ScorePanel(QWidget):
             self.open_pdf(pdf)
         else:
             self.pdf = self.timeline = self.timeline_path = None
+            self.gp_source = self.gp_info = None
+            self.parts.setVisible(False)
             self.view.clear()
-            self.name.setText("같은 이름의 PDF가 없습니다. PDF 선택으로 연결할 수 있습니다.")
-            self.status.setText("score_targets에 PDF를 넣고 ‘다시 찾기’를 누르세요.")
+            self.name.setText("PDF / GP 열기로 이 곡에 사용할 악보를 선택하세요.")
+            self.status.setText("같은 이름의 PDF·GP3/4/5를 score_targets에 넣어도 됩니다.")
             self.measure.setText("—")
             self.set_busy(False)
             self.timeline_changed.emit()
 
     def choose_pdf(self):
         filename, _ = QFileDialog.getOpenFileName(
-            self, "곡에 연결할 PDF", str(self.paths.score_targets), "PDF (*.pdf)"
+            self,
+            "곡에 연결할 악보",
+            str(self.paths.score_targets),
+            "악보 (*.pdf *.gp3 *.gp4 *.gp5);;PDF (*.pdf);;Guitar Pro (*.gp3 *.gp4 *.gp5)",
         )
         if filename:
             self.open_pdf(Path(filename))
 
-    def open_pdf(self, pdf):
+    def open_pdf(self, pdf, prepared=None):
+        if pdf.suffix.lower() in {".gp3", ".gp4", ".gp5"}:
+            track = 1
+            try:
+                link = json.loads(
+                    (self.paths.processed / self.source_hash / "score-link.json").read_text()
+                )
+                if (self.paths.root / link["pdf"]).resolve() == pdf.resolve():
+                    track = int(link.get("track", 1))
+            except (OSError, ValueError, KeyError, TypeError):
+                pass
+            self.gp_prepare_requested.emit({"gp": str(pdf), "gp-track": track})
+            return
         try:
             self.view.load(pdf)
             self.pdf = pdf
             self.timeline = self.timeline_path = self.current_index = None
-            associate_score(pdf, self.paths, self.source_hash)
-            self.name.setText(pdf.name)
-            self.name.setToolTip(str(pdf))
+            self.gp_source = Path(prepared["source"]) if prepared else None
+            self.gp_info = prepared
+            self.parts.blockSignals(True)
+            self.parts.clear()
+            if prepared:
+                for part in prepared["tracks"]:
+                    self.parts.addItem(
+                        f"{part['name']}" + (" · 타악기" if part["percussion"] else ""),
+                        part["number"],
+                    )
+                self.parts.setCurrentIndex(self.parts.findData(prepared["metadata"]["track"]))
+            self.parts.blockSignals(False)
+            self.parts.setVisible(bool(prepared))
+            source = self.gp_source or pdf
+            associate_score(
+                source,
+                self.paths,
+                self.source_hash,
+                prepared["metadata"]["track"] if prepared else 1,
+            )
+            self.name.setText(source.name)
+            self.name.setToolTip(str(source))
             self.page.blockSignals(True)
             self.page.setRange(1, len(self.view.document))
             self.page.setSuffix(f" / {len(self.view.document)}")
@@ -290,6 +336,16 @@ class ScorePanel(QWidget):
             self.status.setText(f"악보 읽기 실패: {error}")
         self.set_busy(self.busy)
         self.timeline_changed.emit()
+
+    def change_part(self, _index):
+        if self.gp_source and not self.busy:
+            self.gp_prepare_requested.emit(
+                {"gp": str(self.gp_source), "gp-track": self.parts.currentData()}
+            )
+
+    def accept_gp(self, info):
+        self.open_pdf(Path(info["pdf"]), prepared=info)
+        self.status.setText("파트 준비 완료 · 악보 사전 분석으로 반주와 연결하세요.")
 
     def load_timeline(self, path):
         plan = ScoreTimeline.load(Path(path))
@@ -317,6 +373,7 @@ class ScorePanel(QWidget):
         method = {
             "pdf-staves-barlines": "PDF 마디선 인식",
             "musicxml-assisted": "MusicXML 보조 배치",
+            "guitar-pro-native": "GP 원본 마디 직접 연결",
         }.get(geometry.get("method"), "")
         self.status.setText(
             f"{len(plan.cues)}개 연주 마디 · {state}"
@@ -342,6 +399,7 @@ class ScorePanel(QWidget):
         self.refresh.setEnabled(not busy and self.audio is not None)
         self.analyze.setEnabled(not busy and self.pdf is not None)
         self.review.setEnabled(not busy and self.timeline is not None)
+        self.parts.setEnabled(not busy)
 
     def change_zoom(self):
         self.view.zoom = self.zoom.currentData()
@@ -441,6 +499,9 @@ class ScorePanel(QWidget):
         mode = QComboBox()
         mode.addItem("음표와 음원을 자동 정렬 (추정)", "audio")
         mode.addItem("일정 BPM으로 마디 시간 계산", "tempo")
+        if self.gp_info and self.gp_info["metadata"]["percussion"]:
+            mode.setCurrentIndex(1)
+            mode.setEnabled(False)
         form.addRow("정렬", mode)
         bpm = QDoubleSpinBox()
         bpm.setRange(20, 400)
@@ -483,6 +544,19 @@ class ScorePanel(QWidget):
 
         reuse.toggled.connect(reuse_changed)
         reuse_changed(reuse.isChecked())
+        if self.gp_source:
+            xml.setVisible(False)
+            browse.setVisible(False)
+            gp_track.setVisible(False)
+            form.labelForField(gp_track).setVisible(False)
+
+            def keep_drum_mode(_checked):
+                if self.gp_info["metadata"]["percussion"]:
+                    mode.setCurrentIndex(1)
+                    mode.setEnabled(False)
+
+            reuse.toggled.connect(keep_drum_mode)
+            keep_drum_mode(reuse.isChecked())
         hint = QLabel(
             "PDF 인식 도구와 영어 데이터는 설치 파일에서 자동 준비합니다.\n"
             "PDF의 규격·보표·마디선을 분석하므로 "
@@ -516,6 +590,10 @@ class ScorePanel(QWidget):
             }
             if reuse.isChecked():
                 options["base-timeline"] = str(self.timeline_path)
+            if self.gp_source:
+                options["gp"] = str(self.gp_source)
+                options["gp-track"] = self.parts.currentData()
+                options["musicxml"] = ""
             self.analysis_requested.emit(options)
 
     def edit_timeline(self):

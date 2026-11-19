@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -82,6 +83,10 @@ class Window(QMainWindow):
         self.paths.create()
         self.worker = None
         self.output_path = None
+        self.base_instrumental = None
+        self.pitch_semitones = 0
+        self._pitch_position = 0
+        self._pitch_pending = None
         self.raw_buffer = b""
         self.job_result = None
         self.job_error = ""
@@ -125,7 +130,15 @@ class Window(QMainWindow):
         layout.setSpacing(8)
         title = QLabel("Magic-Instrumental")
         title.setObjectName("title")
-        layout.addWidget(title)
+        heading = QHBoxLayout()
+        heading.addWidget(title, 1)
+        self.theme = QComboBox()
+        self.theme.addItem("밝은 화면", "light")
+        self.theme.addItem("어두운 화면", "dark")
+        self.theme.setCurrentIndex(self.theme.findData(self.preferences.value("theme", "dark")))
+        self.theme.currentIndexChanged.connect(self.apply_theme)
+        heading.addWidget(self.theme)
+        layout.addLayout(heading)
         subtitle = QLabel("보컬은 덜어내고, 나의 속도로 연습하세요.")
         subtitle.setObjectName("subtitle")
         layout.addWidget(subtitle)
@@ -137,7 +150,8 @@ class Window(QMainWindow):
         left.addWidget(QLabel("음원 목록  ·  targets"))
         self.tracks = QListWidget()
         self.tracks.setAccessibleName("targets 음원 목록")
-        self.tracks.setMaximumHeight(90)
+        self.tracks.setMinimumHeight(190)
+        self.tracks.setMaximumHeight(420)
         self.tracks.itemDoubleClicked.connect(lambda _: self.prepare())
         left.addWidget(self.tracks, 1)
         self.track_count = QLabel()
@@ -158,11 +172,23 @@ class Window(QMainWindow):
         right = QVBoxLayout(panel)
         right.setContentsMargins(6, 0, 0, 0)
         right.setSpacing(7)
-        right.addWidget(QLabel("분리 모델"))
+        self.advanced_button = QPushButton("▸ 반주 만들기 설정")
+        self.advanced_button.setCheckable(True)
+        right.addWidget(self.advanced_button)
+        advanced = QWidget()
+        advanced_layout = QVBoxLayout(advanced)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.addWidget(QLabel("분리 모델"))
+        advanced.setVisible(False)
+        self.advanced_button.toggled.connect(advanced.setVisible)
+        self.advanced_button.toggled.connect(
+            lambda on: self.advanced_button.setText(("▾" if on else "▸") + " 반주 만들기 설정")
+        )
+        right.addWidget(advanced)
         self.models = QComboBox()
         for key, model in MODELS.items():
             self.models.addItem(model.label, key)
-        right.addWidget(self.models)
+        advanced_layout.addWidget(self.models)
         options = QHBoxLayout()
         self.devices = QComboBox()
         for label, value in [
@@ -178,9 +204,9 @@ class Window(QMainWindow):
             "8초 청크로 처리합니다. 기본 설정보다 품질이 달라질 수 있습니다."
         )
         options.addWidget(self.low_memory)
-        right.addLayout(options)
+        advanced_layout.addLayout(options)
         actions = QHBoxLayout()
-        self.prepare_button = QPushButton("선택 곡 준비 · 분리 / 캐시 불러오기")
+        self.prepare_button = QPushButton("선택한 곡의 반주 준비")
         self.prepare_button.setObjectName("primary")
         self.prepare_button.clicked.connect(self.prepare)
         actions.addWidget(self.prepare_button, 1)
@@ -189,7 +215,9 @@ class Window(QMainWindow):
         self.cancel_button.clicked.connect(self.cancel_job)
         actions.addWidget(self.cancel_button)
         right.addLayout(actions)
-        self.status = QLabel("왼쪽에서 곡을 선택하세요. 최초 분리 시 모델을 다운로드합니다.")
+        self.status = QLabel(
+            "위 목록에서 곡을 선택하고 ‘반주 준비’를 누르세요. 처음에는 다운로드가 필요합니다."
+        )
         self.status.setWordWrap(True)
         self.status.setMinimumHeight(42)
         self.status.setObjectName("muted")
@@ -201,6 +229,7 @@ class Window(QMainWindow):
         self.current_track = QLabel("재생할 인스트루먼탈을 준비하세요")
         self.current_track.setObjectName("track")
         self.current_track.setWordWrap(True)
+        right.addWidget(self.separator())
         right.addWidget(self.current_track)
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 0)
@@ -256,7 +285,9 @@ class Window(QMainWindow):
         self.region.current_requested.connect(
             lambda start: self.region.select_current(start, self.player.position())
         )
+        right.addWidget(self.separator())
         right.addWidget(self.region)
+        right.addWidget(self.separator())
         speed_row = QHBoxLayout()
         speed_row.addWidget(QLabel("재생 속도"))
         self.speed_label = QLabel("1.00×")
@@ -277,6 +308,20 @@ class Window(QMainWindow):
         self.pitch.setChecked(True)
         self.pitch.toggled.connect(self.player.setPitchCompensation)
         right.addWidget(self.pitch)
+        key_row = QHBoxLayout()
+        key_row.addWidget(QLabel("반주 키"))
+        self.key = QSpinBox()
+        self.key.setRange(-12, 12)
+        self.key.setSuffix(" 반음")
+        self.key.setToolTip("반주의 높낮이를 바꿉니다. 악보에 적힌 음표는 그대로입니다.")
+        key_row.addWidget(self.key)
+        self.key_apply = QPushButton("키 적용")
+        self.key_apply.clicked.connect(self.change_key)
+        key_row.addWidget(self.key_apply)
+        self.key_reset = QPushButton("원곡 키")
+        self.key_reset.clicked.connect(self.reset_key)
+        key_row.addWidget(self.key_reset)
+        right.addLayout(key_row)
         volume_row = QHBoxLayout()
         volume_row.addWidget(QLabel("볼륨"))
         volume = QSlider(Qt.Orientation.Horizontal)
@@ -290,16 +335,29 @@ class Window(QMainWindow):
         self.export_button.setToolTip("음정을 유지한 속도로 새 파일을 저장합니다.")
         self.export_button.setEnabled(False)
         self.export_button.clicked.connect(self.export_audio)
+        right.addWidget(self.separator())
         right.addWidget(self.export_button)
+        self.magic_button = QPushButton("태블릿으로 가져가기 · .magic 저장")
+        self.magic_button.setToolTip(
+            "현재 반주 키, 선택한 악보 파트와 분석 결과를 한 파일로 저장합니다."
+        )
+        self.magic_button.clicked.connect(self.export_magic)
+        self.magic_button.setEnabled(False)
+        right.addWidget(self.magic_button)
         right.addStretch()
         splitter.addWidget(panel)
-        splitter.setSizes([170, 600])
+        splitter.setSizes([290, 680])
         self.logs = QPlainTextEdit()
         self.logs.setReadOnly(True)
         self.logs.setMaximumBlockCount(300)
         self.logs.setMaximumHeight(75)
         self.logs.setPlaceholderText("처리 로그")
+        logs_toggle = QPushButton("처리 내역 보기")
+        logs_toggle.setCheckable(True)
+        logs_toggle.toggled.connect(self.logs.setVisible)
+        layout.addWidget(logs_toggle)
         layout.addWidget(self.logs)
+        self.logs.setVisible(False)
         controller = QScrollArea()
         controller.setWidgetResizable(True)
         controller.setWidget(root)
@@ -308,9 +366,11 @@ class Window(QMainWindow):
         self.score_panel.attach_player(self.player)
         self.score_panel.setMinimumWidth(300)
         self.score_panel.analysis_requested.connect(self.analyze_score)
+        self.score_panel.gp_prepare_requested.connect(self.prepare_gp)
         self.score_panel.seek_requested.connect(self.seek_to)
         self.score_panel.timeline_changed.connect(self.update_measure_controls)
         self.score_panel.timeline_changed.connect(self.refresh_region)
+        self.score_panel.timeline_changed.connect(self.update_export_controls)
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
         self.main_splitter.addWidget(controller)
@@ -341,8 +401,10 @@ class Window(QMainWindow):
         outer.addWidget(self.main_splitter, 1)
         self.setCentralWidget(container)
         self.update_measure_controls()
+        self.apply_theme()
 
     def connect_player(self):
+        self.player.mediaStatusChanged.connect(self.restore_pitch_position)
         self.player.durationChanged.connect(lambda value: self.seek.setMaximum(value))
         self.player.durationChanged.connect(lambda _: self.update_measure_controls())
         self.player.seekableChanged.connect(lambda _: self.update_measure_controls())
@@ -471,7 +533,14 @@ class Window(QMainWindow):
             self.progress.setRange(0, 0 if value is None else 100)
             if value is not None:
                 self.progress.setValue(max(0, min(100, round(value * 100))))
-        elif kind in ("result", "exported", "score_result"):
+        elif kind in (
+            "result",
+            "exported",
+            "score_result",
+            "gp_prepared",
+            "pitch_result",
+            "magic_result",
+        ):
             self.job_result = data
         elif kind == "error":
             self.job_error = data["message"]
@@ -494,6 +563,11 @@ class Window(QMainWindow):
             self.progress.setValue(100)
             if self.job_result["type"] == "result":
                 self.load_result(self.job_result)
+            elif self.job_result["type"] == "gp_prepared":
+                self.score_panel.accept_gp(self.job_result)
+                self.status.setText("GP 파트가 준비되었습니다. 악보 사전 분석을 눌러 주세요.")
+            elif self.job_result["type"] == "pitch_result":
+                self.load_pitch(self.job_result)
             elif self.job_result["type"] == "score_result":
                 try:
                     self.score_panel.load_timeline(self.job_result["path"])
@@ -523,6 +597,10 @@ class Window(QMainWindow):
             self.paths.processed / source_hash / "practice_loop.json" if source_hash else None
         )
         self.output_path = Path(result["instrumental"])
+        self._pitch_pending = None
+        self.base_instrumental = self.output_path
+        self.pitch_semitones = 0
+        self.key.setValue(0)
         self.player.setSource(QUrl.fromLocalFile(str(self.output_path)))
         self.player.setPlaybackRate(self.speed.value() / 100)
         self.current_track.setText(self.source_name)
@@ -569,9 +647,137 @@ class Window(QMainWindow):
         self.cancel_button.setEnabled(busy)
         self.export_button.setEnabled(not busy and self.output_path is not None)
         self.score_panel.set_busy(busy)
+        self.key_apply.setEnabled(not busy and self.base_instrumental is not None)
+        self.key.setEnabled(not busy)
+        self.key_reset.setEnabled(not busy and self.base_instrumental is not None)
+        self.update_export_controls()
         self.play_button.setEnabled(not busy and self.output_path is not None)
         self.update_measure_controls(busy)
         self.refresh_region(busy=busy)
+
+    def separator(self):
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setObjectName("separator")
+        return line
+
+    def apply_theme(self, *_):
+        from .theme import stylesheet
+
+        mode = self.theme.currentData()
+        self.setStyleSheet(stylesheet(STYLE, mode))
+        self.preferences.setValue("theme", mode)
+
+    def prepare_gp(self, options):
+        if self.worker:
+            return
+        self.player.pause()
+        args = ["gp-prepare", "--root", str(self.paths.root), "--events"]
+        for key, value in options.items():
+            args.extend([f"--{key}", str(value)])
+        self.start_job(args)
+
+    def change_key(self):
+        if self.worker or not self.base_instrumental:
+            return
+        self.count_in.cancel()
+        self.player.pause()
+        self._pitch_position = self.player.position()
+        self.start_job(
+            [
+                "pitch",
+                "--root",
+                str(self.paths.root),
+                "--events",
+                "--input",
+                str(self.base_instrumental),
+                "--semitones",
+                str(self.key.value()),
+            ]
+        )
+
+    def load_pitch(self, info):
+        self._loading_track = True
+        try:
+            self.output_path = Path(info["path"])
+            self.pitch_semitones = info["semitones"]
+            self.key.setValue(self.pitch_semitones)
+            self._pitch_pending = self._pitch_position
+            self.player.setSource(QUrl.fromLocalFile(str(self.output_path)))
+            self.player.setPlaybackRate(self.speed.value() / 100)
+            self.player.setPosition(self._pitch_position)
+            self.metronome.reanchor(self._pitch_position)
+            self.status.setText(
+                f"반주 키 {self.pitch_semitones:+d}반음 · 재생을 눌러 이어서 연습하세요."
+            )
+        finally:
+            self._loading_track = False
+        self.refresh_region()
+
+    def reset_key(self):
+        self.key.setValue(0)
+        self.change_key()
+
+    def restore_pitch_position(self, status):
+        if self._pitch_pending is not None and status in (
+            QMediaPlayer.MediaStatus.LoadedMedia,
+            QMediaPlayer.MediaStatus.BufferedMedia,
+        ):
+            target, self._pitch_pending = self._pitch_pending, None
+            self.player.setPosition(target)
+            self.metronome.reanchor(target)
+
+    def update_export_controls(self):
+        self.magic_button.setEnabled(
+            not self.worker
+            and self.output_path is not None
+            and self.score_panel.timeline is not None
+        )
+
+    def export_magic(self):
+        if self.worker or not self.score_panel.timeline_path or not self.output_path:
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "태블릿용 연습 파일 저장",
+            str(self.paths.root / (self.source_path.stem + ".magic")),
+            "Magic 연습 파일 (*.magic)",
+        )
+        if not filename:
+            return
+        target = Path(filename).with_suffix(".magic")
+        overwrite = False
+        if target.exists():
+            overwrite = (
+                QMessageBox.question(self, "파일 교체", f"{target.name}을 교체할까요?")
+                == QMessageBox.StandardButton.Yes
+            )
+            if not overwrite:
+                return
+        from .score import atomic_json
+
+        self.player.pause()
+        request = self.paths.processed / "magic-export-request.json"
+        atomic_json(
+            request,
+            {
+                "audio": str(self.source_path),
+                "instrumental": str(self.output_path),
+                "pdf": str(self.score_panel.pdf),
+                "timeline": str(self.score_panel.timeline_path),
+                "output": str(target),
+                "overwrite": overwrite,
+                "title": self.source_path.stem,
+                "pitch_semitones": self.pitch_semitones,
+                "practice": {
+                    "bpm": self.metronome.bpm.value(),
+                    "beats": self.metronome.beats.value(),
+                    "unit": self.metronome.unit.currentData(),
+                    "origin": self.metronome.origin.value(),
+                },
+            },
+        )
+        self.start_job(["magic-export", "--request", str(request), "--events"])
 
     def cancel_job(self):
         process = self.worker
@@ -617,8 +823,11 @@ class Window(QMainWindow):
 
     def update_play_button(self, *_):
         self.play_button.setText(
-            "카운트 취소" if self.count_in.active else "일시정지"
-            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState else "재생"
+            "카운트 취소"
+            if self.count_in.active
+            else "일시정지"
+            if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            else "재생"
         )
 
     def position_changed(self, position):
@@ -690,7 +899,8 @@ class Window(QMainWindow):
             return
         busy = self.worker is not None if busy is None else busy
         self.region.set_context(
-            self.score_panel.timeline, self.player.duration() / 1000,
+            self.score_panel.timeline,
+            self.player.duration() / 1000,
             bool(not busy and self.output_path and self.player.isSeekable()),
         )
 
@@ -739,20 +949,32 @@ class Window(QMainWindow):
             if self._region_bounds and self._region_playing:
                 generation = self._region_generation
                 QTimer.singleShot(0, lambda: self.region_eof(generation))
-        elif status in {QMediaPlayer.MediaStatus.NoMedia, QMediaPlayer.MediaStatus.InvalidMedia,
-                        QMediaPlayer.MediaStatus.LoadingMedia}:
+        elif status in {
+            QMediaPlayer.MediaStatus.NoMedia,
+            QMediaPlayer.MediaStatus.InvalidMedia,
+            QMediaPlayer.MediaStatus.LoadingMedia,
+        }:
             self._region_playing = False
             if not self._region_transition:
                 self.region.enabled.setChecked(False)
 
     def region_eof(self, generation):
-        if (generation == self._region_generation and self._region_playing
-                and self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia):
+        if (
+            generation == self._region_generation
+            and self._region_playing
+            and self.player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
+        ):
             self.restart_region()
 
     def check_region(self):
-        if (not self._region_bounds or self._region_transition or self.count_in.active
-                or self.worker or not self.player.isPlaying() or self.metronome.suspended):
+        if (
+            not self._region_bounds
+            or self._region_transition
+            or self.count_in.active
+            or self.worker
+            or not self.player.isPlaying()
+            or self.metronome.suspended
+        ):
             return
         start, end = self._region_bounds
         position = self.metronome.media_seconds(time.monotonic()) * 1000
@@ -761,8 +983,14 @@ class Window(QMainWindow):
 
     def restart_region(self):
         bounds = self.region.bounds()
-        if (not bounds or self._region_transition or self.count_in.active or self.worker
-                or self._region_closed or not self.player.isSeekable()):
+        if (
+            not bounds
+            or self._region_transition
+            or self.count_in.active
+            or self.worker
+            or self._region_closed
+            or not self.player.isSeekable()
+        ):
             return
         self._region_transition = True
         try:

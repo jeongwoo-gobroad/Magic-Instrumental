@@ -37,7 +37,8 @@ def parser() -> argparse.ArgumentParser:
     export.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
     score = sub.add_parser("score-analyze", help="PDF 기호 인식 및 음원 동기화 사전 분석")
     score.add_argument("--audio", type=Path, required=True)
-    score.add_argument("--pdf", type=Path, required=True)
+    score.add_argument("--pdf", type=Path)
+    score.add_argument("--gp", type=Path, help="PDF 없이 GP 파트로 표시·분석")
     score.add_argument("--musicxml", "--notation", type=Path, help="MusicXML 또는 GP3/4/5")
     score.add_argument("--gp-track", type=int, default=1, help="Guitar Pro 트랙 번호 (1부터)")
     score.add_argument("--mode", choices=["audio", "tempo"], default="audio")
@@ -51,6 +52,18 @@ def parser() -> argparse.ArgumentParser:
     score.add_argument("--base-timeline", type=Path, help="기존 마디 시간표로 스크롤만 재분석")
     score.add_argument("--root", type=Path, default=ROOT)
     score.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
+    gp = sub.add_parser("gp-prepare", help="GP 파트 악보 준비")
+    gp.add_argument("--gp", type=Path, required=True)
+    gp.add_argument("--gp-track", type=int, default=1)
+    pitch = sub.add_parser("pitch", help="반주 키 변경")
+    pitch.add_argument("--input", type=Path, required=True)
+    pitch.add_argument("--semitones", type=int, required=True)
+    for command in (gp, pitch):
+        command.add_argument("--root", type=Path, default=ROOT)
+        command.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
+    magic = sub.add_parser("magic-export", help="태블릿용 .magic 저장")
+    magic.add_argument("--request", type=Path, required=True)
+    magic.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
     return result
 
 
@@ -117,6 +130,24 @@ def main(argv=None) -> int:
                 raise KeyboardInterrupt
 
             signal.signal(signal.SIGTERM, cancelled)
+        if args.command == "magic-export":
+            from .magic_bundle import export_magic
+
+            path = export_magic(json.loads(args.request.read_text(encoding="utf-8")), progress)
+            emit("magic_result", path=str(path))
+            return 0
+        if args.command == "gp-prepare":
+            from .gp_render import prepare_gp
+
+            info = prepare_gp(args.gp, Paths(args.root.resolve()), args.gp_track, progress)
+            emit("gp_prepared", **{k: v for k, v in info.items() if k not in {"bars", "files"}})
+            return 0
+        if args.command == "pitch":
+            from .transpose import prepare_pitch
+
+            path = prepare_pitch(args.input, Paths(args.root.resolve()), args.semitones, progress)
+            emit("pitch_result", path=str(path), semitones=args.semitones)
+            return 0
         if args.command == "score-analyze":
             from .score_analysis import analyze_score
             from .score_layout import analyze_scroll
@@ -124,6 +155,15 @@ def main(argv=None) -> int:
 
             paths = Paths(args.root.resolve())
             paths.create()
+            gp_display = None
+            if args.gp:
+                from .gp_render import prepare_gp
+
+                prepared = prepare_gp(args.gp, paths, args.gp_track, progress)
+                gp_display = {k: prepared[k] for k in ("pdf", "layout", "source", "signature")}
+                args.pdf, args.musicxml = Path(prepared["pdf"]), args.gp
+            if args.pdf is None:
+                raise ValueError("PDF 또는 GP 악보를 선택하세요.")
             profile = (
                 view_profile(args.zoom, args.view_width, args.view_height) if args.zoom else None
             )
@@ -136,6 +176,7 @@ def main(argv=None) -> int:
                 progress,
                 musicxml=args.musicxml,
                 gp_track=args.gp_track,
+                gp_display=gp_display,
                 mode=args.mode,
                 bpm=args.bpm,
                 lead_in=args.lead_in,

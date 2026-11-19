@@ -297,7 +297,12 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
                     return destination
             except (ValueError, KeyError, TypeError, OSError):
                 pass
-        sizes, bars, layout = analyze_layout(pdf, xml, report)
+        if data.get("gp_display"):
+            from .gp_render import native_layout
+
+            sizes, bars, layout = native_layout(data["gp_display"])
+        else:
+            sizes, bars, layout = analyze_layout(pdf, xml, report)
         if not data.get("reviewed"):
             for cue in data["cues"]:
                 cue["page"] = bars[cue["source_index"]]["page"]

@@ -11,27 +11,74 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 ROOT_FILES = (
-    ".gitattributes", ".gitignore", "AGENTS.md", "AI_CODER_README.md", "CHANGELOG.md",
-    "CONTRIBUTING.md", "LICENSE", "README.md", "README.en.md", "THIRD_PARTY_NOTICES.md",
-    "bootstrap.py", "main.py", "pyproject.toml", "install.command", "install.bat",
-    "start.command", "start.bat", "venv-location.windows.example.txt", "requirements.txt",
-    "requirements-dev.txt", "requirements-cuda.txt", "requirements-macos.lock.txt",
-    "requirements-windows.lock.txt", "installers/runtime.json", "installers/omr.json",
+    ".gitattributes",
+    ".gitignore",
+    "AGENTS.md",
+    "AI_CODER_README.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "LICENSE",
+    "README.md",
+    "README.en.md",
+    "THIRD_PARTY_NOTICES.md",
+    "bootstrap.py",
+    "main.py",
+    "pyproject.toml",
+    "install.command",
+    "install.bat",
+    "start.command",
+    "start.bat",
+    "venv-location.windows.example.txt",
+    "requirements.txt",
+    "requirements-dev.txt",
+    "requirements-cuda.txt",
+    "requirements-macos.lock.txt",
+    "requirements-windows.lock.txt",
+    "installers/runtime.json",
+    "installers/omr.json",
     "installers/macos.sh",
-    "installers/windows.ps1", ".github/workflows/checks.yml",
+    "installers/windows.ps1",
+    ".github/workflows/checks.yml",
 )
 PATTERNS = ("practice_player/*.py", "tests/*.py", "docs/*.md", "tools/*.py")
-PLACEHOLDERS = tuple(f"{folder}/.gitkeep" for folder in (
-    "targets", "score_targets", "processed", "models",
-))
+WEB_FILES = (
+    "web_player/README.md",
+    "web_player/index.html",
+    "web_player/template.html",
+    "web_player/app.js",
+    "web_player/archive.js",
+    "web_player/style.css",
+    "web_player/sw.js",
+    "web_player/manifest.webmanifest",
+    "web_player/vendor/SignalsmithStretch.js",
+    "web_player/vendor/Signalsmith-LICENSE.txt",
+    "web_player/vendor/provenance.json",
+    "practice_player/assets/check.svg",
+)
+PLACEHOLDERS = tuple(
+    f"{folder}/.gitkeep"
+    for folder in (
+        "targets",
+        "score_targets",
+        "processed",
+        "models",
+    )
+)
 IMAGES = (
-    "docs/images/player-overview.png", "docs/images/score-zoom.png",
-    "docs/images/drum-count-in.png", "docs/images/measure-loop.png",
+    "docs/images/player-overview.png",
+    "docs/images/score-zoom.png",
+    "docs/images/drum-count-in.png",
+    "docs/images/measure-loop.png",
+    "docs/images/desktop-light.png",
+    "docs/images/desktop-dark.png",
+    "docs/images/mobile-player.png",
+    "web_player/icon-192.png",
+    "web_player/icon-512.png",
 )
 
 
 def public_files(root: Path = ROOT) -> list[Path]:
-    paths = {root / name for name in (*ROOT_FILES, *PLACEHOLDERS, *IMAGES)}
+    paths = {root / name for name in (*ROOT_FILES, *PLACEHOLDERS, *IMAGES, *WEB_FILES)}
     for pattern in PATTERNS:
         paths.update(root.glob(pattern))
     for path in sorted(paths):
@@ -80,7 +127,8 @@ def build(root: Path = ROOT) -> Path:
             bundle.writestr(info, data)
             manifest.append({"path": relative, "sha256": hashlib.sha256(data).hexdigest()})
     (output / "PUBLIC_FILES.json").write_text(
-        json.dumps({"version": version, "files": manifest}, indent=2) + "\n", encoding="utf-8",
+        json.dumps({"version": version, "files": manifest}, indent=2) + "\n",
+        encoding="utf-8",
     )
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     (output / "SHA256SUMS.txt").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")

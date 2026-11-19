@@ -6,3 +6,7 @@
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 *.json text eol=lf
+
+# Preserve upstream distribution bytes and its generated inline copy.
+web_player/vendor/SignalsmithStretch.js whitespace=-blank-at-eol
+web_player/index.html whitespace=-blank-at-eol

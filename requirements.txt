@@ -22,3 +22,6 @@ pillow==13.0.0
 
 # Direct Guitar Pro 3/4/5 notation import (LGPL-3.0-only).
 PyGuitarPro==0.11
+
+# GP part engraving (LGPL-3.0-only), binary wheels on macOS / Windows.
+verovio==6.4.1

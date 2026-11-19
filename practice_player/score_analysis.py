@@ -547,6 +547,7 @@ def analyze_score(
     *,
     musicxml: Path | None = None,
     gp_track=1,
+    gp_display=None,
     mode="audio",
     bpm=120.0,
     lead_in=0.0,
@@ -616,6 +617,7 @@ def analyze_score(
             "omr": OMR_VERSION,
             "source_sha256": source_hash,
             "source_import": source_info,
+            "gp_display": gp_display["signature"] if gp_display else None,
         }
         key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
         destination = folder / key
@@ -634,7 +636,12 @@ def analyze_score(
 
         layout, pages, document, additions, extra_warnings = {}, None, None, [], []
         try:
-            _, bars, layout = analyze_layout(pdf, musicxml, report)
+            if gp_display:
+                from .gp_render import native_layout
+
+                _, bars, layout = native_layout(gp_display)
+            else:
+                _, bars, layout = analyze_layout(pdf, musicxml, report)
         except ValueError as error:
             if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
                 raise ValueError(
@@ -734,6 +741,7 @@ def analyze_score(
                 "warnings": notation["warnings"],
                 "originals": notation["originals"],
                 "pdf_layout": layout,
+                "gp_display": gp_display,
                 "pdf_symbols_added": additions,
                 "reviewed": False,
                 "offset": 0.0,

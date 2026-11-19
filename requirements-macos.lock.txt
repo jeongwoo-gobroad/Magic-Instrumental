@@ -63,3 +63,6 @@ typing-extensions==4.16.0
 tzdata==2026.6
 urllib3==2.8.0
 webcolors==25.10.0
+
+# GP part engraving (LGPL-3.0-only), binary wheels on macOS / Windows.
+verovio==6.4.1

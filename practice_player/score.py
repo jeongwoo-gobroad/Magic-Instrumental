@@ -46,18 +46,20 @@ def matching_score(audio: Path, paths: Paths, source_hash: str = "") -> Path | N
     matches = [
         p
         for p in paths.score_targets.rglob("*")
-        if p.suffix.lower() == ".pdf" and name_key(p) == name_key(audio)
+        if p.suffix.lower() in {".pdf", ".gp3", ".gp4", ".gp5"} and name_key(p) == name_key(audio)
     ]
     return matches[0].resolve() if len(matches) == 1 else None
 
 
-def associate_score(pdf: Path, paths: Paths, source_hash: str) -> None:
+def associate_score(pdf: Path, paths: Paths, source_hash: str, track=1) -> None:
     pdf = pdf.resolve(strict=True)
     try:
         location = str(pdf.relative_to(paths.root.resolve()))
     except ValueError:
         location = str(pdf)
-    atomic_json(paths.processed / source_hash / "score-link.json", {"pdf": location})
+    atomic_json(
+        paths.processed / source_hash / "score-link.json", {"pdf": location, "track": track}
+    )
 
 
 def matching_musicxml(pdf: Path) -> Path | None:
@@ -141,8 +143,12 @@ class ScoreTimeline:
         if not math.isfinite(duration) or duration <= 0:
             raise ValueError("음원 길이가 올바르지 않습니다.")
         limits = self.playable_measures(duration)
-        if (type(first) is not int or type(last) is not int or limits is None
-                or not limits[0] <= first <= last <= limits[1]):
+        if (
+            type(first) is not int
+            or type(last) is not int
+            or limits is None
+            or not limits[0] <= first <= last <= limits[1]
+        ):
             raise ValueError("시작·끝 마디를 음원 범위 안에서 순서대로 선택하세요.")
         offset = float(self.data.get("offset", 0))
         end = self.starts[last + 1] if last + 1 < len(self.starts) else self.end

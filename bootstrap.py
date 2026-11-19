@@ -92,10 +92,14 @@ def main() -> int:
     profile_file = target / ".magic-instrumental-profile"
     previous_profile = profile_file.read_text().strip() if profile_file.exists() else ""
     use_cuda = sys.platform == "win32" and (
-        args.cuda or (not args.cpu and (
-            previous_profile == "cuda"
-            or (not previous_profile and bool(shutil.which("nvidia-smi")))
-        ))
+        args.cuda
+        or (
+            not args.cpu
+            and (
+                previous_profile == "cuda"
+                or (not previous_profile and bool(shutil.which("nvidia-smi")))
+            )
+        )
     )
     profile = "cuda" if use_cuda else "default"
     signature = hashlib.sha256(
@@ -167,6 +171,16 @@ def main() -> int:
             ffmpeg_alias.symlink_to(ffmpeg_path)
     if not args.launch_only:
         subprocess.run([str(python), "-m", "practice_player.omr_install"], cwd=ROOT, check=True)
+    if not args.launch_only:
+        subprocess.run(
+            [
+                str(python),
+                "-c",
+                "from practice_player.gp_render import verify_runtime; verify_runtime()",
+            ],
+            check=True,
+            cwd=ROOT,
+        )
     if args.setup_only:
         print("설치 완료. 시작 스크립트로 GUI를 실행하세요.")
         return 0

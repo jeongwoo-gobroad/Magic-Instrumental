@@ -126,8 +126,9 @@ def test_setup_runs_native_installer_even_if_python_requirements_unchanged(monke
     commands = []
     monkeypatch.setattr(bootstrap.subprocess, "run", lambda command, **kw: commands.append(command))
     assert bootstrap.main() == 0
-    assert len(commands) == 1
+    assert len(commands) == 2
     assert commands[0][-2:] == ["-m", "practice_player.omr_install"]
+    assert "gp_render import verify_runtime" in commands[1][-1]
 
 
 def test_launch_requires_native_setup_but_never_downloads(monkeypatch, tmp_path):

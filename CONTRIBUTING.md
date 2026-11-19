@@ -74,3 +74,12 @@ Audiveris/영어 데이터/원본 라이선스의 버전·다운로드 SHA-256·
 ## 이슈와 PR
 
 재현 순서, 기대 동작, 실제 동작, OS/CPU/GPU, 앱 버전을 적어 주세요. 개인 이름·이메일·절대 경로·음원 제목·악보 페이지를 지운 최소 로그를 첨부하세요. 유료 음원·악보·모델 가중치를 이슈나 PR에 업로드하지 마세요. PR에는 해결한 문제와 검증 결과를 설명합니다.
+
+
+## Portable player development (v2)
+
+See [`.magic` contract and browser architecture](docs/MAGIC_FORMAT.md). All browser sources are in `web_player/`; regenerate `index.html` and `sw.js` with `python tools/build_web.py`. The checked-in vendor distribution must match `vendor/provenance.json` before the documented scheduling adapter is applied.
+
+Install the development requirements into the existing external venv, then run `python -m playwright install chromium webkit`. On macOS use `RUN_WEB_TESTS=1 python -m pytest -q tests/test_web_player.py`; on Windows set `$env:RUN_WEB_TESTS = '1'` before the same command. These opt-in tests launch actual Chromium/WebKit, read synthetic GP/PDF bundles, measure output frequency and media-time rate, exercise count/loop/offline paths, and reject malformed archives. Browser automation does not replace physical iPad/Android testing.
+
+`tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.

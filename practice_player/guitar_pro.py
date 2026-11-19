@@ -5,7 +5,7 @@ import math
 from fractions import Fraction
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-GP_VERSION = 1
+GP_VERSION = 2
 GP_EXTENSIONS = {".gp3", ".gp4", ".gp5"}
 
 
@@ -23,8 +23,10 @@ def barline(measure, side):
 
 def navigation(measure, header):
     signs = {
-        "Segno": ("segno", "gp-segno", ""), "Coda": ("coda", "gp-coda", ""),
-        "Fine": ("fine", "yes", "Fine"), "Da Coda": ("tocoda", "gp-coda", ""),
+        "Segno": ("segno", "gp-segno", ""),
+        "Coda": ("coda", "gp-coda", ""),
+        "Fine": ("fine", "yes", "Fine"),
+        "Da Coda": ("tocoda", "gp-coda", ""),
         "Da Capo": ("dacapo", "yes", "D.C."),
         "Da Capo al Fine": ("dacapo", "yes", "D.C. al Fine"),
         "Da Capo al Coda": ("dacapo", "yes", "D.C. al Coda"),
@@ -43,7 +45,7 @@ def navigation(measure, header):
         node(direction, "sound", **{key: value})
 
 
-def read_gp(path, track_number=1):
+def load_song(path):
     import guitarpro
 
     if path.stat().st_size > 16 * 1024 * 1024:
@@ -54,11 +56,51 @@ def read_gp(path, track_number=1):
         raise ValueError("GP3/GP4/GP5 파일을 읽지 못했습니다. 파일 형식을 확인하세요.") from error
     if not 1 <= len(song.measureHeaders) <= 2000 or not 1 <= len(song.tracks) <= 64:
         raise ValueError("Guitar Pro는 최대 2,000마디·64트랙까지 지원합니다.")
+    return song
+
+
+def list_tracks(path):
+    song = load_song(path)
+    return [
+        {
+            "number": i + 1,
+            "name": t.name or f"파트 {i + 1}",
+            "percussion": t.isPercussionTrack,
+            "program": t.channel.instrument,
+            "measures": len(t.measures),
+            "bpm": song.tempo,
+        }
+        for i, t in enumerate(song.tracks)
+    ]
+
+
+def note_shape(target, duration):
+    names = {
+        1: "whole",
+        2: "half",
+        4: "quarter",
+        8: "eighth",
+        16: "16th",
+        32: "32nd",
+        64: "64th",
+        128: "128th",
+    }
+    if duration.value not in names:
+        raise ValueError("지원하지 않는 GP 음표 길이입니다.")
+    node(target, "type", names[duration.value])
+    if duration.isDotted:
+        node(target, "dot")
+    if duration.tuplet.enters != duration.tuplet.times:
+        modification = node(target, "time-modification")
+        node(modification, "actual-notes", duration.tuplet.enters)
+        node(modification, "normal-notes", duration.tuplet.times)
+
+
+def read_gp(path, track_number=1):
+    song = load_song(path)
     if not 1 <= track_number <= len(song.tracks):
         raise ValueError(f"GP 트랙 번호를 1~{len(song.tracks)}에서 선택하세요.")
     track = song.tracks[track_number - 1]
-    if track.isPercussionTrack:
-        raise ValueError("GP 음원 정렬에는 음높이가 있는 트랙을 선택하세요.")
     if len(track.measures) != len(song.measureHeaders) or not 1 <= len(track.strings) <= 12:
         raise ValueError("Guitar Pro 마디 또는 현 구성이 올바르지 않습니다.")
     # Retain exact tuplet timing rather than rounding GP ticks to milliseconds.
@@ -71,6 +113,7 @@ def read_gp(path, track_number=1):
     if count > 200000 or scale > 4096:
         raise ValueError("Guitar Pro 음표 수 또는 잇단음표가 너무 복잡합니다.")
     root = Element("score-partwise", version="4.0")
+    node(node(root, "work"), "work-title", song.title or path.stem)
     listed = node(node(root, "part-list"), "score-part", id="P1")
     node(listed, "part-name", track.name or "Guitar")
     part = node(root, "part", id="P1")
@@ -82,7 +125,7 @@ def read_gp(path, track_number=1):
         length = int(header.length * scale)
         if length <= 0 or length > 960 * scale * 64:
             raise ValueError("Guitar Pro 마디 길이가 범위를 벗어났습니다.")
-        measure = node(part, "measure", number=str(index + 1))
+        measure = node(part, "measure", number=str(index + 1), id=f"gp-bar-{index + 1}")
         attrs = node(measure, "attributes")
         node(attrs, "divisions", 960 * scale)
         meter = node(attrs, "time")
@@ -90,7 +133,7 @@ def read_gp(path, track_number=1):
         node(meter, "beat-type", header.timeSignature.denominator.value)
         if index == 0:
             clef = node(attrs, "clef")
-            node(clef, "sign", "G")
+            node(clef, "sign", "percussion" if track.isPercussionTrack else "G")
             node(clef, "line", 2)
             node(node(measure, "direction"), "sound", tempo=str(song.tempo))
         if header.tripletFeel.name != "none":
@@ -105,8 +148,11 @@ def read_gp(path, track_number=1):
         if ending and ending != active_ending:
             node(barline(measure, "left"), "ending", number=ending, type="start")
         active_ending = ending or None
-        voices = [(i, v) for i, v in enumerate(source.voices)
-                  if any(b.status.name != "empty" for b in v.beats)]
+        voices = [
+            (i, v)
+            for i, v in enumerate(source.voices)
+            if any(b.status.name != "empty" for b in v.beats)
+        ]
         if not voices:
             rest = node(measure, "note")
             node(rest, "rest", measure="yes")
@@ -131,6 +177,21 @@ def read_gp(path, track_number=1):
                         node(target, "chord")
                     if note is None:
                         node(target, "rest")
+                    elif track.isPercussionTrack:
+                        pitch = node(target, "unpitched")
+                        step, octave = {
+                            35: ("F", 4),
+                            36: ("F", 4),
+                            38: ("C", 5),
+                            40: ("C", 5),
+                            42: ("G", 5),
+                            44: ("G", 5),
+                            46: ("G", 5),
+                            49: ("A", 5),
+                            51: ("F", 5),
+                        }.get(note.value, ("D", 5))
+                        node(pitch, "display-step", step)
+                        node(pitch, "display-octave", octave)
                     else:
                         midi = note.realValue + track.offset
                         if not 0 <= midi <= 127:
@@ -151,6 +212,11 @@ def read_gp(path, track_number=1):
                         previous_notes[key] = target
                     node(target, "duration", duration)
                     node(target, "voice", voice_index + 1)
+                    note_shape(target, beat.duration)
+                    if note is not None and not track.isPercussionTrack:
+                        technical = node(node(target, "notations"), "technical")
+                        node(technical, "string", note.string)
+                        node(technical, "fret", note.value)
                 cursor = onset + duration
             if cursor < length:
                 rest = node(measure, "note")
@@ -159,7 +225,8 @@ def read_gp(path, track_number=1):
                 node(rest, "voice", voice_index + 1)
         next_mask = (
             song.measureHeaders[index + 1].repeatAlternative
-            if index + 1 < len(track.measures) else 0
+            if index + 1 < len(track.measures)
+            else 0
         )
         if ending and (next_mask != mask or header.repeatClose >= 0):
             node(barline(measure, "right"), "ending", number=ending, type="stop")
@@ -167,10 +234,21 @@ def read_gp(path, track_number=1):
         if header.repeatClose >= 0:
             if not 1 <= header.repeatClose <= 7:
                 raise ValueError("GP 반복 횟수는 총 2~8회까지 지원합니다.")
-            node(barline(measure, "right"), "repeat",
-                 direction="backward", times=str(header.repeatClose + 1))
+            node(
+                barline(measure, "right"),
+                "repeat",
+                direction="backward",
+                times=str(header.repeatClose + 1),
+            )
     warnings.add("GP 음표·박자·반복을 직접 읽었습니다. 벤딩 등 연주 효과와 음원 일치를 확인하세요.")
     return tostring(root, encoding="utf-8", xml_declaration=True), {
-        "method": "guitar-pro", "version": GP_VERSION, "track": track_number,
-        "track_name": track.name, "measures": len(track.measures), "warnings": sorted(warnings),
+        "method": "guitar-pro",
+        "version": GP_VERSION,
+        "track": track_number,
+        "track_name": track.name,
+        "measures": len(track.measures),
+        "warnings": sorted(warnings),
+        "percussion": track.isPercussionTrack,
+        "bpm": song.tempo,
+        "strings": [{"number": s.number, "midi": s.value} for s in track.strings],
     }

@@ -1,0 +1,188 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Portable, stored ZIP: original score, rendered pages, PCM audio and reviewed timing."""
+
+import io
+import json
+import math
+import os
+import tempfile
+import zipfile
+from pathlib import Path
+
+from .audio import inspect_audio, run_ffmpeg
+from .cache import hash_file
+from .score import ScoreTimeline
+
+MAGIC_VERSION = 1
+MAX_AUDIO_BYTES = 512 * 1024 * 1024
+MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
+
+
+def json_bytes(data):
+    return json.dumps(data, ensure_ascii=False, allow_nan=False, separators=(",", ":")).encode()
+
+
+def export_magic(request, report=lambda *_: None):
+    import pypdfium2 as pdfium
+
+    audio, instrumental, pdf, timeline_path = (
+        Path(request[k]).resolve(strict=True) for k in ("audio", "instrumental", "pdf", "timeline")
+    )
+    output = Path(request["output"]).resolve()
+    if output.suffix.lower() != ".magic":
+        raise ValueError("저장할 파일 이름은 .magic으로 끝나야 합니다.")
+    if output.exists() and not request.get("overwrite"):
+        raise FileExistsError("같은 이름의 파일이 있습니다. 다른 이름으로 저장하세요.")
+    plan = ScoreTimeline.load(timeline_path)
+    if plan.data["audio_sha256"] != hash_file(audio) or plan.data["pdf_sha256"] != hash_file(pdf):
+        raise ValueError("현재 음원·악보와 분석 결과가 다릅니다. 다시 분석하세요.")
+    gp = plan.data.get("gp_display")
+    source = Path(gp["source"]).resolve(strict=True) if gp else pdf
+    if gp and hash_file(source) != gp["signature"]["source"]:
+        raise ValueError("GP 원본이 분석 이후 변경되었습니다. 다시 분석하세요.")
+    inputs = {p: hash_file(p) for p in {audio, instrumental, pdf, timeline_path, source}}
+    if output in inputs:
+        raise ValueError("원본 파일 위에 저장할 수 없습니다.")
+    pitch = request.get("pitch_semitones", 0)
+    if type(pitch) is not int or not -12 <= pitch <= 12:
+        raise ValueError("반주 키 설정이 올바르지 않습니다.")
+    practice = request.get("practice", {})
+    defaults = {"bpm": 120, "beats": 4, "unit": 4, "origin": 0}
+    practice = {k: practice.get(k, v) for k, v in defaults.items()}
+    if (
+        not all(type(v) in (int, float) and math.isfinite(v) for v in practice.values())
+        or not 20 <= practice["bpm"] <= 400
+        or not 1 <= practice["beats"] <= 16
+        or practice["unit"] not in (2, 4, 8, 16)
+        or not 0 <= practice["origin"] <= 1800
+    ):
+        raise ValueError("메트로놈 설정이 올바르지 않습니다.")
+    if gp:
+        from .gp_render import native_layout
+
+        sizes, bars, _ = native_layout(gp)
+    else:
+        from .score_layout import analyze_layout
+
+        xml = Path(plan.data.get("musicxml_path", ""))
+        if not xml.is_file() or hash_file(xml) != plan.data.get("xml_sha256"):
+            raise ValueError("악보 분석 파일이 없습니다. 사전 분석을 다시 실행하세요.")
+        sizes, bars, _ = analyze_layout(pdf, xml, report)
+    cues = []
+    for cue in plan.cues:
+        box = bars.get(cue["source_index"])
+        # Reviewed page corrections have priority over original engraving geometry.
+        if not box or box["page"] != cue["page"]:
+            box = {"left": 0, "right": 1, "top": 0, "bottom": 1, "next_top": 0}
+        cues.append(
+            {k: cue[k] for k in ("start", "page", "measure", "visit", "source_index")}
+            | {"box": {k: float(box[k]) for k in ("left", "right", "top", "bottom", "next_top")}}
+        )
+    portable = {
+        "cues": cues,
+        "end": plan.end,
+        "offset": plan.data.get("offset", 0),
+        "reviewed": bool(plan.data.get("reviewed")),
+        "warnings": plan.data.get("warnings", []),
+    }
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".magic-", dir=output.parent) as scratch:
+        scratch = Path(scratch)
+        report("태블릿에서 재생할 반주를 준비합니다…", None)
+        wav = scratch / "instrumental.wav"
+        run_ffmpeg(
+            [
+                "-i",
+                str(instrumental),
+                "-map",
+                "0:a:0",
+                "-vn",
+                "-ac",
+                "2",
+                "-ar",
+                "44100",
+                "-map_metadata",
+                "-1",
+                "-c:a",
+                "pcm_s16le",
+                "-rf64",
+                "never",
+                str(wav),
+            ]
+        )
+        audio_info = inspect_audio(wav, scan=True)
+        if wav.stat().st_size > MAX_AUDIO_BYTES:
+            raise ValueError("태블릿용 반주는 최대 512 MB입니다. 곡을 짧게 나누어 준비하세요.")
+        entries, pages = {}, []
+        bundle = scratch / "export.magic"
+        with zipfile.ZipFile(
+            bundle, "w", compression=zipfile.ZIP_STORED, allowZip64=False
+        ) as archive:
+
+            def put(name, data):
+                from hashlib import sha256
+
+                if isinstance(data, Path):
+                    entries[name] = {"bytes": data.stat().st_size, "sha256": hash_file(data)}
+                    archive.write(data, name)
+                else:
+                    entries[name] = {"bytes": len(data), "sha256": sha256(data).hexdigest()}
+                    archive.writestr(name, data)
+
+            put("audio/instrumental.wav", wav)
+            source_name = "score/source" + source.suffix.lower()
+            put(source_name, source)
+            put("timeline.json", json_bytes(portable))
+            document = pdfium.PdfDocument(pdf)
+            try:
+                for i in range(len(document)):
+                    report(f"악보 {i + 1}/{len(document)}쪽을 담습니다…", (i + 1) / len(document))
+                    page = document[i]
+                    try:
+                        width, height = page.get_size()
+                        bitmap = page.render(scale=2200 / max(width, height))
+                        try:
+                            picture = bitmap.to_pil()
+                            buffer = io.BytesIO()
+                            picture.save(buffer, format="PNG")
+                            name = f"pages/{i + 1:04d}.png"
+                            put(name, buffer.getvalue())
+                            pages.append(
+                                {"path": name, "width": picture.width, "height": picture.height}
+                            )
+                        finally:
+                            bitmap.close()
+                    finally:
+                        page.close()
+            finally:
+                document.close()
+            manifest = {
+                "format": "Magic-Instrumental",
+                "version": MAGIC_VERSION,
+                "title": str(request.get("title") or audio.stem)[:200],
+                "audio": {"path": "audio/instrumental.wav", **audio_info, "pitch_semitones": pitch},
+                "score": {
+                    "kind": "gp" if gp else "pdf",
+                    "path": source_name,
+                    "part": plan.data.get("notation_source", {}).get("track_name", "")
+                    if gp
+                    else "",
+                    "track": gp["signature"]["track"] if gp else None,
+                },
+                "timeline": "timeline.json",
+                "pages": pages,
+                "practice": practice,
+                "entries": entries,
+            }
+            archive.writestr("manifest.json", json_bytes(manifest))
+        if bundle.stat().st_size > MAX_BUNDLE_BYTES:
+            raise ValueError("연습 파일은 최대 1 GB입니다. 악보·곡을 나누어 준비하세요.")
+        if any(hash_file(p) != digest for p, digest in inputs.items()):
+            raise ValueError("저장 중 원본이 변경되었습니다. 다시 시도해 주세요.")
+        if request.get("overwrite"):
+            bundle.replace(output)
+        else:
+            # Atomic no-clobber publication, including a file created after the dialog.
+            os.link(bundle, output)
+        report(".magic 저장 완료 · 태블릿 재생기에서 열어 주세요.", 1)
+    return output

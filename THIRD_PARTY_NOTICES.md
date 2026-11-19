@@ -63,3 +63,15 @@ Automated setup is not itself prohibited. If you change this distribution to shi
 ## Media rights
 
 Users must supply their own lawfully obtained recordings and sheet music, paying required charges or complying with an applicable free license. A purchase does not automatically grant rights to publish originals, scans, instrumental stems or other derived files. Project screenshots use synthetic demo audio and a project-authored demo score; no personal or commercial song is included.
+
+## Verovio 6.4.1 — GP score engraving
+
+[Verovio](https://github.com/rism-digital/verovio/tree/version-6.4.1) renders generated MusicXML to SVG. The separately installed Python wheel retains the upstream **LGPL-3.0-only** license and bundled font notices: [COPYING.LESSER](https://github.com/rism-digital/verovio/blob/version-6.4.1/COPYING.LESSER), [source and installation documentation](https://book.verovio.org/installing-or-building-from-sources/python.html). The one-click installer retrieves the pinned unmodified wheel into the external venv and verifies a synthetic engraving. This repository distributes its own MusicXML/SVG adapter, not a Verovio binary. If redistributing binaries, preserve all upstream notices and satisfy the LGPL's corresponding-source and user replacement/modification requirements. Engraving a score does not grant rights to distribute the source composition or score.
+
+## Signalsmith Stretch Web 1.3.2 — tablet rate and pitch
+
+[Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) is **MIT licensed**, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. The unmodified npm browser distribution (including embedded WebAssembly), exact package integrity and local SHA-256 inventory are in `web_player/vendor/`; the complete license is [Signalsmith-LICENSE.txt](web_player/vendor/Signalsmith-LICENSE.txt). Upstream package: [signalsmith-stretch 1.3.2](https://www.npmjs.com/package/signalsmith-stretch/v/1.3.2), [web API source](https://github.com/Signalsmith-Audio/signalsmith-stretch/tree/main/web).
+
+The generated single-file player includes **two explicitly documented scheduling fixes** applied by `tools/build_web.py`: use an explicitly requested output timestamp when replacing future segments, and advance the current mapping only at actual current time. These changes let a scheduled count-in/start and exclusive loop-end stop coexist without discarding one another. The checked-in vendor source is unchanged; assertions and SHA-256 pins reject a changed upstream file before patching. The surrounding archive reader, UI and playback coordinator are original GPL-3.0-only project code. The MIT license remains applicable to the library, including these identified modified sections; no model weights are embedded in the web player.
+
+The desktop key-change worker uses the already installed FFmpeg `asetrate`, `aresample`, `atempo`, padding and sample trimming filters. It never modifies the user's original recording. Qt's existing pitch-preserving speed playback remains independent of the key-change cache.
