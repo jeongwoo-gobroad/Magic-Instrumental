@@ -57,7 +57,7 @@ class Ensemble {
       requireMagic(!url.username && !url.password && url.pathname === '/' && !url.search && !url.hash, '중계 서버의 기본 주소만 입력하세요.');
       this.base = url.origin;
       try { localStorage.setItem('magic-relay', this.base); } catch (_) {}
-      await audioReady(); pause();
+      pause();
       const body = {name: $('memberName').value.trim() || (role === 'leader' ? '리더' : '멤버')};
       if (role === 'leader') body.media = this.media();
       else body.code = $('inviteCode').value.trim().toUpperCase();
@@ -66,6 +66,7 @@ class Ensemble {
       if (generation !== this.generation) return;
       document.body.classList.add('room-open');
       this.role = role; this.code = data.code; this.auth = data.token; this.expectedMedia = data.media;
+      this.status('');
       this.samples = []; this.probes.clear(); this.seq = 0; this.remoteState = null;
       const ws = this.ws = new WebSocket(this.base.replace(/^http/, 'ws') + '/api/ws');
       ws.onopen = () => { if (this.ws === ws) this.send({code: this.code, token: this.auth}); };
@@ -78,7 +79,6 @@ class Ensemble {
         const blob = await qr.blob();
         if (generation === this.generation) { this.qrURL = URL.createObjectURL(blob); $('inviteQR').src = this.qrURL; }
       }
-      if (generation === this.generation) this.status('시간을 맞추고 있습니다. 곡을 확인한 뒤 ‘합주 준비’를 누르세요.');
     } finally { this.busy = false; this.update(); }
   }
   leave() {
@@ -96,7 +96,7 @@ class Ensemble {
     setAvailable(ready); this.update();
   }
   unready() {
-    if (!this.role) return;
+    if (!this.prepared) return;
     this.prepared = false; this.pending = null;
     this.send({type: 'ready', ready: false});
     pause(); this.update();
@@ -112,11 +112,11 @@ class Ensemble {
     return performance.now() + best.offset;
   }
   async prepare() {
-    if (!this.role || !ready || loading) return;
     if (this.prepared) { this.unready(); return; }
+    if (!this.role || !ready || loading || this.busy) return;
     const generation = this.generation;
     await audioReady();
-    if (generation !== this.generation) return;
+    if (generation !== this.generation || this.prepared || loading || !ready || this.busy || document.hidden) return;
     this.serverNow();
     const media = this.media();
     requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
@@ -124,7 +124,7 @@ class Ensemble {
     requireMagic(rtt <= 1300, '연결이 많이 지연됩니다. 인터넷 상태를 확인해 주세요.');
     this.prepared = true; document.body.classList.remove('room-open'); window.scrollTo(0,0); $('linked').checked = true;
     this.send({type: 'ready', ready: true, media, rtt});
-    this.status(this.role === 'leader' ? '준비 완료 · 모두 준비되면 재생을 누르세요.' : '준비 완료 · 리더의 재생을 기다립니다.');
+    this.status('');
     this.update();
   }
   receive(data) {
@@ -137,7 +137,9 @@ class Ensemble {
       if (this.prepared && sample.rtt > 1300) { this.unready(); this.status('연결 지연이 커져 준비를 해제했습니다.'); }
       else if (this.prepared) this.send({type:'ready', ready:true, media:this.media(), rtt: Math.max(...this.samples.map(s => s.rtt))});
     } else if (data.type === 'presence') {
+      const previouslyReady = this.allReady();
       this.peers = data.peers; this.shared = data.shared;
+      if (!previouslyReady && this.allReady()) this.status('');
       $('members').replaceChildren(...data.peers.map(p => {
         const line = document.createElement('li');
         line.textContent = `${p.leader ? '리더' : '멤버'} · ${p.name} · ${p.ready ? '준비 완료' : '준비 대기'}`; return line;
@@ -220,7 +222,7 @@ class Ensemble {
     } finally { this.busy = false; this.update(); }
   }
   async download() {
-    if (this.role !== 'member' || !this.shared || this.busy) return;
+    if (this.role !== 'member' || !this.shared || this.busy || loading) return;
     this.unready(); this.busy = true; this.update(); const generation = this.generation;
     try {
       await audioReady(); this.status('리더의 연습 파일을 받고 있습니다…');
@@ -232,8 +234,21 @@ class Ensemble {
       if (generation !== this.generation) return;
       await openFile(new File([blob], 'shared-practice.magic'));
       requireMagic(ready, $('status').textContent);
-      this.status('파일을 받았습니다. 파트를 고른 뒤 ‘합주 준비’를 누르세요.');
+      this.status('리더 파일을 열었습니다.');
     } finally { this.busy = false; this.update(); }
+  }
+  allReady() {
+    return this.peers.length > 0 && this.peers.every(peer => peer.connected && peer.ready);
+  }
+  readinessText() {
+    if (!ready) {
+      if (loading || this.busy) return '곡을 준비하고 있습니다.';
+      return this.shared ? '리더 파일을 받거나 내 파일을 선택하세요.' : '리더가 파일을 공유하면 받을 수 있습니다. 내 파일을 먼저 선택해도 됩니다.';
+    }
+    if (!this.prepared) return this.samples.length < 3 ? '합주 시간을 맞추고 있습니다.' : '내 준비 대기 · 파트를 확인하고 ‘합주 준비’를 누르세요.';
+    if (this.allReady()) return this.role === 'leader' ? '모두 준비 완료 · 재생할 수 있습니다.' : '모두 준비 완료 · 리더가 재생할 수 있습니다.';
+    const waiting = this.peers.filter(peer => !peer.connected || !peer.ready);
+    return waiting.length ? '준비 대기 중인 참가자 · ' + waiting.map(peer => peer.leader ? '리더' : peer.name).join(', ') : '준비 상태를 확인하고 있습니다.';
   }
   update() {
     const active = !!this.role, leader = this.role === 'leader', member = this.role === 'member';
@@ -244,7 +259,10 @@ class Ensemble {
     $('sessionBanner').hidden = !active; $('sessionSong').hidden = !active;
     $('sessionRole').textContent = `Session · ${leader ? '리더' : '멤버'} 활성 · ${this.code}`;
     $('appHeading').textContent = active ? (leader ? '우리의 합주를 이끄는 화면' : '나의 파트에 집중하는 화면') : '나의 속도로, 한 마디씩.';
-    $('sessionLive').textContent = $('ensembleStatus').textContent;
+    if (active) {
+      const readiness = this.readinessText();
+      if ($('sessionReadiness').textContent !== readiness) $('sessionReadiness').textContent = readiness;
+    }
     $('sessionTitle').textContent = archive?.manifest.title || '연습 파일을 선택해 주세요';
     $('sessionClock').textContent = `${clockText(nowPosition())} / ${clockText(duration)}`;
     $('sessionOpenFile').hidden = !member; $('sessionOpenFile').disabled = this.busy || loading;
@@ -256,18 +274,18 @@ class Ensemble {
     $('leaderMode').disabled = this.busy || member; $('memberMode').disabled = this.busy || leader;
     $('relayURL').disabled = active || this.busy; $('memberName').disabled = active || this.busy; $('inviteCode').disabled = active || this.busy;
     $('invitation').hidden = !leader; $('roomCode').textContent = this.code;
-    $('ensembleReady').hidden = !active; $('ensembleReady').disabled = !ready || loading || this.busy || this.samples.length < 3;
+    $('ensembleReady').hidden = !active; $('ensembleReady').disabled = !this.prepared && (!ready || loading || this.busy || this.samples.length < 3);
     $('ensembleReady').textContent = this.prepared ? '준비 완료 · 해제하기' : '합주 준비';
     $('ensembleReady').setAttribute('aria-pressed',String(this.prepared));
     $('sessionPrepare').textContent = $('ensembleReady').textContent;
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.prepared));
     $('shareFile').hidden = !leader; $('shareFile').disabled = this.busy || archive?.manifest.version !== 2 || archive?.manifest.score.kind !== 'gp';
-    $('getShared').hidden = !member; $('getShared').disabled = !this.shared || this.busy;
+    $('getShared').hidden = !member; $('getShared').disabled = !this.shared || this.busy || loading;
+    $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
     $('file').disabled = loading || this.busy || leader;
     $('linked').disabled = active;
-    const allReady = this.peers.length && this.peers.every(p => p.ready && p.connected);
-    for (const id of ensembleTransport) $(id).disabled = !ready || member || (leader && (!this.prepared || !allReady || !!this.pending));
+    for (const id of ensembleTransport) $(id).disabled = !ready || member || (leader && (!this.prepared || !this.allReady() || !!this.pending));
     for (const id of ensembleSettings) $(id).disabled = member || (leader && (playing || !!this.pending)) || (['loop','loopStart','loopEnd'].includes(id) && !ready);
     $('ensembleRules').hidden = !active;
   }
