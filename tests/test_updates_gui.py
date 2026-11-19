@@ -257,7 +257,8 @@ def test_worker_failures_do_not_take_down_gui_and_can_retry(
     timer.timeout.connect(lambda: heartbeats.append(True))
     timer.start(5)
     try:
-        assert checker.check("2.2.0")
+        started = checker.check("2.2.0")
+        assert started or errors  # Windows may fail synchronously before check returns.
         if failure == "killed":
             pump(app, lambda: checker.process.processId() > 0)
             checker.process.kill()
@@ -313,5 +314,34 @@ def test_release_worker_rejects_redirects_without_following(app, endpoint):
         assert len(config["requests"]) == 1
     finally:
         checker.stop()
+        checker.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+
+def test_synchronous_start_failure_is_not_overwritten_by_checking_label(
+    app, endpoint, monkeypatch
+):
+    original = updates.QProcess
+
+    class ImmediateFailure(original):
+        def start(self):
+            self.errorOccurred.emit(self.ProcessError.FailedToStart)
+
+    monkeypatch.setattr(updates, "QProcess", ImmediateFailure)
+    checker = updates.ReleaseChecker(endpoint=endpoint[0])
+    bar = updates.UpdateBar(Paths().root, current="2.2.0", checker=checker)
+    try:
+        bar.check()
+        assert bar.retry.isEnabled()
+        assert "확인 불가" in bar.status.text()
+        assert checker.process is None
+        monkeypatch.setattr(updates, "QProcess", original)
+        bar.check()
+        pump(app, lambda: bar.info is not None)
+        assert bar.retry.isEnabled() and bar.info["available"]
+    finally:
+        bar.stop()
+        bar.deleteLater()
         checker.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

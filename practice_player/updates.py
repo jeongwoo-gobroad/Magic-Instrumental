@@ -60,7 +60,9 @@ class ReleaseChecker(QObject):
         process.errorOccurred.connect(lambda error: self._error(process, error))
         self.timer.start(self.timeout_ms)
         process.start()
-        return True
+        # Windows may emit FailedToStart synchronously inside start().
+        # Preserve that failure instead of overwriting it with a pending UI state.
+        return self.process is not None
 
     def _read(self, process):
         if self.process is not process:
