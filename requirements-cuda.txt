@@ -1,3 +1,0 @@
-# Install separately before requirements.txt; this index serves only PyTorch.
---index-url https://download.pytorch.org/whl/cu130
-torch==2.14.1
