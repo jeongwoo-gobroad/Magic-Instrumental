@@ -36,6 +36,7 @@ def build():
         "VENDOR": vendor,
         "ARCHIVE": (WEB / "archive.js").read_text(),
         "APP": (WEB / "app.js").read_text(),
+        "ENSEMBLE": (WEB / "ensemble.js").read_text(),
     }.items():
         template = template.replace(f"/*{key}*/", content)
     (WEB / "index.html").write_text(template)

@@ -4,6 +4,7 @@
 Opt in: RUN_WEB_TESTS=1, install playwright's chromium and webkit browsers first.
 """
 
+import json
 import os
 import threading
 import zipfile
@@ -28,6 +29,18 @@ def study_files(tmp_path_factory):
     for kind in ("gp", "pdf"):
         request, _, _ = portable_study(root / kind, kind, count=32 if kind == "gp" else 8)
         files[kind] = export_magic(request)
+    # A genuine v1 layout containing only the selected part must remain readable.
+    files["legacy"] = root / "legacy.magic"
+    with zipfile.ZipFile(files["gp"]) as source, zipfile.ZipFile(files["legacy"], "w") as target:
+        manifest = json.loads(source.read("manifest.json"))
+        manifest["version"] = 1
+        manifest.pop("parts")
+        manifest.pop("timing_basis")
+        manifest["entries"] = {k: v for k, v in manifest["entries"].items()
+                               if not k.startswith("parts/")}
+        for name in manifest["entries"]:
+            target.writestr(name, source.read(name))
+        target.writestr("manifest.json", json.dumps(manifest))
     return files
 
 
@@ -78,9 +91,17 @@ def frequency(page):
     }""")
 
 
+def test_legacy_single_part_archive_still_plays(page, study_files):
+    open_study(page, study_files["legacy"])
+    assert page.locator("#partChoice").is_hidden()
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+
+
 def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     open_study(page, study_files["gp"])
     assert page.locator("#part").inner_text() == "GP 파트 · Lead Guitar"
+    assert page.locator("#partSelect option").count() == 2
     page.evaluate("""() => { window.testAnalyser=MagicPlayer.context().createAnalyser();
         testAnalyser.fftSize=16384; testAnalyser.smoothingTimeConstant=0;
         musicGain.connect(testAnalyser); }""")
@@ -88,6 +109,11 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     page.wait_for_timeout(1000)
     actual = frequency(page)
     assert actual["level"] > -60 and actual["frequency"] == pytest.approx(220, abs=4)
+    before_part = page.evaluate("MagicPlayer.state().position")
+    page.locator("#partSelect").select_option("1")
+    page.wait_for_function("MagicPlayer.archive().activePart.track === 1")
+    assert page.evaluate("MagicPlayer.state().playing")
+    assert page.evaluate("MagicPlayer.state().position") >= before_part
     page.locator("#seek").focus()
     page.locator("#seek").fill("3")
     page.locator("#seek").dispatch_event("change")

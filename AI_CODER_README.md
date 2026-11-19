@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.0.3**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.1.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -178,3 +178,21 @@ Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHu
 Mobile metronome: the always-visible hint explains that standalone use requires clearing the linked checkbox. The header displays off, waiting for playback, standalone, linked playback, first-beat wait or zero-volume state. The default remains linked. Track whether the seek slider is actively being edited, not merely focused, so its thumb follows playback after a seek.
 
 CI uses `tools/run_tests.py` to isolate test modules into separate external-venv Python processes, with a bounded timeout and faulthandler diagnostics. This prevents native multimedia lifetime state from leaking between unrelated test modules and gives a visible failure if a native call stalls.
+
+
+## v2.1 all-part GP and Session mode
+
+`gp_collection.py` prepares every bounded GP track in workers, validates each performed route against the selected reviewed timeline and caches portable geometry/timing by full source/reference/signature hashes. Selected page overrides remain intact; other tracks receive their own native geometry and the identical original-media times. Failed/unsupported parts abort rather than silently disappearing. GP `.magic` now uses format 2; PDF and legacy single-part format 1 remain supported. The browser validates all part inventories, loads only the current timing, and never changes transport while selecting a part. Read `docs/MAGIC_FORMAT.md`.
+
+Desktop metronome controls use explicit on/off text. The desktop Session button cancels count, pauses native playback/metronome, and opens the common web player. PC leadership intentionally uses that web player, not a second Qt transport clock. Session mode changes the page layout: leader room/control view versus member readiness/score view. Keep these as distinct views, not a screen of disabled solo controls. Session exit restores the solo layout.
+
+`relay/server.py` is an optional aiohttp/Segno service in a separate external server venv; it never imports the desktop ML/audio stack. Production binds HTTP only to loopback behind trusted HTTPS/WSS. See `docs/SESSION_SERVER.md`. Do not publish an operator's SSH credentials, private config, room tokens, user media, transfer files or logs. Public default endpoint is a configurable convenience, not a hosted-service guarantee. Room tokens are memory-only; invitation codes do not grant leader rights. File sharing requires an explicit leader action; server bytes are opaque, bounded and temporary. Own-file mode sends identity/settings, not the file.
+
+`web_player/ensemble.js` manages roles, readiness, server-clock probes, future transport and file sharing. Use original-media seconds throughout. Require same original recording hash/duration, apply absolute key relative to each archive's baked key, and communicate loops in media seconds so different scores are possible. The browser schedules future worklet boundaries, rearming them if preceding loop segments change. Acks/sequence invalidation prevent late or stale starts. Physical audio output latency and clock drift remain limits; do not claim sample-accurate acoustic sync across devices. Keep all tabs foreground.
+
+Validation includes `tests/test_relay.py` and opt-in Chromium/WebKit two-participant tests in `tests/test_session_player.py`, plus existing solo/GP/PDF/audio/offline tests. Developer requirements include the separate relay lock; desktop end-user installers do not install or run the relay. Update source and generated web files together, publish the mobile branch, and redeploy reviewed static assets to any separately operated relay host as needed. The release allowlist includes only explicitly named relay sources/config examples.
+
+
+`landing/index.html` is a beginner introduction/install page, separate from the Session player. Keep its direct versioned release ZIP link synchronized with the release version; deploy only once that release asset exists. Its Session links point to GitHub Pages. The relay exposes the reviewed page at `/landing` so an HTTP-only introductory host can proxy only that path without exposing session APIs over HTTP. User-facing supported PDF scope is single-part measure structure (standard staff or TAB, including paired notation/TAB), not a required pair in every case. Pure TAB numeral-to-pitch OMR is not implemented; preserve that distinction and do not promise arbitrary PDF recognition.
+
+The landing/user guides must state that PNG/JPG/JPEG score files are not direct inputs, and image-only/scanned PDFs can be difficult or fail due to resolution, skew or blur. Do not describe arbitrary image score recognition as supported.

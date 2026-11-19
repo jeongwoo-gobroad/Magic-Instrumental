@@ -47,6 +47,7 @@ WEB_FILES = (
     "web_player/template.html",
     "web_player/app.js",
     "web_player/archive.js",
+    "web_player/ensemble.js",
     "web_player/style.css",
     "web_player/sw.js",
     "web_player/manifest.webmanifest",
@@ -54,6 +55,10 @@ WEB_FILES = (
     "web_player/vendor/Signalsmith-LICENSE.txt",
     "web_player/vendor/provenance.json",
     "practice_player/assets/check.svg",
+    "relay/__init__.py",
+    "relay/server.py",
+    "relay/requirements.txt",
+    "landing/index.html",
 )
 PLACEHOLDERS = tuple(
     f"{folder}/.gitkeep"
@@ -72,6 +77,8 @@ IMAGES = (
     "docs/images/desktop-light.png",
     "docs/images/desktop-dark.png",
     "docs/images/mobile-player.png",
+    "docs/images/session-leader.png",
+    "docs/images/session-member.png",
     "web_player/icon-192.png",
     "web_player/icon-512.png",
 )

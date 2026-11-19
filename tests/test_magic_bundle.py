@@ -76,6 +76,7 @@ def portable_study(root, kind="gp", count=8):
     )
     timeline = analyze_scroll(audio, pdf, paths, timeline, view_profile("width", 900, 700))
     request = {
+        "root": str(root),
         "audio": str(audio),
         "instrumental": str(audio),
         "pdf": str(pdf),
@@ -104,6 +105,14 @@ def test_portable_score_keeps_originals_and_safe_metadata(tmp_path, kind):
         if kind == "gp":
             assert manifest["score"]["part"] == "Lead Guitar"
             assert archive.read("score/source.gp5") == Path(prepared["source"]).read_bytes()
+            assert manifest["version"] == 2
+            assert [p["name"] for p in manifest["parts"]] == ["Rhythm Guitar", "Lead Guitar"]
+            for part in manifest["parts"]:
+                other = json.loads(archive.read(part["timeline"]))
+                assert [c["start"] for c in other["cues"]] == [c["start"] for c in timing["cues"]]
+                assert other["end"] == timing["end"] and other["offset"] == timing["offset"]
+                assert all(p["path"] in archive.namelist() for p in part["pages"])
+                assert str(tmp_path) not in archive.read(part["timeline"]).decode()
         assert str(tmp_path) not in archive.read("manifest.json").decode()
         assert str(tmp_path) not in archive.read("timeline.json").decode()
         for cue in timing["cues"]:

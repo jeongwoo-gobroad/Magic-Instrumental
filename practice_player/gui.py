@@ -340,11 +340,18 @@ class Window(QMainWindow):
         right.addWidget(self.export_button)
         self.magic_button = QPushButton("태블릿으로 가져가기 · .magic 저장")
         self.magic_button.setToolTip(
-            "현재 반주 키, 선택한 악보 파트와 분석 결과를 한 파일로 저장합니다."
+            "현재 반주 키, GP 전체 파트(또는 PDF)와 분석 결과를 한 파일로 저장합니다."
         )
         self.magic_button.clicked.connect(self.export_magic)
         self.magic_button.setEnabled(False)
         right.addWidget(self.magic_button)
+        self.ensemble_button = QPushButton("Session 모드 · 함께 연습하기")
+        self.ensemble_button.setToolTip(
+            ".magic을 저장한 뒤 합주 화면에서 엽니다. "
+            "PC·태블릿 모두 이 화면에서 리더 또는 멤버로 참가합니다."
+        )
+        self.ensemble_button.clicked.connect(self.open_ensemble)
+        right.addWidget(self.ensemble_button)
         right.addStretch()
         splitter.addWidget(panel)
         splitter.setSizes([290, 680])
@@ -757,6 +764,7 @@ class Window(QMainWindow):
         atomic_json(
             request,
             {
+                "root": str(self.paths.root),
                 "audio": str(self.source_path),
                 "instrumental": str(self.output_path),
                 "pdf": str(self.score_panel.pdf),
@@ -774,6 +782,17 @@ class Window(QMainWindow):
             },
         )
         self.start_job(["magic-export", "--request", str(request), "--events"])
+
+    def open_ensemble(self):
+        self.count_in.cancel()
+        self.player.pause()
+        self.metronome.set_running(False)
+        if not QDesktopServices.openUrl(QUrl(
+            "https://jeongwoo-gobroad.github.io/Magic-Instrumental/#ensemble"
+        )):
+            self.show_error(
+                "기본 브라우저를 열지 못했습니다. README의 태블릿 재생기를 열어 주세요."
+            )
 
     def cancel_job(self):
         process = self.worker

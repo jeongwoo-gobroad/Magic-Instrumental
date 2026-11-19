@@ -11,8 +11,9 @@ let ready = false, loading = false, playing = false, metro = false, position = 0
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
 let token = 0, timer = null, wakeLock = null, seeking = false;
-const setStatus = text => { $('status').textContent = text; };
-const fail = error => { pause(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
+let ensemble = null;
+const setStatus = text => { $('status').textContent = text; $('sessionFileStatus').textContent = text; };
+const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
 function phaseAt(input) {
   const step = 60 / number('bpm', 20, 400, 120) * 4 / Number($('unit').value);
   const beat = (input - number('origin', 0, 1800, 0)) / step;
@@ -27,7 +28,7 @@ async function audioReady() {
     clickGain = ctx.createGain(); clickGain.connect(ctx.destination);
     ctx.onstatechange = () => {
       if (ctx.state !== 'running' && (playing || metro)) {
-        pause(); metro = false; updateMetro(); setStatus('소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
+        ensemble?.unready(); pause(); metro = false; updateMetro(); setStatus('소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
       }
     };
   }
@@ -58,6 +59,7 @@ function scheduleNode(active, output, input, rate = number('speed', 25, 200, 100
   stretch.schedule({active, output, input, rate, semitones: Number($('key').value), loopStart: 0, loopEnd: 0}).catch(fail);
 }
 function loopBounds() {
+  if (ensemble?.role === 'member' && ensemble.remoteState) return ensemble.remoteState.loop || [0, duration];
   if (!archive || !$('loop').checked) return [0, duration];
   const cues = archive.timing.cues, offset = archive.timing.offset;
   const first = Number($('loopStart').value), last = Number($('loopEnd').value);
@@ -77,12 +79,13 @@ function createSegment(input, earliest, count) {
              countStart: earliest, countBeats, beatSeconds, firstCountBeat};
   scheduleNode(true, out, input, rate);
   scheduleNode(false, s.until, end, rate);
+  if (ensemble?.pending) ensemble.pending.armed = false;
   return s;
 }
-function nowPosition() {
+function nowPosition(time = ctx?.currentTime) {
   if (!playing || !segment || !ctx) return position;
-  if (upcoming && ctx.currentTime >= upcoming.countStart) { segment = upcoming; upcoming = null; }
-  return clamp(segment.input + Math.max(0, ctx.currentTime - segment.out) * segment.rate, 0, segment.end);
+  if (upcoming && time >= upcoming.countStart) { segment = upcoming; upcoming = null; }
+  return clamp(segment.input + Math.max(0, time - segment.out) * segment.rate, 0, segment.end);
 }
 function pause() {
   position = nowPosition(); playing = false; segment = upcoming = null; token++;
@@ -134,20 +137,24 @@ function beatsBetween(s, from, to) {
 }
 function tick() {
   if (!ctx || ctx.state !== 'running') return;
+  ensemble?.activate();
   const now = ctx.currentTime;
   if (playing) {
     position = nowPosition();
-    if (!upcoming && segment.until - now < .4 && $('loop').checked) {
+    if (!upcoming && segment.until - now < .4 && (ensemble?.role === 'member' ? ensemble.remoteState?.loop : $('loop').checked)) {
       const [start] = loopBounds();
       upcoming = createSegment(start, Math.max(segment.until, now + latency + .03), $('loopCount').checked);
     }
     if (!upcoming && now >= segment.until) { pause(); position = segment?.end ?? position; }
   }
+  ensemble?.arm();
   const from = Math.max(now + .006, clickUntil), to = now + .18;
   if (playing) {
-    beatsBetween(segment, from, to);
-    if (upcoming) beatsBetween(upcoming, from, to);
+    const cutoff = ensemble?.pending?.at ?? Infinity;
+    beatsBetween(segment, from, Math.min(to, cutoff));
+    if (upcoming) beatsBetween(upcoming, from, Math.min(to, cutoff));
   }
+  if (ensemble?.pending?.next) beatsBetween(ensemble.pending.next, Math.max(from, ensemble.pending.at), to);
   if (metro && !$('linked').checked) {
     const step = phaseAt(0).step, beats = number('beats', 1, 16, 4);
     let n = Math.max(0, Math.ceil((from - independentOrigin) / step - 1e-7));
@@ -189,15 +196,15 @@ function updateDots() {
   dots.forEach((dot, i) => dot.classList.toggle('on', beat !== null && ((beat % dots.length) + dots.length) % dots.length === i));
 }
 async function showPage(index) {
-  if (!archive || index < 0 || index >= archive.manifest.pages.length) return;
+  if (!archive || index < 0 || index >= archive.pages.length) return;
   if (shownPage === index || pendingPage === index) return;
   pendingPage = index;
-  const generation = ++pageGeneration, selected = archive;
+  const generation = ++pageGeneration, selected = archive, pages = archive.pages;
   let url = urls.get(index);
   if (!url) {
-    const bytes = await selected.blob(selected.manifest.pages[index].path, 20000000);
+    const bytes = await selected.blob(pages[index].path, 20000000);
     const head = new Uint8Array(await bytes.slice(0, 24).arrayBuffer());
-    const view = new DataView(head.buffer), p = selected.manifest.pages[index];
+    const view = new DataView(head.buffer), p = pages[index];
     requireMagic(head.length === 24 && head[0] === 137 && decoder.decode(head.slice(1, 4)) === 'PNG' && view.getUint32(16) === p.width && view.getUint32(20) === p.height, '악보 이미지가 손상되었습니다.');
     if (generation !== pageGeneration || archive !== selected) return;
     url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'})); urls.set(index, url);
@@ -205,13 +212,13 @@ async function showPage(index) {
   }
   if (generation !== pageGeneration) return;
   pendingPage = -1; shownPage = index; $('scoreImage').src = url; $('scoreImage').hidden = false; $('empty').hidden = true;
-  $('pageText').textContent = `${index + 1} / ${archive.manifest.pages.length}`;
+  $('pageText').textContent = `${index + 1} / ${archive.pages.length}`;
   $('viewport').scrollTo(0, 0); resizePaper();
 }
 function resizePaper() {
   if (!archive || shownPage < 0) return;
   const width = Math.max(200, $('viewport').clientWidth - 32) * Number($('zoom').value);
-  const page = archive.manifest.pages[shownPage];
+  const page = archive.pages[shownPage];
   $('paper').style.width = width + 'px'; $('paper').style.minHeight = '0';
   $('paper').style.height = (width * page.height / page.width) + 'px';
 }
@@ -244,9 +251,11 @@ function showPosition() {
 function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
+  ensemble?.update();
 }
 async function openFile(file) {
   if (!file || loading) return;
+  ensemble?.unready();
   loading = true; pause(); ready = false; setAvailable(false); $('file').disabled = true;
   pageGeneration++; shownPage = pendingPage = -1;
   for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
@@ -272,6 +281,11 @@ async function openFile(file) {
     archive = next; duration = decoded.duration; position = 0; segment = upcoming = null;
     $('title').textContent = next.manifest.title;
     $('part').textContent = next.manifest.score.kind === 'gp' ? `GP 파트 · ${next.manifest.score.part}` : 'PDF 악보';
+    $('partSelect').replaceChildren(...next.parts.map(part => {
+      const option = document.createElement('option'); option.value = part.track;
+      option.textContent = part.name + (part.percussion ? ' · 드럼' : ''); return option;
+    }));
+    $('partSelect').value = next.activePart.track; $('partChoice').hidden = next.parts.length < 2;
     $('seek').max = duration; $('seek').value = 0; $('loop').checked = false; $('key').value = '0';
     const p = next.manifest.practice || {};
     for (const [id, lo, hi, fallback] of [['bpm',20,400,120],['beats',1,16,4],['origin',0,1800,0]]) $(id).value = Number.isFinite(p[id]) ? clamp(p[id],lo,hi) : fallback;
@@ -333,6 +347,21 @@ for (const id of ['loop','loopStart','loopEnd']) $(id).onchange = () => {
   try { const [lo,hi] = loopBounds(); position = clamp(position,lo,Math.max(lo,hi-.001)); if (resume) play($('loopCount').checked).catch(fail); }
   catch (e) { $('loop').checked = false; fail(e); }
 };
+$('partSelect').onchange = async () => {
+  const selected = archive, track = Number($('partSelect').value);
+  $('partSelect').disabled = true;
+  try {
+    await selected.selectPart(track);
+    if (archive !== selected) return;
+    pageGeneration++; shownPage = pendingPage = -1;
+    for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
+    $('part').textContent = `GP 파트 · ${selected.activePart.name}`;
+    $('scoreImage').hidden = true; $('highlight').hidden = true;
+    await showPage(selected.timing.cues[clamp(cueAt(nowPosition()), 0, selected.timing.cues.length - 1)].page);
+    setStatus('파트를 바꿨습니다. 반주 재생 위치는 그대로 유지됩니다.');
+  } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }
+  finally { $('partSelect').disabled = false; }
+};
 $('zoom').onchange = resizePaper; window.addEventListener('resize',resizePaper);
 $('scoreImage').onload = resizePaper;
 for (const [id, direction] of [['prevPage',-1],['nextPage',1]]) $(id).onclick = () => { $('follow').checked = false; showPage(shownPage + direction).catch(fail); };
@@ -340,8 +369,8 @@ for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEvent
 function theme(mode) { document.documentElement.dataset.theme = mode; try { localStorage.setItem('magic-theme',mode); } catch (_) {} }
 try { theme(localStorage.getItem('magic-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')); } catch (_) { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-document.addEventListener('visibilitychange', () => { if (document.hidden) { pause(); metro = false; updateMetro(); if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.'); } });
-window.addEventListener('pagehide', () => { pause(); metro = false; });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { ensemble?.unready(); pause(); metro = false; updateMetro(); if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.'); } });
+window.addEventListener('pagehide', () => { ensemble?.leave(); pause(); metro = false; });
 updateMetro(); timer = setInterval(() => { try { tick(); } catch (error) { fail(error); } },25); requestAnimationFrame(frame);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {

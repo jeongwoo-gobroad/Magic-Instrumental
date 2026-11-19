@@ -137,9 +137,10 @@ def main(argv=None) -> int:
             emit("magic_result", path=str(path))
             return 0
         if args.command == "gp-prepare":
-            from .gp_render import prepare_gp
+            from .gp_collection import prepare_all_gp
 
-            info = prepare_gp(args.gp, Paths(args.root.resolve()), args.gp_track, progress)
+            parts = prepare_all_gp(args.gp, Paths(args.root.resolve()), args.gp_track, progress)
+            info = next(p for p in parts if p["signature"]["track"] == args.gp_track)
             emit("gp_prepared", **{k: v for k, v in info.items() if k not in {"bars", "files"}})
             return 0
         if args.command == "pitch":
@@ -185,6 +186,10 @@ def main(argv=None) -> int:
             )
             if profile:
                 path = analyze_scroll(args.audio, args.pdf, paths, path, profile, progress)
+            if args.gp:
+                from .gp_collection import prepare_collection
+
+                prepare_collection(path, paths, progress)
             emit("score_result", path=str(path), message=f"악보 분석 저장: {path}")
             return 0
         from .audio import discover

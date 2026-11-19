@@ -108,7 +108,7 @@ class MetronomeBar(QWidget):
         row.setContentsMargins(10, 4, 10, 4)
         row.setSpacing(8)
         row.addWidget(QLabel("메트로놈"))
-        self.toggle = QPushButton("▶")
+        self.toggle = QPushButton("메트로놈 켜기")
         self.toggle.setToolTip("메트로놈 켜기/끄기 · 음원 연동 시 재생·일시정지를 따라갑니다.")
         self.toggle.setCheckable(True)
         self.toggle.toggled.connect(self.set_running)
@@ -191,7 +191,9 @@ class MetronomeBar(QWidget):
         self.state_label.setAccessibleName("메트로놈 현재 상태")
         self.state_label.setWordWrap(True)
         info.addWidget(self.state_label)
-        self.help_label = QLabel("메트로놈만 쓰려면 ‘음원과 연동’을 해제하고 ▶를 누르세요.")
+        self.help_label = QLabel(
+            "메트로놈만 쓰려면 ‘음원과 연동’을 해제하세요. 켜기/끄기 버튼으로 조작합니다."
+        )
         self.help_label.setObjectName("muted")
         self.help_label.setWordWrap(True)
         info.addWidget(self.help_label, 1)
@@ -328,7 +330,7 @@ class MetronomeBar(QWidget):
         self.last_beat = None
         self.scheduler.reset()
         self.reanchor(self.player.position())
-        self.toggle.setText("■" if running else "▶")
+        self.toggle.setText("메트로놈 끄기" if running else "메트로놈 켜기")
         if running:
             self.timer.start()
             self.tick()

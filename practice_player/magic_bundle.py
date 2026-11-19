@@ -11,9 +11,11 @@ from pathlib import Path
 
 from .audio import inspect_audio, run_ffmpeg
 from .cache import hash_file
+from .config import ROOT, Paths
+from .gp_collection import portable_timing, prepare_collection
 from .score import ScoreTimeline
 
-MAGIC_VERSION = 1
+MAGIC_VERSION = 2
 MAX_AUDIO_BYTES = 512 * 1024 * 1024
 MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
 
@@ -61,6 +63,12 @@ def export_magic(request, report=lambda *_: None):
         from .gp_render import native_layout
 
         sizes, bars, _ = native_layout(gp)
+        collection = prepare_collection(
+            timeline_path, Paths(Path(request.get("root", ROOT))), report
+        )
+        for part in collection:
+            for path in (Path(part["prepared"]["pdf"]), part["timing"]):
+                inputs[path] = hash_file(path)
     else:
         from .score_layout import analyze_layout
 
@@ -68,23 +76,8 @@ def export_magic(request, report=lambda *_: None):
         if not xml.is_file() or hash_file(xml) != plan.data.get("xml_sha256"):
             raise ValueError("악보 분석 파일이 없습니다. 사전 분석을 다시 실행하세요.")
         sizes, bars, _ = analyze_layout(pdf, xml, report)
-    cues = []
-    for cue in plan.cues:
-        box = bars.get(cue["source_index"])
-        # Reviewed page corrections have priority over original engraving geometry.
-        if not box or box["page"] != cue["page"]:
-            box = {"left": 0, "right": 1, "top": 0, "bottom": 1, "next_top": 0}
-        cues.append(
-            {k: cue[k] for k in ("start", "page", "measure", "visit", "source_index")}
-            | {"box": {k: float(box[k]) for k in ("left", "right", "top", "bottom", "next_top")}}
-        )
-    portable = {
-        "cues": cues,
-        "end": plan.end,
-        "offset": plan.data.get("offset", 0),
-        "reviewed": bool(plan.data.get("reviewed")),
-        "warnings": plan.data.get("warnings", []),
-    }
+        collection = []
+    portable = portable_timing(plan, bars)
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".magic-", dir=output.parent) as scratch:
         scratch = Path(scratch)
@@ -113,7 +106,7 @@ def export_magic(request, report=lambda *_: None):
         audio_info = inspect_audio(wav, scan=True)
         if wav.stat().st_size > MAX_AUDIO_BYTES:
             raise ValueError("태블릿용 반주는 최대 512 MB입니다. 곡을 짧게 나누어 준비하세요.")
-        entries, pages = {}, []
+        entries, parts = {}, []
         bundle = scratch / "export.magic"
         with zipfile.ZipFile(
             bundle, "w", compression=zipfile.ZIP_STORED, allowZip64=False
@@ -128,39 +121,67 @@ def export_magic(request, report=lambda *_: None):
                 else:
                     entries[name] = {"bytes": len(data), "sha256": sha256(data).hexdigest()}
                     archive.writestr(name, data)
+                if archive.fp.tell() > MAX_BUNDLE_BYTES:
+                    raise ValueError("연습 파일은 최대 1 GB입니다. 곡이나 GP 파일을 나누어 주세요.")
+
+            def put_pages(document_path, prefix, part_name):
+                pages = []
+                document = pdfium.PdfDocument(document_path)
+                try:
+                    if not 1 <= len(document) <= 200:
+                        raise ValueError("각 파트의 악보는 최대 200페이지까지 지원합니다.")
+                    for i in range(len(document)):
+                        report(f"{part_name} · {i + 1}/{len(document)}쪽 저장", None)
+                        page = document[i]
+                        try:
+                            width, height = page.get_size()
+                            bitmap = page.render(scale=2200 / max(width, height))
+                            try:
+                                picture = bitmap.to_pil()
+                                buffer = io.BytesIO()
+                                picture.save(buffer, format="PNG")
+                                name = f"{prefix}/{i + 1:04d}.png"
+                                put(name, buffer.getvalue())
+                                pages.append(
+                                    {"path": name, "width": picture.width, "height": picture.height}
+                                )
+                            finally:
+                                bitmap.close()
+                        finally:
+                            page.close()
+                finally:
+                    document.close()
+                return pages
 
             put("audio/instrumental.wav", wav)
             source_name = "score/source" + source.suffix.lower()
             put(source_name, source)
             put("timeline.json", json_bytes(portable))
-            document = pdfium.PdfDocument(pdf)
-            try:
-                for i in range(len(document)):
-                    report(f"악보 {i + 1}/{len(document)}쪽을 담습니다…", (i + 1) / len(document))
-                    page = document[i]
-                    try:
-                        width, height = page.get_size()
-                        bitmap = page.render(scale=2200 / max(width, height))
-                        try:
-                            picture = bitmap.to_pil()
-                            buffer = io.BytesIO()
-                            picture.save(buffer, format="PNG")
-                            name = f"pages/{i + 1:04d}.png"
-                            put(name, buffer.getvalue())
-                            pages.append(
-                                {"path": name, "width": picture.width, "height": picture.height}
-                            )
-                        finally:
-                            bitmap.close()
-                    finally:
-                        page.close()
-            finally:
-                document.close()
+            pages = put_pages(pdf, "pages", "선택한 악보")
+            for part in collection:
+                prepared = part["prepared"]
+                track = prepared["signature"]["track"]
+                name = prepared["metadata"]["track_name"]
+                if track == gp["signature"]["track"]:
+                    part_pages, timeline_name = pages, "timeline.json"
+                else:
+                    prefix = f"parts/{track:02d}"
+                    timeline_name = f"{prefix}/timeline.json"
+                    put(timeline_name, part["timing"])
+                    part_pages = put_pages(prepared["pdf"], f"{prefix}/pages", name)
+                parts.append({
+                    "track": track, "name": name,
+                    "percussion": bool(prepared["metadata"]["percussion"]),
+                    "pages": part_pages, "timeline": timeline_name,
+                })
             manifest = {
                 "format": "Magic-Instrumental",
-                "version": MAGIC_VERSION,
+                "version": MAGIC_VERSION if gp else 1,
                 "title": str(request.get("title") or audio.stem)[:200],
-                "audio": {"path": "audio/instrumental.wav", **audio_info, "pitch_semitones": pitch},
+                "audio": {
+                    "path": "audio/instrumental.wav", **audio_info, "pitch_semitones": pitch,
+                    "source_sha256": plan.data["audio_sha256"],
+                },
                 "score": {
                     "kind": "gp" if gp else "pdf",
                     "path": source_name,
@@ -174,6 +195,9 @@ def export_magic(request, report=lambda *_: None):
                 "practice": practice,
                 "entries": entries,
             }
+            if gp:
+                manifest["parts"] = parts
+                manifest["timing_basis"] = {"track": gp["signature"]["track"], "shared": True}
             archive.writestr("manifest.json", json_bytes(manifest))
         if bundle.stat().st_size > MAX_BUNDLE_BYTES:
             raise ValueError("연습 파일은 최대 1 GB입니다. 악보·곡을 나누어 준비하세요.")

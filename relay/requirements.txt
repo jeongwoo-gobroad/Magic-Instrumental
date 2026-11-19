@@ -1,0 +1,12 @@
+# Relay only; install in an external venv, never the desktop/global environment.
+aiohttp==3.14.5
+segno==1.6.6
+# Complete relay dependency lock (CPython 3.12/3.13; platform wheels from PyPI).
+aiohappyeyeballs==2.7.1
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+idna==3.20
+multidict==7.2.1
+propcache==0.5.4
+yarl==1.25.1
