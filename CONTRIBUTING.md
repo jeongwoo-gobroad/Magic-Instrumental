@@ -88,3 +88,5 @@ CI invokes `tools/run_tests.py`, which runs each test module in a fresh process 
 
 
 Session tests use `relay/requirements.txt` through the developer requirements; end-user desktop dependencies remain unchanged. Run `RUN_WEB_TESTS=1 python -m pytest -q tests/test_session_player.py` for two-client scheduling, role-specific views, shared files and independent GP parts. Server operation is documented separately in [SESSION_SERVER.md](docs/SESSION_SERVER.md). `tools/capture_session_screenshots.py` captures both actual roles using authored fixtures. Update the versioned direct download in `landing/index.html` when releasing; deploy that page only after the linked release exists.
+
+Deployment maintainers: [separate branch and routing ownership](docs/DEPLOYMENT_BRANCHES.md). Publish landing-page and serverside independently; keep this information out of beginner-facing pages.

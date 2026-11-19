@@ -23,12 +23,13 @@ mkdir -p "$RELAY_BASE"
 python3 -m venv "$RELAY_BASE/.venv"
 "$RELAY_BASE/.venv/bin/python" -m pip install -r relay/requirements.txt
 MAGIC_RELAY_URL=https://practice.example.org:13579 \
+MAGIC_PLAYER_URL=https://jeongwoo-gobroad.github.io/Magic-Instrumental/ \
   "$RELAY_BASE/.venv/bin/python" -m relay.server
 ```
 
-The venv is outside the project. Never install these Python packages globally. The relay binds **127.0.0.1:13580** by default; `MAGIC_RELAY_PORT` changes only that private backend port. `MAGIC_RELAY_URL` is the externally reachable HTTPS origin. `MAGIC_PLAYER_URL` optionally chooses a separate static player URL; otherwise the relay serves the reviewed built player itself. `MAGIC_ALLOWED_ORIGINS` is a comma-separated list of additional exact web origins; the relay's own origin and this project's GitHub Pages origin are allowed by default.
+The venv is outside the project. Never install these Python packages globally. The relay binds **127.0.0.1:13580** by default; `MAGIC_RELAY_PORT` changes only that private backend port. `MAGIC_RELAY_URL` is the externally reachable HTTPS origin. `MAGIC_PLAYER_URL` optionally chooses a separate static player URL; production sets this to the existing GitHub Pages player. Local preview helpers can serve integrated static files, but the production proxy exposes only `/api/*`. `MAGIC_ALLOWED_ORIGINS` is a comma-separated list of additional exact web origins; the relay's own origin and this project's GitHub Pages origin are allowed by default.
 
-Build the player with the desktop/developer venv using `tools/build_web.py` before deployment. The relay needs `relay/`, built `web_player/index.html`, `sw.js`, manifest/icons, `LICENSE` and `THIRD_PARTY_NOTICES.md`. Keep the full GPL corresponding source available alongside the distribution. End-user installers never install the relay or a reverse proxy.
+Build the player with the desktop/developer venv using `tools/build_web.py` before deployment. The production relay needs `relay/`, `LICENSE` and `THIRD_PARTY_NOTICES.md`; it runs from the dedicated `serverside` checkout. The independently deployed landing page is served by Caddy from the `landing-page` branch. See `DEPLOYMENT_BRANCHES.md`. Keep the full GPL corresponding source available alongside the distribution. End-user installers never install the relay or a reverse proxy.
 
 Use a supervised service running as an unprivileged account. Give it a private temporary directory, restart-on-failure, read-only application files, no access to unrelated services and suitable memory/storage limits. Do not expose the backend port directly. Disable access logs containing room paths; never log authorization headers or WebSocket payloads. On upgrades, announce interruption, stop the old process, replace only reviewed app files, then restart; rooms are intentionally not persisted.
 
@@ -46,7 +47,13 @@ https://practice.example.org:13579 {
             disable_tlsalpn_challenge
         }
     }
-    reverse_proxy 127.0.0.1:13580
+    @api path /api/*
+    handle @api {
+        reverse_proxy 127.0.0.1:13580
+    }
+    handle {
+        respond "Not found" 404
+    }
     header {
         X-Content-Type-Options nosniff
         Referrer-Policy no-referrer
