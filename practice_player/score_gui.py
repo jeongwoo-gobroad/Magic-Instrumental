@@ -251,8 +251,24 @@ class ScorePanel(QWidget):
         self.set_busy(False)
 
     def bind_track(self, audio, source_hash):
+        if self.source_hash != source_hash:
+            self.clear_score()
         self.audio, self.source_hash = Path(audio), source_hash
         self.find_pdf()
+
+    def clear_score(self):
+        self.pdf = self.timeline = self.timeline_path = self.current_index = None
+        self.gp_source = self.gp_info = None
+        self.parts.setVisible(False)
+        self.view.clear()
+        self.page.setRange(1, 1)
+        self.page.setSuffix("")
+        self.name.setToolTip("")
+        self.name.setText("PDF / GP 열기로 이 곡에 사용할 악보를 선택하세요.")
+        self.status.setText("같은 이름의 PDF·GP3/4/5를 score_targets에 넣어도 됩니다.")
+        self.measure.setText("—")
+        self.set_busy(self.busy)
+        self.timeline_changed.emit()
 
     def find_pdf(self):
         if not self.audio:
@@ -261,15 +277,7 @@ class ScorePanel(QWidget):
         if pdf:
             self.open_pdf(pdf)
         else:
-            self.pdf = self.timeline = self.timeline_path = None
-            self.gp_source = self.gp_info = None
-            self.parts.setVisible(False)
-            self.view.clear()
-            self.name.setText("PDF / GP 열기로 이 곡에 사용할 악보를 선택하세요.")
-            self.status.setText("같은 이름의 PDF·GP3/4/5를 score_targets에 넣어도 됩니다.")
-            self.measure.setText("—")
-            self.set_busy(False)
-            self.timeline_changed.emit()
+            self.clear_score()
 
     def choose_pdf(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -286,7 +294,8 @@ class ScorePanel(QWidget):
             track = 1
             try:
                 link = json.loads(
-                    (self.paths.processed / self.source_hash / "score-link.json").read_text()
+                    (self.paths.processed / self.source_hash / "score-link.json")
+                    .read_text(encoding="utf-8")
                 )
                 if (self.paths.root / link["pdf"]).resolve() == pdf.resolve():
                     track = int(link.get("track", 1))
@@ -331,8 +340,7 @@ class ScorePanel(QWidget):
             if cached:
                 self.load_timeline(cached[0])
         except Exception as error:
-            self.pdf = self.timeline = self.timeline_path = None
-            self.view.clear()
+            self.clear_score()
             self.status.setText(f"악보 읽기 실패: {error}")
         self.set_busy(self.busy)
         self.timeline_changed.emit()
@@ -345,7 +353,8 @@ class ScorePanel(QWidget):
 
     def accept_gp(self, info):
         self.open_pdf(Path(info["pdf"]), prepared=info)
-        self.status.setText("파트 준비 완료 · 악보 사전 분석으로 반주와 연결하세요.")
+        if self.pdf and not self.timeline:
+            self.status.setText("파트 준비 완료 · 악보 사전 분석으로 반주와 연결하세요.")
 
     def load_timeline(self, path):
         plan = ScoreTimeline.load(Path(path))
@@ -400,6 +409,8 @@ class ScorePanel(QWidget):
         self.analyze.setEnabled(not busy and self.pdf is not None)
         self.review.setEnabled(not busy and self.timeline is not None)
         self.parts.setEnabled(not busy)
+        if not busy and self.gp_info:
+            self.parts.setCurrentIndex(self.parts.findData(self.gp_info["metadata"]["track"]))
 
     def change_zoom(self):
         self.view.zoom = self.zoom.currentData()
@@ -561,7 +572,7 @@ class ScorePanel(QWidget):
             "PDF 인식 도구와 영어 데이터는 설치 파일에서 자동 준비합니다.\n"
             "PDF의 규격·보표·마디선을 분석하므로 "
             "줄바꿈 정보가 없는 MusicXML도 사용할 수 있습니다.\n"
-            "오선+6선 타브는 오선 영역을 인식하고 원본 전체를 표시합니다.\n"
+            "오선과 타브가 함께 인쇄된 PDF는 지원 범위에서 제외됩니다.\n"
             "GP3/4/5는 음표·박자·반복을 직접 읽습니다. PDF와 같은 판본이어야 합니다.\n"
             "복잡한 기호는 인식 후 시간표와 연주 순서를 확인하세요."
         )

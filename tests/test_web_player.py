@@ -34,6 +34,7 @@ def study_files(tmp_path_factory):
     with zipfile.ZipFile(files["gp"]) as source, zipfile.ZipFile(files["legacy"], "w") as target:
         manifest = json.loads(source.read("manifest.json"))
         manifest["version"] = 1
+        manifest["practice"]["origin"] = -0.25
         manifest.pop("parts")
         manifest.pop("timing_basis")
         manifest["entries"] = {k: v for k, v in manifest["entries"].items()
@@ -93,6 +94,7 @@ def frequency(page):
 
 def test_legacy_single_part_archive_still_plays(page, study_files):
     open_study(page, study_files["legacy"])
+    assert float(page.locator("#origin").input_value()) == -0.25
     assert page.locator("#partChoice").is_hidden()
     page.locator("#play").click()
     page.wait_for_function("MagicPlayer.state().position > .2")

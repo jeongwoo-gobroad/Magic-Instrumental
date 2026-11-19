@@ -146,7 +146,7 @@ class Ensemble {
     return {position: target, rate: number('speed',25,200,100)/100,
       key: Number($('key').value) + archive.manifest.audio.pitch_semitones,
       bpm: number('bpm',20,400,120), beats: number('beats',1,16,4), unit: Number($('unit').value),
-      origin: number('origin',0,1800,0), count: $('count').checked,
+      origin: number('origin',-30,1800,0), count: $('count').checked,
       countBars: Number($('countBars').value), loop: $('loop').checked ? loopBounds() : null,
       loopCount: $('loopCount').checked};
   }

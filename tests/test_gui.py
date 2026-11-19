@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import shutil
+import sys
 import time
 
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 
+from app_guard import app_guard
 from practice_player.config import Paths, Settings
 from practice_player.gui import STYLE, Window
 from practice_player.pipeline import process
@@ -67,15 +69,42 @@ def test_gui_cache_worker_playback_controls_and_export(tone, tmp_path, fake_engi
 
 def test_cancel_stops_worker_and_leaves_ui_usable(tmp_path, monkeypatch):
     app = QApplication.instance() or QApplication([])
-    (tmp_path / "main.py").write_text("import time\ntime.sleep(30)\n")
+    if sys.platform == "win32":
+        from practice_player.config import ROOT
+
+        # A native helper may outlive the venv launcher unless it belongs to the same job.
+        child = (
+            "from pathlib import Path\nimport sys,time\n"
+            f"sys.path.insert(0, {str(ROOT)!r})\nfrom app_guard import app_guard\n"
+            "with app_guard(Path.cwd()):\n Path('ready').touch()\n time.sleep(30)\n"
+        )
+        script = (
+            "import os,sys,subprocess\n"
+            f"sys.path.insert(0, {str(ROOT)!r})\n"
+            "from practice_player.windows_job import join_worker_job\n"
+            "join_worker_job(os.environ.pop('MAGIC_WORKER_JOB'))\n"
+            f"subprocess.run([sys.executable, '-c', {child!r}])\n"
+        )
+    else:
+        script = "from pathlib import Path\nimport time\nPath('ready').touch()\ntime.sleep(30)\n"
+    (tmp_path / "main.py").write_text(script, encoding="utf-8")
     monkeypatch.setattr("practice_player.gui.ROOT", tmp_path)
     window = Window(Paths(tmp_path))
     window.start_job([])
-    wait_until(app, lambda: window.worker.processId() != 0)
-    window.cancel_job()
+    wait_until(app, lambda: (tmp_path / "ready").exists())
+    window.cancel_button.click()
     wait_until(app, lambda: window.worker is None, timeout=6)
     assert window.cancelled and window.prepare_button.isEnabled()
     assert "취소" in window.status.text()
+    if sys.platform == "win32":
+        def child_released_lock():
+            try:
+                with app_guard(tmp_path, updating=True):
+                    return True
+            except RuntimeError:
+                return False
+
+        wait_until(app, child_released_lock, timeout=3)
     window.close()
 
 

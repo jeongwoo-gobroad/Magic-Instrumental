@@ -108,6 +108,19 @@ def test_launch_with_changed_dependencies_requires_explicit_install(monkeypatch,
         bootstrap.main()
 
 
+@pytest.mark.parametrize("ending", [b"\r\n", b"\n"])
+def test_launch_accepts_old_windows_line_endings(monkeypatch, tmp_path, ending):
+    target = fake_bootstrap_environment(monkeypatch, tmp_path)
+    files = ["requirements.txt", "requirements-windows.lock.txt", "requirements-cuda.txt"]
+    raw = b"".join((ROOT / name).read_bytes() for name in files)
+    old = hashlib.sha256(raw.replace(b"\r\n", b"\n").replace(b"\n", ending) + b"default")
+    (target / ".practice-player-requirements").write_text(old.hexdigest())
+    monkeypatch.setattr(bootstrap.sys, "argv", ["bootstrap.py", "--launch-only"])
+    monkeypatch.setattr(bootstrap.subprocess, "call", lambda *_a, **_kw: 0)
+    monkeypatch.setattr(bootstrap.subprocess, "run", lambda *_a, **_kw: pytest.fail("Install"))
+    assert bootstrap.main() == 0
+
+
 def test_switching_to_cuda_updates_install_and_remembered_profile(monkeypatch, tmp_path):
     target = fake_bootstrap_environment(monkeypatch, tmp_path)
     monkeypatch.setattr(bootstrap.sys, "argv", ["bootstrap.py", "--setup-only", "--cuda"])

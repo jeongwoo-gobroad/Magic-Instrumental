@@ -26,6 +26,8 @@ Source files are preserved in the package for portability but are not executed o
 
 ## Original time, audio scheduling and count-in
 
+`practice.origin` accepts −30 through 1800 seconds in the archive, the browser and Session transport. A negative value places the first beat before the recording starts. Preserve its value so the beat phase is the same on the desktop and the tablet.
+
 Signalsmith Stretch 1.3.2's embedded WASM runs in an AudioWorklet. `AudioContext.currentTime` anchors each segment `{input, out, rate, end, until}`. Display position is `input + max(0, currentTime - out) * rate`, clipped to the exclusive end. Input time is always original-media seconds. `inputTime` messages from the upstream worklet include lookahead latency and therefore are not the UI's authoritative media clock.
 
 Schedule both the active segment and its inactive end before playback. During a loop, queue the next segment ahead of the boundary; when count-each is enabled, leave an explicit inactive count interval. The generated vendor adapter fixes two upstream scheduling timestamp issues; see the license notice and exact build assertions. Audio spectrum tests verify actual output, not only the app clock.

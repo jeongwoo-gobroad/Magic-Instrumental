@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Monotonic beat clock and a compact, independent/transport-linked metronome."""
 
+import base64
+import io
 import math
 import struct
-import tempfile
 import time
 import wave
 from pathlib import Path
@@ -24,6 +25,10 @@ from PySide6.QtWidgets import (
 )
 
 from .score import atomic_json
+
+
+def wav_url(buffer: io.BytesIO) -> QUrl:
+    return QUrl.fromEncoded(b"data:audio/wav;base64," + base64.b64encode(buffer.getvalue()))
 
 
 def beat_number(seconds: float, bpm: float, denominator: int = 4, origin: float = 0) -> int:
@@ -76,12 +81,11 @@ class MetronomeBar(QWidget):
         self.seeking = False
         self.suspended = False
         self.count_in_active = False
-        self._click_dir = tempfile.TemporaryDirectory(prefix="practice-click-")
         self.sounds = []
         for frequency in (1100, 1700):
-            path = Path(self._click_dir.name) / f"{frequency}.wav"
+            buffer = io.BytesIO()
             rate, frames = 44100, 1323
-            with wave.open(str(path), "wb") as output:
+            with wave.open(buffer, "wb") as output:
                 output.setparams((1, 2, rate, 0, "NONE", "not compressed"))
                 output.writeframes(
                     b"".join(
@@ -98,7 +102,7 @@ class MetronomeBar(QWidget):
                     )
                 )
             effect = QSoundEffect(self)
-            effect.setSource(QUrl.fromLocalFile(str(path)))
+            effect.setSource(wav_url(buffer))
             self.sounds.append(effect)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -472,4 +476,3 @@ class MetronomeBar(QWidget):
         self.toggle.setChecked(False)
         for sound in self.sounds:
             sound.setSource(QUrl())
-        self._click_dir.cleanup()

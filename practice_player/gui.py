@@ -86,6 +86,7 @@ class Window(QMainWindow):
         self.paths = paths or Paths()
         self.paths.create()
         self.worker = None
+        self._worker_job = None
         self.output_path = None
         self.base_instrumental = None
         self.pitch_semitones = 0
@@ -125,6 +126,7 @@ class Window(QMainWindow):
         self.build_ui()
         self.connect_player()
         self.refresh_tracks()
+        self.set_busy(False)
 
     def build_ui(self):
         self.metronome = MetronomeBar(self.player, preferences=self.preferences)
@@ -490,6 +492,18 @@ class Window(QMainWindow):
         self.start_job(args)
 
     def start_job(self, args):
+        if self.worker:
+            return
+        environment = QProcessEnvironment.systemEnvironment()
+        if os.name == "nt":
+            from .windows_job import WorkerJob
+
+            try:
+                self._worker_job = WorkerJob()
+            except OSError as error:
+                self.show_error(f"Windows 작업 프로세스를 준비하지 못했습니다: {error}")
+                return
+            environment.insert("MAGIC_WORKER_JOB", self._worker_job.name)
         self.job_result = None
         self.job_error = ""
         self.cancelled = False
@@ -497,10 +511,9 @@ class Window(QMainWindow):
         self.logs.clear()
         self.status.setText("작업을 시작하는 중…")
         self.progress.setRange(0, 0)
-        self.set_busy(True)
         process = QProcess(self)
         self.worker = process
-        environment = QProcessEnvironment.systemEnvironment()
+        self.set_busy(True)
         environment.insert("PYTHONUNBUFFERED", "1")
         environment.insert("PYTHONIOENCODING", "utf-8")
         environment.insert("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -571,6 +584,9 @@ class Window(QMainWindow):
         self.raw_buffer = b""
         self.worker.deleteLater()
         self.worker = None
+        if self._worker_job:
+            self._worker_job.close()
+            self._worker_job = None
         self.set_busy(False)
         self.progress.setRange(0, 100)
         if self.cancelled:
@@ -605,7 +621,7 @@ class Window(QMainWindow):
             self._load_result(result)
         finally:
             self._loading_track = False
-            self.refresh_region()
+            self.set_busy(self.worker is not None)
 
     def _load_result(self, result):
         self.count_in.cancel()
@@ -823,8 +839,9 @@ class Window(QMainWindow):
         self.status.setText("작업을 취소하는 중…")
         self.cancel_button.setEnabled(False)
         if os.name == "nt":
-            # Windows terminate() does not stop a console Python worker.
-            QProcess.execute("taskkill", ["/PID", str(process.processId()), "/T", "/F"])
+            if self._worker_job:
+                self._worker_job.close()
+            process.kill()  # Also stop a venv launcher that has not entered main.py.
         else:
             process.terminate()
             QTimer.singleShot(2500, lambda: process.kill() if self.worker is process else None)
@@ -1064,6 +1081,12 @@ class Window(QMainWindow):
                     != QMessageBox.StandardButton.Yes
                 ):
                     return
+            if destination.exists() and (
+                destination.resolve() == self.source_path
+                or destination.resolve().is_relative_to(self.paths.targets.resolve())
+            ):
+                self.show_error("원본 음원은 덮어쓸 수 없습니다. 다른 파일 이름을 선택하세요.")
+                return
             self.start_job(
                 [
                     "export",

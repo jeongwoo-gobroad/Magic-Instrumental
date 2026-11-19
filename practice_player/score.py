@@ -37,7 +37,8 @@ def name_key(path: Path) -> str:
 def matching_score(audio: Path, paths: Paths, source_hash: str = "") -> Path | None:
     if source_hash:
         try:
-            info = json.loads((paths.processed / source_hash / "score-link.json").read_text())
+            link = paths.processed / source_hash / "score-link.json"
+            info = json.loads(link.read_text(encoding="utf-8"))
             candidate = paths.root / info["pdf"]
             if candidate.is_file():
                 return candidate.resolve()
@@ -183,7 +184,7 @@ def load_last_timeline(
 ) -> tuple[Path, ScoreTimeline] | None:
     try:
         folder = paths.processed / source_hash / "scores" / hash_file(pdf)
-        pointer = json.loads((folder / "latest.json").read_text())
+        pointer = json.loads((folder / "latest.json").read_text(encoding="utf-8"))
         name = pointer["analysis"]
         if Path(name).name != name:
             return None

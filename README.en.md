@@ -16,6 +16,8 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
+On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
+
 At startup, the desktop shows your current version and checks the latest stable release in the background. When available, use **변경 내용** (release notes) and **종료하고 업데이트** (close and update). The updater waits for the app to exit, then preserves your files and settings. Reopen with `start` after completion. Offline checks never block practice, and **다시 확인** retries. Finish any analysis/export before updating. Nothing installs automatically.
 
 Close the app, then double-click **`update.command` (Mac)** or **`update.bat` (Windows)** in your existing app folder. Wait for completion and use the same `start` file. The updater checks required tools in your existing external environment automatically.

@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.3.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Source version: **2.3.2**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -64,7 +64,9 @@ pymss-core 0.1.16 Mel-band `scatter_add_equivalent` creates a large dense one-ho
 
 ## Playback and workers
 
-GUI main thread never loads inference models. QProcess stdout recognizes `@@PRACTICE@@` JSON records using a byte buffer so split UTF-8 sequences are retained. Ordinary output remains diagnostic text; stderr is bounded. Cancellation/close terminates workers and child Java processes (process groups on macOS, taskkill tree on Windows).
+GUI main thread never loads inference models. QProcess stdout recognizes `@@PRACTICE@@` JSON records using a byte buffer so split UTF-8 sequences are retained. Ordinary output remains diagnostic text; stderr is bounded. On Windows the GUI owns a kill-on-close Job Object. The actual venv interpreter joins before starting native children. Cancelling closes the job and stops the launcher without blocking the Qt event loop.
+
+Windows setup normalizes requirement-file line endings and accepts existing LF/CRLF dependency markers for the same pins and profile. Fresh export publication uses same-volume rename on Windows and a hard link on POSIX. Sample WAVs for the count and metronome use Qt data URLs. Pytest captures Python streams so FFmpeg threads keep a valid native stderr handle across test cases. The button-driven workflow in `tests/test_gui_workflows.py` uses generated audio and GP, real workers and file output.
 
 Qt FFmpeg QMediaPlayer provides interactive speed via `setPlaybackRate` and pitch compensation via `setPitchCompensation`, enabled when supported. Qt 6.12 credits Signalsmith Stretch for the default FFmpeg backend. Exports always preserve pitch with FFmpeg WSOLA-based `atempo`; slow rates chain supported factors. Do not imply identical live/export waveforms or semitone transposition support. Playback positions, score times, seeks and metronome origin are always **original media seconds**. Do not multiply a seek target by playback rate. Camera/metronome interpolated clocks apply rate only to elapsed wall time since a media anchor.
 
