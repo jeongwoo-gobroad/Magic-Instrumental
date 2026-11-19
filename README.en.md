@@ -53,7 +53,7 @@ For iPad/Android, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-I
 
 ## Session mode
 
-Open the web player from the desktop's **Session 모드 · 함께 연습하기** button, or directly on PC/iPad/Android. The leader opens a `.magic`, enables leader mode and shares the eight-character invite code or QR. Members join, choose their own file or download the leader's explicitly shared all-part GP bundle, select their part, then press **합주 준비** (ready).
+Open the web player from the desktop's **Session 모드 · 함께 연습하기** button, or directly on PC/iPad/Android. The leader opens a `.magic`, enables leader mode and shares the eight-character invite code or QR. Once the leader shares the all-part GP bundle, members can use **리더 파일 받기** in the song panel as soon as they join, before anyone presses Ready. Members can also open their own file. Each player selects a part and presses **합주 준비** (Ready). Cancelling Ready stops playback. Only the person who cancelled needs to press Ready again. When everyone is ready, the leader can resume playback.
 
 The interface changes to a leader control view or a member score view. Only the leader can play, pause and seek; commands are scheduled 1–5 seconds ahead using the relay clock. The leader changes speed/key/count/loop settings while paused. Each participant controls their score part, zoom, volume and metronome on/off. Leaving Session restores the solo interface.
 

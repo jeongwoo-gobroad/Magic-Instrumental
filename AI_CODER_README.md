@@ -1,6 +1,8 @@
 # AI Coder handoff — Magic-Instrumental
 
-Source version: **2.3.3**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Source version: **2.3.4**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+
+Session readiness in the banner follows the relay's current participant list. A cancellation stops playback and preserves the other participants' readiness. Send the cancellation only on a true-to-false transition, including when replacing a file. Keep opt-in file sharing and receiving in the song panel, accessible with the roster closed and before either party is ready.
 
 The desktop fits its initial window to the available screen. Keep both metronome rows accessible and allow score notices to wrap. Refresh the transport clock on duration and position changes so a loaded, paused track shows its full length. On phones the file picker precedes the empty score. After a score opens, the playback and score links navigate within the current song. The Chromium/WebKit suite exercises both links at 360 px.
 

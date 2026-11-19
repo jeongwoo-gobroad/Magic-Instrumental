@@ -41,7 +41,7 @@ def relay_url(tmp_path_factory, web_url):  # noqa: F811
 
 @pytest.mark.parametrize("engine", ["chromium", "webkit"])
 def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url, study_files):  # noqa: F811
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
 
     with sync_playwright() as playwright:
         browser = getattr(playwright, engine).launch()
@@ -59,6 +59,9 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         open_study(leader, study_files["gp"])
         leader.locator("#leaderMode").click()
         leader.wait_for_function("MagicEnsemble.state().role === 'leader'")
+        if engine == "chromium":
+            leader.locator("#shareFile").click()
+            expect(leader.locator("#sessionLive")).to_contain_text("공유 완료", timeout=45000)
         code = leader.evaluate("MagicEnsemble.state().code")
         member.locator("#inviteCode").fill(code)
         member.locator("#memberMode").click()
@@ -66,16 +69,35 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         assert member.locator("#playerControls").is_hidden()
         assert member.locator("#loopControls").is_hidden()
         assert "멤버 활성" in member.locator("#sessionRole").inner_text()
-        leader.locator("#shareFile").click()
+        member.locator("#sessionRoom").click()
+        assert member.locator("#ensemblePanel").is_hidden()
+        assert member.locator("#getShared").is_visible()
+        assert member.locator("#sessionPrepare").is_disabled()
+        if engine == "webkit":
+            assert member.locator("#getShared").is_disabled()
+            leader.locator("#shareFile").click()
         member.wait_for_function("!document.getElementById('getShared').disabled")
         member.locator("#getShared").click()
         member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+        assert not leader.evaluate("MagicEnsemble.state().prepared")
+        assert "준비가 해제" not in leader.locator("#sessionLive").inner_text()
         member.locator("#partSelect").select_option("1")
         member.wait_for_function("MagicPlayer.archive().activePart.track === 1")
         assert leader.evaluate("MagicPlayer.archive().activePart.track") == 2
         for page in (leader, member):
-            page.wait_for_function("!document.getElementById('ensembleReady').disabled")
-            page.locator("#ensembleReady").click()
+            page.locator("#sessionPrepare").click()
+        for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
+            for page in (leader, member):
+                page.get_by_text("모두 준비 완료", exact=False).wait_for()
+            participant.locator("#sessionPrepare").click()
+            other = member if participant == leader else leader
+            expect(other.locator("#sessionReadiness")).to_have_text(
+                f"준비 대기 중인 참가자 · {waiting_for}"
+            )
+            assert other.locator("#sessionPrepare").get_attribute("aria-pressed") == "true"
+            assert participant.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
+            assert leader.locator("#play").is_disabled()
+            participant.locator("#sessionPrepare").click()
         leader.wait_for_function("!document.getElementById('play').disabled")
         leader.locator("#play").click()
         leader.wait_for_function("MagicEnsemble.state().pending")
@@ -118,6 +140,10 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.locator("#sessionPrepare").click()
         leader.wait_for_function("!MagicPlayer.state().playing")
         assert not member.evaluate("MagicPlayer.state().playing")
+        member.locator("#sessionPrepare").click()
+        leader.locator("#play").click()
+        for page in (leader, member):
+            page.wait_for_function("MagicPlayer.state().playing", timeout=7000)
         leader.locator("#exitSession").click()
         member.wait_for_function("MagicEnsemble.state().role === ''")
         assert member.locator("#playerControls").is_visible()
