@@ -38,7 +38,8 @@ def parser() -> argparse.ArgumentParser:
     score = sub.add_parser("score-analyze", help="PDF 기호 인식 및 음원 동기화 사전 분석")
     score.add_argument("--audio", type=Path, required=True)
     score.add_argument("--pdf", type=Path, required=True)
-    score.add_argument("--musicxml", type=Path)
+    score.add_argument("--musicxml", "--notation", type=Path, help="MusicXML 또는 GP3/4/5")
+    score.add_argument("--gp-track", type=int, default=1, help="Guitar Pro 트랙 번호 (1부터)")
     score.add_argument("--mode", choices=["audio", "tempo"], default="audio")
     score.add_argument("--bpm", type=float, default=120)
     score.add_argument("--lead-in", type=float, default=0)
@@ -134,6 +135,7 @@ def main(argv=None) -> int:
                 paths,
                 progress,
                 musicxml=args.musicxml,
+                gp_track=args.gp_track,
                 mode=args.mode,
                 bpm=args.bpm,
                 lead_in=args.lead_in,

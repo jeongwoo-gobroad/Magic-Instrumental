@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import zipfile
 from collections import Counter
 from hashlib import sha256
@@ -23,6 +24,8 @@ from .config import Paths
 from .omr_runtime import executable as managed_executable
 from .omr_runtime import managed_ready, managed_root, omr_environment
 from .score import SCORE_VERSION, ScoreTimeline, atomic_json, matching_musicxml
+from .score_geometry import LAYOUT_VERSION
+from .score_input import OMR_VERSION, prepare_omr_input
 
 
 def audiveris_path() -> str | None:
@@ -51,8 +54,10 @@ def run_omr(pdf: Path, output: Path, report) -> Path:
             "같은 이름의 MusicXML을 score_targets에 넣어도 됩니다."
         )
     output.mkdir(parents=True, exist_ok=True)
+    prepared, metadata = prepare_omr_input(pdf, output / "input", report)
+    atomic_json(output / "input.json", metadata)
     report("PDF의 음표·도돌이표·코다를 사전 인식 중…", None)
-    command = [executable, "-batch", "-export", "-output", str(output), "--", str(pdf)]
+    command = [executable, "-batch", "-export", "-output", str(output), "--", str(prepared)]
     environment = omr_environment(executable)
     if Path(executable).resolve() == managed_executable(managed_root()).resolve():
         # Another Audiveris installation may have saved a different default language.
@@ -69,7 +74,38 @@ def run_omr(pdf: Path, output: Path, report) -> Path:
             env=environment,
         )
         try:
-            result = process.wait(timeout=1800)
+            started, last_report, offset, stage = time.monotonic(), 0.0, 0, "인식 준비"
+            stages = {
+                "LOAD": "페이지 읽기", "BINARY": "이미지 정리", "SCALE": "보표 간격",
+                "GRID": "보표", "HEADERS": "조표·박자표", "STEM_SEEDS": "음표 줄기",
+                "BEAMS": "연결선", "LEDGERS": "덧줄", "HEADS": "음표 머리",
+                "STEMS": "음표 길이", "REDUCTION": "음표 검증", "CUE_BEAMS": "작은 음표",
+                "TEXTS": "문자·이동 지시", "MEASURES": "마디", "CHORDS": "화음",
+                "CURVES": "붙임줄", "SYMBOLS": "연주 기호", "LINKS": "기호 연결",
+                "RHYTHMS": "리듬", "PAGE": "페이지 마무리",
+            }
+            while True:
+                try:
+                    result = process.wait(timeout=1)
+                    break
+                except subprocess.TimeoutExpired:
+                    elapsed = time.monotonic() - started
+                    if elapsed >= 1800:
+                        raise RuntimeError(
+                            f"악보 인식 제한 시간(30분)을 초과했습니다. 로그: {output / 'omr.log'}"
+                        )
+                    with (output / "omr.log").open("rb") as stream:
+                        stream.seek(offset)
+                        chunk = stream.read()
+                        offset = stream.tell()
+                    matches = re.findall(rb"\[[^\]\r\n]*#(\d+)\].*StepMonitoring.*\| (\w+)", chunk)
+                    if matches:
+                        page, step = matches[-1]
+                        label = stages.get(step.decode(), step.decode())
+                        stage = f"{page.decode()}페이지 · {label}"
+                    if elapsed - last_report >= 5:
+                        report(f"악보 인식 중 · {stage} · {int(elapsed)}초 경과", None)
+                        last_report = elapsed
         except BaseException:
             if os.name == "nt":
                 subprocess.run(
@@ -123,6 +159,24 @@ def read_musicxml(path: Path) -> bytes:
     # Parse before handing anything to music21. No URL loading or archive extraction.
     ET.fromstring(data)
     return data
+
+
+def validate_omr_systems(xml, bars):
+    """Equal totals cannot hide a missed bar in one system and an extra in another."""
+    expected = Counter((b["page"], b["system"]) for b in bars.values())
+    actual, page, system = Counter(), 0, 0
+    for index, measure in enumerate(ET.fromstring(read_musicxml(xml)).findall("part/measure")):
+        prints = measure.findall("print")
+        if index and any(p.get("new-page") == "yes" for p in prints):
+            page, system = page + 1, 0
+        elif index and any(p.get("new-system") == "yes" for p in prints):
+            system += 1
+        actual[page, system] += 1
+    if actual != expected:
+        raise ValueError(
+            "오선 인식 결과와 원본 PDF의 페이지/줄별 마디 수가 다릅니다. "
+            "같은 판본의 GP/MusicXML을 선택하거나 인식 결과를 보정하세요."
+        )
 
 
 def parse_route_override(text: str, count: int) -> list[int]:
@@ -333,6 +387,12 @@ def parse_notation(
             length = nominal
         if length <= 0:
             length = float(measure.barDuration.quarterLength)
+        elif length < nominal and raw.get("implicit") != "yes":
+            warnings.append(
+                f"{index + 1}번 마디의 음표 길이가 부족해 박자표 길이를 유지했습니다. "
+                "빠진 음표·쉼표를 확인하세요."
+            )
+            length = nominal
         originals.append(
             {
                 "source_index": index,
@@ -486,6 +546,7 @@ def analyze_score(
     report=lambda *_: None,
     *,
     musicxml: Path | None = None,
+    gp_track=1,
     mode="audio",
     bpm=120.0,
     lead_in=0.0,
@@ -504,17 +565,43 @@ def analyze_score(
     folder = paths.processed / audio_hash / "scores" / pdf_hash
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".analysis.lock"), timeout=3600):
+        from .guitar_pro import GP_EXTENSIONS, GP_VERSION, read_gp
+
         musicxml = musicxml or matching_musicxml(pdf)
         omr_folder = folder / "recognition"
+        source_path, source_hash, source_info = None, None, {}
         if musicxml is None:
-            for name in ("reviewed.musicxml", "score.mxl"):
+            for name in ("reviewed.musicxml", f"v{OMR_VERSION}/score.mxl"):
                 if (omr_folder / name).is_file():
                     musicxml = omr_folder / name
                     break
         if musicxml is None:
-            generated = run_omr(pdf, omr_folder / "work", report)
-            musicxml = omr_folder / "score.mxl"
+            work = omr_folder / f"v{OMR_VERSION}" / f"work-{time.time_ns()}"
+            generated = run_omr(pdf, work, report)
+            if hash_file(pdf) != pdf_hash:
+                raise ValueError("인식 중 PDF가 변경되었습니다. 다시 분석하세요.")
+            musicxml = omr_folder / f"v{OMR_VERSION}" / "score.mxl"
             shutil.copyfile(generated, musicxml)
+            atomic_json(
+                musicxml.with_suffix(".json"),
+                json.loads((work / "input.json").read_text(encoding="utf-8")),
+            )
+        if musicxml.suffix.lower() in GP_EXTENSIONS:
+            source_path = musicxml.resolve(strict=True)
+            source_hash = hash_file(source_path)
+            report("Guitar Pro의 음표·박자·반복을 직접 읽는 중…", None)
+            document, source_info = read_gp(source_path, gp_track)
+            if hash_file(source_path) != source_hash:
+                raise ValueError("분석 중 Guitar Pro 파일이 변경되었습니다.")
+            converted = folder / "notation"
+            converted.mkdir(exist_ok=True)
+            musicxml = converted / f"{source_hash}-track{gp_track}-v{GP_VERSION}.musicxml"
+            # Generated intermediate only; never rewrite the supplied score.
+            temporary = musicxml.with_suffix(".tmp")
+            temporary.write_bytes(document)
+            temporary.replace(musicxml)
+        elif musicxml == omr_folder / f"v{OMR_VERSION}" / "score.mxl":
+            source_info = json.loads(musicxml.with_suffix(".json").read_text(encoding="utf-8"))
         xml_hash = hash_file(musicxml)
         signature = {
             "version": SCORE_VERSION,
@@ -525,7 +612,10 @@ def analyze_score(
             "route": route_override,
             "music21": "10.5.2",
             "alignment": "chroma-dtw-v3-full-score",
-            "pdf_recognition": 2,
+            "pdf_recognition": LAYOUT_VERSION,
+            "omr": OMR_VERSION,
+            "source_sha256": source_hash,
+            "source_import": source_info,
         }
         key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
         destination = folder / key
@@ -540,14 +630,21 @@ def analyze_score(
                 pass
         report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
         from .score_layout import analyze_layout
-        from .score_symbols import supplement_xml
+        from .score_symbols import printed_measure_numbers, supplement_xml
 
         layout, pages, document, additions, extra_warnings = {}, None, None, [], []
         try:
             _, bars, layout = analyze_layout(pdf, musicxml, report)
         except ValueError as error:
+            if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
+                raise ValueError(
+                    "원본 악보와 PDF의 마디를 정확히 연결하지 못했습니다. "
+                    "같은 판본·트랙인지 확인하세요. " + str(error)
+                ) from error
             extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
         else:
+            if source_info.get("method") == "standard-staves-from-mixed-pdf":
+                validate_omr_systems(musicxml, bars)
             pages = {i: bar["page"] for i, bar in bars.items()}
             extra_warnings.extend(layout.get("warnings", []))
             # Geometric evidence is required before adding a missing navigation sign.
@@ -558,6 +655,25 @@ def analyze_score(
             musicxml, len(reader.pages), route_override, document=document, measure_pages=pages
         )
         notation["warnings"].extend(extra_warnings)
+        notation["warnings"].extend(source_info.get("warnings", []))
+        if source_info and layout.get("method") == "pdf-staves-barlines":
+            labels = printed_measure_numbers(pdf, bars)
+            changed = sum(label != notation["originals"][i]["measure"]
+                          for i, label in labels.items())
+            for cue in notation["originals"] + notation["cues"]:
+                if cue["source_index"] in labels:
+                    cue["measure"] = labels[cue["source_index"]]
+            layout["printed_measure_numbers"] = len(labels)
+            if changed:
+                notation["warnings"].append(
+                    f"인식 원본과 다른 {changed}개 마디 번호를 PDF 인쇄 번호로 표시합니다. "
+                    "연주 순서는 바꾸지 않았습니다."
+                )
+        if source_info.get("method") == "standard-staves-from-mixed-pdf":
+            notation["warnings"].append(
+                "오선 음표를 인식하고 타브는 원본 표시·마디 위치 확인에 사용했습니다. "
+                "타브 프렛 숫자의 음높이를 인식한 결과는 아닙니다."
+            )
         text = " ".join(page.extract_text() or "" for page in reader.pages)
         marks = {mark for cue in notation["originals"] for mark in cue["marks"]}
         # Vector PDFs can reveal navigation words that OCR missed. Fail visibly;
@@ -595,6 +711,7 @@ def analyze_score(
             hash_file(audio) != audio_hash
             or hash_file(pdf) != pdf_hash
             or hash_file(musicxml) != xml_hash
+            or (source_path is not None and hash_file(source_path) != source_hash)
         ):
             raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
         plan = ScoreTimeline(
@@ -606,6 +723,10 @@ def analyze_score(
                 "page_count": len(reader.pages),
                 "xml_sha256": hash_file(musicxml),
                 "musicxml_path": str(musicxml),
+                "notation_source": {
+                    "path": str(source_path) if source_path else None,
+                    "sha256": source_hash, **source_info,
+                },
                 "signature": signature,
                 "cues": cues,
                 "end": end,
@@ -620,8 +741,6 @@ def analyze_score(
         )
         # Do not overwrite an edited timeline when explicitly re-running analysis.
         if destination.exists() and force:
-            import time
-
             key += f"-{time.time_ns()}"
             destination = folder / key
         destination.mkdir(exist_ok=True)

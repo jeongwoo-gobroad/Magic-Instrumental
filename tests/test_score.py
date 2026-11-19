@@ -83,6 +83,17 @@ def test_dacapo_fine_and_bad_segno(tmp_path):
     assert len(parse_notation(path, 1, "1-2,1")["cues"]) == 3
 
 
+def test_underfilled_omr_measure_keeps_meter_but_explicit_pickup_does_not(tmp_path):
+    path = xml_file(tmp_path, ["", "", ""])
+    data = path.read_text().replace("<duration>4</duration>", "<duration>1</duration>")
+    data = data.replace('<measure number="1">', '<measure number="1" implicit="yes">')
+    path.write_text(data)
+    result = parse_notation(path, 1)
+    assert [c["beat"] for c in result["cues"]] == [0, 1, 5]
+    assert result["beats"] == 9
+    assert len(result["warnings"]) == 2
+
+
 @pytest.mark.parametrize("text", ["0-3", "4-2", "1-99", "1;2", ""])
 def test_invalid_route_rejected(text):
     with pytest.raises(ValueError):

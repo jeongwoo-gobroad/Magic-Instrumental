@@ -34,7 +34,7 @@ def word_marks(text):
     return sorted(found, key=lambda x: x[1])
 
 
-def text_marks(pdf):
+def text_marks(pdf, *, include_numbers=False):
     import pypdfium2
     import pypdfium2.raw as raw
 
@@ -80,7 +80,11 @@ def text_marks(pdf):
                                 coordinates.append(coordinates[-1])
                             value += char[0]
                             coordinates.append(char)
-                        for kind, start, end in word_marks(value):
+                        marks = word_marks(value)
+                        if include_numbers:
+                            marks.extend(("measure-number", m.start(), m.end())
+                                         for m in re.finditer(r"\b\d(?:\s*\d){0,3}\b", value))
+                        for kind, start, end in marks:
                             selected = coordinates[start:end]
                             found.append(
                                 {
@@ -98,6 +102,25 @@ def text_marks(pdf):
                 bitmap.close()
                 page.close()
     return found
+
+
+def printed_measure_numbers(pdf, bars):
+    """Only isolated numbers just above the staff at a verified left barline."""
+    candidates = {}
+    for mark in text_marks(pdf, include_numbers=True):
+        if mark["kind"] != "measure-number":
+            continue
+        matches = []
+        for index, box in bars.items():
+            if box["page"] != mark["page"] or "staff_top" not in box:
+                continue
+            distance = (box["staff_top"] - mark["y"]) / box["staff_spacing"]
+            dx = (mark["x"] - box["left"]) / box["staff_spacing_x"]
+            if 0.25 <= distance <= 3.5 and -0.7 <= dx <= 1.5:
+                matches.append(index)
+        if len(matches) == 1:
+            candidates.setdefault(matches[0], set()).add("".join(mark["text"].split()))
+    return {i: next(iter(values)) for i, values in candidates.items() if len(values) == 1}
 
 
 def locate_mark(mark, bars):

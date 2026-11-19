@@ -1,10 +1,10 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **1.5.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **1.6.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
-Python desktop GUI for macOS Apple Silicon and Windows x64. Separate vocals locally, play only the instrumental, preserve pitch while changing speed, and reuse full-content SHA-256 caches. Keep originals under `targets/`, matching PDFs/MusicXML under `score_targets/`, results/settings under `processed/`, and downloaded weights under `models/`.
+Python desktop GUI for macOS Apple Silicon and Windows x64. Separate vocals locally, play only the instrumental, preserve pitch while changing speed, and reuse full-content SHA-256 caches. Keep originals under `targets/`, matching PDFs/MusicXML/GP3–5 under `score_targets/`, results/settings under `processed/`, and downloaded weights under `models/`.
 
 The right PDF panel is resizable. Repeat/navigation recognition, audio alignment, and zoom-specific camera paths are computed **before playback**. Support score zoom up to 600%, reviewed timeline corrections, and adjustable N-measure previous/next seeks in unfolded performance order. The slim top metronome supports independent playback or original BPM × audio rate, beat circles, meter, and first-beat origin.
 
@@ -36,6 +36,8 @@ One-click installers must bootstrap Python without a preinstalled interpreter. N
 | `count_in.py` | optional drum count before manual play/resume, phase-preserving count clock, cancellation and original synthesized sounds |
 | `region_loop.py` | performed-measure range controls, inclusive end selection, per-repeat count preference and content/timing-bound restoration |
 | `score.py` | content-paired scores, atomic JSON, validated timeline, measure seeking |
+| `guitar_pro.py` | bounded GP3/4/5 reading via PyGuitarPro, selected-track conversion to internal MusicXML, navigation validation |
+| `score_input.py` | private mixed-staff OMR preparation, original PDF preservation, native-resolution multipage TIFF |
 | `score_analysis.py` | Audiveris process, safe MusicXML, repeat expansion, precomputed audio alignment |
 | `omr_runtime.py` | standard-library managed-runtime discovery, signature, cheap launch readiness, dedicated tessdata environment |
 | `omr_install.py` | verified downloads, native extraction, full installed-file inventory, synthetic English OCR probe, transactional publication |
@@ -68,6 +70,18 @@ Qt FFmpeg QMediaPlayer provides interactive speed via `setPlaybackRate` and pitc
 
 ## Score invariants
 
+### Mixed notation and GP input (v1.6.0)
+
+`OMR_VERSION=2`, `LAYOUT_VERSION=3`, `GP_VERSION=1` are independent processing signatures. Automatic recognition uses `recognition/v2/score.mxl` with input metadata and a unique `work-<time_ns>` per attempt; never reuse legacy `recognition/score.mxl`. Explicit `reviewed.musicxml` remains preferred. Old reviewed timelines are kept, including force reanalysis. No changes to the audio separation pipeline version.
+
+`prepare_omr_input()` renders at up to 3 pixels/point and 3,200 pixels on the longest edge. Require all pages to have alternating [5,6] staves and coincident barlines. Mask only six-line companions, with clearance from standard notation, into private PNGs and a multipage native-resolution TIFF. This avoids Audiveris treating TAB as standard notation; Audiveris TAB switches alone were insufficient in local diagnostics. Preserve the full source PDF for display, geometry and navigation supplementation. Reject ambiguous/overlapping/mixed page patterns; do not claim TAB fret-pitch recognition. Raster-only detection remains subject to image quality. Per-page progress is read incrementally from the Java log; retain timeout and child-process cancellation.
+
+Geometry can pair [5] notation with repeating [5,6] PDF systems only after all paired barline counts/positions agree. Staff detection fills digit gaps without shifting already clear lines and rejects ledger runs as false sixth lines using edge coverage. GP and mixed-OMR paths must validate layout before audio alignment; failure must not publish a timing-only success. Mixed OMR additionally checks per-page/per-system measure counts, since equal global totals can conceal a local extra/missing bar. Positioned numeric labels just above verified left barlines can restore printed measure numbers (including spaced digits) without changing route order; never use TAB fret digits as labels. All other conservative XML-assisted checks remain.
+
+`read_gp()` uses pinned PyGuitarPro 0.11 (LGPL-3.0-only) and attrs 26.1.0 (MIT), installed by existing bootstrap locks. Read GP3/4/5 only, at most 16 MB, 2,000 measures, 64 tracks, 200,000 note events; validate selected pitched track, exact rational durations, note bounds, navigation and repeat limits. Convert only generated intermediates under `notation/<source-sha>-trackN-v1.musicxml`. Source content hash, converter version, track and generated XML hash enter timing signatures. Source files are hash-checked around conversion/analysis and never rewritten. GP files remain private, like audio/PDF. Track number is exposed in GUI and `--gp-track`; `--notation` aliases the existing `--musicxml`. Unsupported double navigation, percussion, GPX/GP7 fail visibly. Capo/tuning, chords, voices, ties and tuplets are read; performance effects are approximate feature input, not a synthesizer. Full arrangement equality is not established by matching counts; do not silently pad/drop an edition mismatch.
+
+Underfilled non-implicit MusicXML measures retain nominal meter length, warning about missing notes/rests; explicit `implicit=yes` pickups retain shorter timing. All score alignment remains offline and estimated. Add original synthetic fixtures for regressions, never a supplied commercial score. Local mixed-score validation does not imply universal recognition correctness or physical Windows audio validation.
+
 ### Native OMR setup
 
 Managed tools live outside the project at macOS `~/.vocal-separator-and-speed-adj/tools/` or Windows `%LOCALAPPDATA%\Magic-Instrumental\tools\`, independently of a custom Windows venv path. `omr-<manifest/revision signature>` contains the unchanged app/JRE, `tessdata/eng.traineddata`, `licenses/`, `sources.json` and a success-only `verified.json` file inventory. `INSTALLER_REVISION=1`; consider bumping when extraction/probe semantics change. This signature is separate from reviewed score timelines and separation caches; do not invalidate those merely for an installer update.
@@ -86,7 +100,7 @@ Scores are paired by normalized stem for convenience, then cached by file conten
 
 Audio alignment is offline: 11,025 Hz mono, chroma/cosine cost, full-sequence DTW, bounded ~3,000×3,000 matrix and slope constraints. Trim low-energy margins. This is not realtime score following or a partial-score subsequence mode. Similarity is a feature diagnostic, not an accuracy probability. OMR and time alignment are estimates until reviewed; do not claim automatic correctness.
 
-Page-only timeline version remains **1**; optional `scroll.version=1` adds camera paths. The layout/recognition engine is **2**, independently included in both timing and view cache signatures. `score_geometry.py` detects PDF staves and barlines independently of XML `<print>` and width metadata, then requires the full original measure count and fixed simultaneous 5/6-line staff pattern to agree. Vector endpoints plus raster visibility reject note stems; nested form matrices, PDF rotation and crop offsets are handled through PDFium coordinates. Raster-only pages use horizontal morphology, cap rejection and bounded small-skew search. Preserve page dimensions, normalized actual bar boxes, layout method and diagnostics in `pdf_layout`. This is bar-level geometry, not exact note-level or tablature pitch recognition.
+Page-only timeline version remains **1**; optional `scroll.version=1` adds camera paths. The layout engine is **3**, independently included in both timing and view cache signatures. `score_geometry.py` detects PDF staves and barlines independently of XML `<print>` and width metadata, then requires the full original measure count and fixed simultaneous 5/6-line staff pattern to agree. Vector endpoints plus raster visibility reject note stems; nested form matrices, PDF rotation and crop offsets are handled through PDFium coordinates. Raster-only pages use horizontal morphology, cap rejection and bounded small-skew search. Preserve page dimensions, normalized actual bar boxes, layout method and diagnostics in `pdf_layout`. This is bar-level geometry, not exact note-level or tablature pitch recognition.
 
 If PDF geometry fails, `score_layout.py` can use the earlier XML print/width method only after matching page/staff/system structure, with an explicit warning. If both fail, timing analysis may retain XML page estimates with a warning, but camera planning fails; do not invent equal-width bars. Changing/hidden staves and multi-measure rests need matching print metadata or review.
 

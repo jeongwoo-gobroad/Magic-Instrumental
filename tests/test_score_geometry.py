@@ -16,10 +16,10 @@ from scipy import ndimage
 
 from practice_player.config import Paths
 from practice_player.score import ScoreTimeline
-from practice_player.score_analysis import analyze_score, parse_notation
+from practice_player.score_analysis import analyze_score, parse_notation, validate_omr_systems
 from practice_player.score_geometry import detect_pdf_layout, page_geometry
 from practice_player.score_layout import analyze_scroll
-from practice_player.score_symbols import supplement_xml
+from practice_player.score_symbols import printed_measure_numbers, supplement_xml
 from practice_player.score_view import view_profile
 from tests.test_score import xml_file
 
@@ -79,6 +79,26 @@ def test_geometry_without_print_width_metadata_maps_mixed_sizes_and_short_system
     assert bars[1]["right"] - bars[1]["left"] > 2 * (bars[0]["right"] - bars[0]["left"])
     assert info["pages"][0]["orientation"] == "landscape"
     assert info["pages"][1]["orientation"] == "portrait"
+
+
+def test_printed_numbers_ignore_tab_digits_and_keep_spaced_digits(tmp_path):
+    xml = xml_file(tmp_path, [""] * 3)
+    pdf = vector_pdf(tmp_path / "numbers.pdf", [
+        ((1000, 600), [(400, [50, 350, 650, 950],
+                       [(52, "109"), (352, "110"), (652, "1 1 1")])], [5, 6]),
+    ])
+    _, bars, _ = detect_pdf_layout(pdf, xml)
+    assert printed_measure_numbers(pdf, bars) == {0: "109", 1: "110", 2: "111"}
+
+
+def test_mixed_omr_equal_totals_cannot_hide_wrong_system_counts(tmp_path):
+    xml = xml_file(tmp_path, ["", "", '<print new-system="yes"/>', ""])
+    pdf = vector_pdf(tmp_path / "mixed.pdf", [
+        ((600, 800), [(600, [50, 200, 400, 550], []), (350, [50, 550], [])], [5, 6]),
+    ])
+    _, bars, _ = detect_pdf_layout(pdf, xml)
+    with pytest.raises(ValueError, match="줄별 마디 수"):
+        validate_omr_systems(xml, bars)
 
 
 def test_piano_and_tab_staves_share_measures(tmp_path):

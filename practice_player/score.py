@@ -64,7 +64,8 @@ def matching_musicxml(pdf: Path) -> Path | None:
     candidates = [
         p
         for p in pdf.parent.iterdir()
-        if p.suffix.lower() in {".musicxml", ".mxl", ".xml"} and name_key(p) == name_key(pdf)
+        if p.suffix.lower() in {".musicxml", ".mxl", ".xml", ".gp3", ".gp4", ".gp5"}
+        and name_key(p) == name_key(pdf)
     ]
     return candidates[0] if len(candidates) == 1 else None
 

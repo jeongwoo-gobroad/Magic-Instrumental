@@ -31,6 +31,16 @@ On macOS, the environment is `~/.vocal-separator-and-speed-adj/.venv` (the folde
 
 On Windows, the installer creates `venv-location.windows.txt` from its example. To choose a different location before installation, copy `venv-location.windows.example.txt` to that name and enter one absolute path outside this project. Default: `%LOCALAPPDATA%\Magic-Instrumental\.venv`. Use `install.bat -Cpu` or `install.bat -Cuda` to override automatic NVIDIA detection. Drivers are installed separately. Intel Macs and Windows ARM are not supported by this release.
 
+## Version 1.6.0: mixed notation and native Guitar Pro input
+
+For consistently paired five-line notation and six-line TAB, analysis masks the TAB region in a private native-resolution copy, recognizes standard notation with Audiveris, and maps measures against both staves in the unchanged PDF. The full original remains visible. Dense fret-number gaps and long ledger lines are handled more reliably; progress shows page, recognition stage and elapsed time.
+
+Select **MusicXML / GP 선택** and a **GP 악기 트랙** (track number) to read GP3/4/5 directly, or place one matching-name source next to the PDF. The installer includes [PyGuitarPro 0.11](https://github.com/Perlence/PyGuitarPro), **LGPL-3.0-only**; see [third-party notices](THIRD_PARTY_NOTICES.md). Native import bypasses OMR and reads notes, meter, repeats and supported navigation. PDF geometry still supplies the camera positions.
+
+Use the same edition, measure order and instrument track. Mismatched measure counts stop analysis rather than shifting or padding the score. Matching counts alone do not prove identical arrangements. Mixed PDF recognition must also pass layout validation. TAB-only fret recognition, GPX/GP7, percussion tracks and double-segno/double-coda navigation are unsupported; performance effects and estimated audio alignment need review.
+
+Rerun the installer, restart the app, and clear “reuse existing timing” when reanalyzing a failed score. New recognition caches exclude legacy OMR results while preserving originals and reviewed timelines. Underfilled non-pickup measures retain their meter length with a warning about missing notation.
+
 ## Practice
 
 **v1.5.0: measure-range practice loops.** Prepare the audio and analyze the score, choose **시작 / 끝** (start/end measures), enable **마디 구간 반복**, then press Play. The final selected measure is included. Repeated measures are distinguished by visit number and performance order; **현재 마디** selects the current measure. The checkbox pauses and moves to the range start without starting playback.

@@ -19,3 +19,6 @@ defusedxml==0.7.1
 pillow==13.0.0
 # install.command/install.bat also install and verify native Audiveris + Java + eng.
 # Native download pins: installers/omr.json. MusicXML input bypasses OMR.
+
+# Direct Guitar Pro 3/4/5 notation import (LGPL-3.0-only).
+PyGuitarPro==0.11

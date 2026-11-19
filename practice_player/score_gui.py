@@ -455,26 +455,30 @@ class ScorePanel(QWidget):
         route.setToolTip("인쇄 번호가 아닌 원본 마디 순번(1부터). 반복을 모두 펼친 순서입니다.")
         form.addRow("연주 순서 직접 보정", route)
         xml = QLineEdit()
-        xml.setPlaceholderText("비우면 같은 이름 MusicXML 또는 PDF 인식")
-        browse = QPushButton("MusicXML 선택")
+        xml.setPlaceholderText("비우면 같은 이름 MusicXML/GP 또는 PDF 인식")
+        browse = QPushButton("MusicXML / GP 선택")
 
         def select_xml():
             path, _ = QFileDialog.getOpenFileName(
                 dialog,
-                "MusicXML",
+                "원본 악보 선택",
                 str(self.paths.score_targets),
-                "MusicXML (*.mxl *.musicxml *.xml)",
+                "원본 악보 (*.mxl *.musicxml *.xml *.gp3 *.gp4 *.gp5)",
             )
             if path:
                 xml.setText(path)
 
         browse.clicked.connect(select_xml)
         form.addRow(xml, browse)
+        gp_track = QSpinBox()
+        gp_track.setRange(1, 64)
+        gp_track.setToolTip("GP 파일에서 PDF와 같은 악기 트랙 번호를 선택하세요 (1부터).")
+        form.addRow("GP 악기 트랙", gp_track)
         force = QCheckBox("시간 정렬 다시 계산 (기존 보정본 보존)")
         form.addRow(force)
 
         def reuse_changed(checked):
-            for widget in (mode, bpm, lead, route, xml, browse, force):
+            for widget in (mode, bpm, lead, route, xml, browse, gp_track, force):
                 widget.setEnabled(not checked)
 
         reuse.toggled.connect(reuse_changed)
@@ -483,6 +487,8 @@ class ScorePanel(QWidget):
             "PDF 인식 도구와 영어 데이터는 설치 파일에서 자동 준비합니다.\n"
             "PDF의 규격·보표·마디선을 분석하므로 "
             "줄바꿈 정보가 없는 MusicXML도 사용할 수 있습니다.\n"
+            "오선+6선 타브는 오선 영역을 인식하고 원본 전체를 표시합니다.\n"
+            "GP3/4/5는 음표·박자·반복을 직접 읽습니다. PDF와 같은 판본이어야 합니다.\n"
             "복잡한 기호는 인식 후 시간표와 연주 순서를 확인하세요."
         )
         hint.setWordWrap(True)
@@ -502,6 +508,7 @@ class ScorePanel(QWidget):
                 "lead-in": lead.value(),
                 "route": route.text().strip(),
                 "musicxml": xml.text().strip(),
+                "gp-track": gp_track.value(),
                 "force": force.isChecked(),
                 "zoom": profile["zoom"],
                 "view-width": profile["width"],

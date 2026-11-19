@@ -7,7 +7,7 @@ import math
 import numpy as np
 from scipy import ndimage
 
-LAYOUT_VERSION = 2
+LAYOUT_VERSION = 3
 
 
 def groups(indices, gap=1):
@@ -24,14 +24,27 @@ def find_staves(ink):
     """Recover regular groups of five/six lines, including short final systems."""
     height, width = ink.shape
     # A separable min/max filter is linear in image size, independent of line length.
-    closed = ndimage.maximum_filter1d(ink, 3, axis=1)
-    closed = ndimage.minimum_filter1d(closed, 3, axis=1)
     length = max(15, round(width * 0.055))
-    horizontal = ndimage.minimum_filter1d(closed, length, axis=1)
-    horizontal = ndimage.maximum_filter1d(horizontal, length, axis=1)
-    strength = horizontal.sum(axis=1)
-    rows = groups(np.flatnonzero(strength > max(20, width * 0.18)))
-    lines = [float(np.mean(g[strength[g] >= strength[g].max() * 0.9])) for g in rows]
+
+    def candidates(gap):
+        closed = ndimage.maximum_filter1d(ink, gap, axis=1)
+        closed = ndimage.minimum_filter1d(closed, gap, axis=1)
+        horizontal = ndimage.minimum_filter1d(closed, length, axis=1)
+        horizontal = ndimage.maximum_filter1d(horizontal, length, axis=1)
+        strength = horizontal.sum(axis=1)
+        rows = groups(np.flatnonzero(strength > max(20, width * 0.18)))
+        return [float(np.mean(g[strength[g] >= strength[g].max() * 0.9])) for g in rows]
+
+    lines = candidates(3)
+    gaps = np.diff(lines)
+    regular = gaps[(gaps >= 2) & (gaps <= height * 0.035)]
+    if len(regular):
+        # Fill missing densely numbered TAB lines without moving an already
+        # clear staff line toward nearby notes or beams.
+        tolerance = max(2, float(np.median(regular)) * 0.4)
+        additions = [y for y in candidates(max(3, round(width * 0.014)))
+                     if min(abs(y - x) for x in lines) > tolerance]
+        lines = sorted(lines + additions)
     staves, cursor = [], 0
     while cursor + 5 <= len(lines):
         found = False
@@ -45,13 +58,33 @@ def find_staves(ink):
                 continue
             if max(abs(gaps - spacing)) > max(1.5, spacing * 0.22):
                 continue
-            common = horizontal[np.round(staff).astype(int)].sum(axis=0) >= count - 1
+            # Recover short gaps made by fret-number backgrounds before finding
+            # the extent. Opening long lines alone drops densely numbered TAB.
+            strips = np.array([
+                ink[max(0, round(y) - 1):round(y) + 2].any(axis=0) for y in staff
+            ])
+            gap = max(3, round(spacing * 2))
+            strips = ndimage.maximum_filter1d(strips, gap, axis=1)
+            strips = ndimage.minimum_filter1d(strips, gap, axis=1)
+            common = strips.sum(axis=0) >= count - 1
             spans = groups(np.flatnonzero(common))
             if not spans:
                 continue
             span = max(spans, key=len)
             if len(span) < width * 0.12:
                 continue
+            if count == 6:
+                # Long ledger runs below a five-line staff are not a sixth line.
+                # Real TAB lines reach the staff edges even when digits obscure
+                # their interior (morphological opening can remove those edges).
+                edge_width = max(3, round(spacing * 1.5))
+                y = round(staff[-1])
+                row = ink[max(0, y - 1):y + 2].any(axis=0)
+                if any(row[a:b].mean() < 0.65 for a, b in (
+                    (span[0] + 2, span[0] + edge_width),
+                    (span[-1] - edge_width, span[-1] - 2),
+                )):
+                    continue
             staves.append(
                 {
                     "lines": staff,
@@ -271,6 +304,12 @@ def repeat_dots(ink, staff, boundary, side):
 
 def page_geometry(gray, pattern, vectors=()):
     ink, staves, angle = straighten(gray)
+    counts = [len(s["lines"]) for s in staves]
+    # A standard-notation source may omit the duplicated TAB staff. Require the
+    # full alternating pattern and matching barlines below before pairing it.
+    companion = bool(pattern == [5] and counts == [5, 6] * (len(counts) // 2))
+    if companion:
+        pattern = [5, 6]
     if len(staves) % len(pattern):
         raise ValueError("PDF의 보표 수와 MusicXML 파트/보표 구성이 다릅니다.")
     systems = []
@@ -301,8 +340,12 @@ def page_geometry(gray, pattern, vectors=()):
                 repeat_start=repeat_dots(ink, group[0], xs[i], 1),
                 repeat_end=repeat_dots(ink, group[0], xs[i + 1], -1),
             )
+            if angle == 0:
+                bar["staff_top"] = group[0]["lines"][0] / ink.shape[0]
+                bar["staff_spacing"] = group[0]["spacing"] / ink.shape[0]
+                bar["staff_spacing_x"] = group[0]["spacing"] / ink.shape[1]
             bars.append(bar)
-        systems.append({"box": box, "bars": bars})
+        systems.append({"box": box, "bars": bars, "tab_companion": companion})
     return systems, angle
 
 
@@ -390,6 +433,7 @@ def detect_pdf_layout(pdf, xml, report=lambda *_: None):
                         "orientation": "landscape" if size[0] > size[1] else "portrait",
                         "deskew_degrees": round(angle, 3),
                         "systems": len(systems),
+                        "tab_companion": any(s["tab_companion"] for s in systems),
                     }
                 )
                 for system_index, system in enumerate(systems):

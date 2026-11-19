@@ -1,3 +1,4 @@
+attrs==26.1.0
 av==19.0.2
 certifi==2026.10.23
 cffi==2.1.1
@@ -36,6 +37,7 @@ pillow==13.0.0
 platformdirs==4.14.5
 pooch==1.9.0
 pycparser==3.12
+PyGuitarPro==0.11
 pymss==2.4.0
 pymss-core==0.1.16
 pyparsing==3.3.3

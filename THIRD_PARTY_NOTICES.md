@@ -25,6 +25,8 @@ Dependencies are installed from their distributors, not copied into this source 
 | [Signalsmith Stretch](https://doc.qt.io/qt-6/qtmultimedia-attribution-signalsmith-stretch.html) | Qt FFmpeg backend pitch compensation | MIT; Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. Distributed inside Qt, not vendored by this project |
 | [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) | PDF rendering | BSD-3-Clause / Apache-2.0 plus PDFium and bundled third-party licenses |
 | [pypdf](https://github.com/py-pdf/pypdf) | PDF structure | BSD-3-Clause |
+| [PyGuitarPro 0.11](https://github.com/Perlence/PyGuitarPro) | Direct GP3/4/5 notation reading | [LGPL-3.0-only](https://github.com/Perlence/PyGuitarPro/blob/master/LICENSE); separately installed Python library, not vendored |
+| [attrs](https://github.com/python-attrs/attrs/blob/main/LICENSE) | PyGuitarPro data models | MIT |
 | [music21](https://github.com/cuthbertLab/music21) | MusicXML and notation | BSD-3-Clause; this app does not distribute its example music corpus |
 | [librosa](https://github.com/librosa/librosa) | Offline audio alignment | ISC |
 | [SciPy](https://github.com/scipy/scipy/blob/main/LICENSE.txt) | Offline score geometry and image morphology | BSD-3-Clause and bundled notices |
@@ -36,7 +38,7 @@ Dependencies are installed from their distributors, not copied into this source 
 | [defusedxml](https://github.com/tiran/defusedxml) | XML safety | PSF-2.0 |
 | [uv](https://github.com/astral-sh/uv) | Bootstrap only | MIT OR Apache-2.0; downloaded as a checksum-pinned executable |
 | [CPython](https://docs.python.org/3/license.html) / [python-build-standalone](https://github.com/astral-sh/python-build-standalone) | Private Python runtime | Python license and distribution dependency notices; uv downloads this runtime separately |
-| [Pillow](https://github.com/python-pillow/Pillow/blob/main/LICENSE) | Synthetic installation-test image | MIT-CMU and bundled dependency/font notices |
+| [Pillow](https://github.com/python-pillow/Pillow/blob/main/LICENSE) | Synthetic installation-test image and private OMR input preparation | MIT-CMU and bundled dependency/font notices |
 | [Audiveris](https://github.com/Audiveris/audiveris) | PDF music recognition | AGPL-3.0-or-later; official standalone distribution downloaded by the installer |
 | [Tesseract OCR data](https://github.com/tesseract-ocr/tessdata) | English OCR | Apache-2.0; pinned official eng data downloaded by the installer |
 
@@ -53,6 +55,10 @@ Since v1.3.0, `installers/omr.json` pins official **Audiveris 5.11.0** macOS arm
 The installer downloads these distributions directly from upstream to the user's computer; it does not distribute them from this repository. It copies the unchanged app/runtime files, preserving upstream copyright notices, Java runtime `legal/` content and dependency licenses. It also downloads checksum-verified AGPL and Apache license texts to `licenses/` and records pinned download/source links in `sources.json` beside the managed installation. The official macOS disk image displays its AGPL notice; the automated installer continues past this prompt and preserves the full notice locally. This is not a waiver of upstream conditions.
 
 Automated setup is not itself prohibited. If you change this distribution to ship native binaries, modified code, or a hosted service, review the applicable source, notice and network provisions for that arrangement. A source-only installer and separate CLI process do not provide a blanket exemption for other integrations or redistribution. Bundled Java/Tesseract/Leptonica and other Audiveris dependencies keep their own upstream terms.
+
+## Guitar Pro input
+
+[PyGuitarPro 0.11](https://pypi.org/project/PyGuitarPro/0.11/) by its upstream contributors reads GP3/4/5 files. Its source declares LGPL-3.0-only, retaining the upstream [license](https://github.com/Perlence/PyGuitarPro/blob/master/LICENSE). The installer retrieves the unmodified Python package and dependency metadata from PyPI into the external environment; this repository contains only its own adapter. Preserve the package notices and satisfy the applicable LGPL source and replacement/modification requirements if distributing the library with a binary application. This app's GPL-3.0-only license does not replace the library license or grant rights to any Guitar Pro score. No commercial scores or format samples are included.
 
 ## Media rights
 
