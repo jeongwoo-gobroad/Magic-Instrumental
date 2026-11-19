@@ -154,7 +154,7 @@ Apple MPS real-model inference was exercised during development. Windows CPU/CUD
 
 Before public upload: run checks, build allowlisted ZIP, inspect every included path and scan content for private media names, personal home paths, emails and credentials. Never publish logs/manifests/cache checksums from a user's song. Update version + CHANGELOG, user docs and this handoff. License is GPL-3.0-only for original project code/docs; weights/dependencies keep upstream licenses. Users must supply lawfully obtained audio and scores. Public examples must use synthetic data or permitted media.
 
-Native EOF integration tests use 120 BPM / four-beat counts, keeping the actual 2× playback, count and restart assertions. A 400 BPM / one-beat entry can last only 50 ms and legitimately cancel on a busy CI runner; test stall rejection deterministically in `test_count_in.py`. Dispose loop-test Qt windows through deferred deletion before interpreter shutdown, including on failure, to release native multimedia objects.
+Native loop integration tests use 120 BPM / four-beat counts, keeping the actual 2× playback, count and restart assertions. A 400 BPM / one-beat entry can last only 50 ms and legitimately cancel on a busy CI runner; test stall rejection deterministically in `test_count_in.py`. Report count failures immediately rather than waiting for a generic restart timeout. Dispose loop-test Qt windows through deferred deletion before interpreter shutdown, including on failure, to release native multimedia objects.
 
 
 ## Version 2 desktop and portable player
@@ -169,7 +169,7 @@ Read `docs/MAGIC_FORMAT.md` before changing portable exports or web scheduling. 
 
 Opt-in real browser tests (`RUN_WEB_TESTS=1`) require pinned Playwright and its Chromium/WebKit downloads. They measure audible output frequencies at changed key/rate, original-clock progress, GP page changes/zoom/measure seeks, count/loop timing, offline app reload and corruption rejection. WebKit desktop automation is **not** physical iPad certification, nor is Chromium Android hardware testing. Update both beginner READMEs and the separate format/developer docs. Source publication includes the reviewed web sources and generated app, never `.magic` user bundles or diagnostics.
 
-The native GP/key GUI test also defers window deletion and flushes DeferredDelete events at teardown. Leaving an old multimedia window alive across later tests can trigger a Qt decoder/GIL lock inversion during sound-effect shutdown; keep fixtures independently disposed. Do not use this test-only lifetime fix to claim every physical audio device is validated.
+The native GP/key GUI test also defers window deletion and flushes DeferredDelete events at teardown. Keep fixtures independently disposed. Window shutdown explicitly clears the QMediaPlayer source after stopping it, before releasing QSoundEffect sources: stop alone can leave an FFmpeg renderer destroying a connection while the sound-effect source setter holds the Python GIL, causing a native lock inversion. Clearing the media source releases decoder/output workers first. Do not treat these checks as validation of every physical audio device.
 
 Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHub Pages, `mobile-player` branch root). Verified published bytes match the built HTML, and Chromium/WebKit open native-GP bundles and replay them after an offline reload without upload requests. When syncing the branch, update both static-root copies and their `web_player/` source counterparts.
 

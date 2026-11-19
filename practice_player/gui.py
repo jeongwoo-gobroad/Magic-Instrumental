@@ -1058,6 +1058,10 @@ class Window(QMainWindow):
             event.ignore()
             return
         self.player.stop()
+        # Release decoder/output workers before releasing click sound sources.
+        # QSoundEffect shutdown may acquire the same native audio connection
+        # locks while a stopped FFmpeg renderer is still being destroyed.
+        self.player.setSource(QUrl())
         self.preferences.setValue("splitter", self.main_splitter.saveState())
         self.preferences.setValue("score_visible", self.score_visible.isChecked())
         self.preferences.setValue("window_width", self.width())

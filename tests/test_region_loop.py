@@ -81,6 +81,8 @@ def test_selection_restores_for_same_score_but_never_auto_enables(tmp_path):
         assert not panel.enabled.isEnabled() and panel.bounds() is None
     finally:
         panel.close()
+        panel.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
 
 
@@ -100,8 +102,11 @@ def loop_window(tmp_path, tone):
     window.load_result({"instrumental": str(tone), "source_hash": hash_file(tone), "cached": True})
     window.audio_output.setVolume(0)
     window.metronome.mute.setChecked(True)
-    window.metronome.bpm.setValue(400)
-    window.metronome.beats.setValue(1)
+    # Exercise native looping at a normal tempo. A 400 BPM / one-beat / 2x
+    # fractional entry lasts only 50 ms and can legitimately cancel on a busy
+    # runner. Stall rejection is covered deterministically in test_count_in.
+    window.metronome.bpm.setValue(120)
+    window.metronome.beats.setValue(4)
     wait_until(app, lambda: window.player.duration() > 0 and window.player.isSeekable())
     data = deepcopy(performed_score().data)
     for cue, start in zip(data["cues"], (0.1, 0.5, 0.95, 1.4, 1.95, 2.5)):
@@ -164,8 +169,11 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
         original()
 
     monkeypatch.setattr(window, "restart_region", restart)
+    failures = []
+    window.count_in.failed.connect(failures.append)
     window.toggle_play()
-    wait_until(app, lambda: len(restarts) >= 2, timeout=10)
+    wait_until(app, lambda: len(restarts) >= 2 or bool(failures), timeout=10)
+    assert not failures, failures
     assert counts == ([100, 100, 100] if count_each else [100])
     assert window.count_in.enabled.isChecked() != count_each
     if window.count_in.active:
@@ -181,11 +189,6 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
 @pytest.mark.parametrize("count_each", [False, True])
 def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch, count_each):
     app, window, _ = loop_window
-    # This checks native EOF/restart, not the scheduler's stall tolerance. The
-    # fixture's 400 BPM / one-beat / 2x entry at 2.5 s lasts only 50 ms and can
-    # correctly cancel on a busy runner. Stall behavior has deterministic tests.
-    window.metronome.bpm.setValue(120)
-    window.metronome.beats.setValue(4)
     window.speed.setValue(200)
     window.region.first.setCurrentIndex(5)
     window.region.count_each.setChecked(count_each)
@@ -247,10 +250,15 @@ def test_region_count_preference_restores_without_turning_on_loop(tmp_path):
     window = Window(paths)
     window.region.count_each.setChecked(True)
     window.close()
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
     reopened = Window(paths)
     try:
         assert reopened.region.count_each.isChecked()
         assert not reopened.region.enabled.isChecked() and not reopened.region_timer.isActive()
     finally:
         reopened.close()
+        reopened.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         app.processEvents()
