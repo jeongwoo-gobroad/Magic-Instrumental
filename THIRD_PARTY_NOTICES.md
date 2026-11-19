@@ -75,3 +75,13 @@ Users must supply their own lawfully obtained recordings and sheet music, paying
 The generated single-file player includes **two explicitly documented scheduling fixes** applied by `tools/build_web.py`: use an explicitly requested output timestamp when replacing future segments, and advance the current mapping only at actual current time. These changes let a scheduled count-in/start and exclusive loop-end stop coexist without discarding one another. The checked-in vendor source is unchanged; assertions and SHA-256 pins reject a changed upstream file before patching. The surrounding archive reader, UI and playback coordinator are original GPL-3.0-only project code. The MIT license remains applicable to the library, including these identified modified sections; no model weights are embedded in the web player.
 
 The desktop key-change worker uses the already installed FFmpeg `asetrate`, `aresample`, `atempo`, padding and sample trimming filters. It never modifies the user's original recording. Qt's existing pitch-preserving speed playback remains independent of the key-change cache.
+
+
+## Optional Session relay (v2.1)
+
+- **aiohttp 3.14.5**: HTTP/WebSocket coordination and bounded file transfer. Package license expression **Apache-2.0 AND MIT**; its vendored llhttp carries MIT. [Upstream](https://github.com/aio-libs/aiohttp), [Apache license](https://github.com/aio-libs/aiohttp/blob/v3.14.5/LICENSE.txt). The official Python distribution retains the license files.
+- **Segno 1.6.6**: invitation QR generation, **BSD-3-Clause**, copyright Lars Heuer. [Upstream and license](https://github.com/heuer/segno/blob/v1.6.6/LICENSE). No external QR image service receives invitation data.
+- Relay transitive dependencies are pinned separately in `relay/requirements.txt` and retain their upstream license files. They are installed into the operator's external venv, not bundled into `.magic` or the browser HTML.
+- The server deployment example uses **Caddy** as a separate HTTPS reverse proxy, **Apache-2.0**. [Source/license](https://github.com/caddyserver/caddy/blob/master/LICENSE). Caddy is not redistributed in this source ZIP. Operator credentials and TLS private keys are never included.
+
+Session coordination code is original GPL-3.0-only code. These dependencies do not change the separate licenses of model weights, Audiveris or users' recordings/scores.
