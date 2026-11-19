@@ -20,7 +20,7 @@
 
 **[▶ Magic Player 열기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/)**
 
-위 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 이 저장소의 `mobile-player` 브랜치에서 공개한 재생기입니다.
+위 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 위 주소에서 바로 사용하는 공개 재생기입니다.
 
 - **iPad**: Safari의 공유 버튼 → **홈 화면에 추가** → 추가.
 - **Android**: Chrome 메뉴 **⋮** → **홈 화면에 추가** 또는 **앱 설치**.
