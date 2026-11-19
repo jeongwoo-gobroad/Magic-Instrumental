@@ -12,8 +12,13 @@ let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickU
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
 let token = 0, timer = null, wakeLock = null, seeking = false;
 let ensemble = null;
-const setStatus = text => { $('status').textContent = text; $('sessionFileStatus').textContent = text; };
-const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
+function setStatus(text, error = false) {
+  for (const id of ['status', 'sessionFileStatus']) {
+    $(id).textContent = text;
+    $(id).classList.toggle('file-error', error);
+  }
+}
+const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.', true); };
 function phaseAt(input) {
   const step = 60 / number('bpm', 20, 400, 120) * 4 / Number($('unit').value);
   const beat = (input - number('origin', -30, 1800, 0)) / step;
@@ -253,14 +258,28 @@ function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
   ensemble?.update();
 }
+function clearScorePage() {
+  pageGeneration++; shownPage = pendingPage = -1;
+  $('scoreImage').hidden = true; $('highlight').hidden = true;
+  $('scoreImage').removeAttribute('src');
+  for (const url of urls.values()) URL.revokeObjectURL(url);
+  urls.clear();
+}
+async function releaseAudio() {
+  const node = stretch;
+  if (!node) return;
+  stretch = null;
+  try { await node.dropBuffers(); }
+  finally { node.disconnect(); node.port.close(); }
+}
 async function openFile(file) {
   if (!file || loading) return;
   ensemble?.unready();
   loading = true; pause(); ready = false; setAvailable(false); $('file').disabled = true;
-  pageGeneration++; shownPage = pendingPage = -1;
-  for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
-  $('scoreImage').hidden = true; $('highlight').hidden = true;
+  clearScorePage();
+  archive = null;
   try {
+    await releaseAudio();
     await audioReady();
     setStatus('연습 파일을 확인하고 있습니다…');
     const next = await new MagicArchive(file).open();
@@ -273,7 +292,6 @@ async function openFile(file) {
     }
     const decoded = await ctx.decodeAudioData(data);
     requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
-    if (stretch) { await stretch.dropBuffers(); stretch.disconnect(); stretch.port.close(); }
     stretch = await SignalsmithStretch(ctx, {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]});
     stretch.connect(musicGain); latency = await stretch.latency();
     const channels = [decoded.getChannelData(0).slice(), decoded.getChannelData(1).slice()];
@@ -304,8 +322,24 @@ async function openFile(file) {
     $('loopEnd').selectedIndex = $('loopEnd').options.length - 1;
     await showPage(0); ready = true; setAvailable(true); updateMetro(); updateKey();
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
-  } catch (error) { archive = null; fail(error); }
-  finally { loading = false; $('file').disabled = false; $('file').value = ''; }
+  } catch (error) {
+    archive = null; ready = false; seeking = false; position = duration = 0;
+    clearScorePage();
+    $('empty').hidden = false;
+    $('paper').removeAttribute('style');
+    $('pageText').textContent = '0 / 0';
+    $('title').textContent = '준비한 곡을 열어 주세요';
+    $('part').textContent = '컴퓨터에서 만든 .magic 파일을 선택하세요.';
+    $('partChoice').hidden = true;
+    for (const id of ['partSelect', 'loopStart', 'loopEnd']) $(id).replaceChildren();
+    $('loop').checked = false;
+    $('key').value = '0'; $('seek').max = 1;
+    showPosition(); updateKey();
+    fail(error);
+    await releaseAudio();
+  } finally {
+    loading = false; $('file').value = ''; setAvailable(ready);
+  }
 }
 function updateKey() {
   const base = archive?.manifest.audio.pitch_semitones || 0, extra = Number($('key').value), total = base + extra;
@@ -353,10 +387,8 @@ $('partSelect').onchange = async () => {
   try {
     await selected.selectPart(track);
     if (archive !== selected) return;
-    pageGeneration++; shownPage = pendingPage = -1;
-    for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
+    clearScorePage();
     $('part').textContent = `GP 파트 · ${selected.activePart.name}`;
-    $('scoreImage').hidden = true; $('highlight').hidden = true;
     await showPage(selected.timing.cues[clamp(cueAt(nowPosition()), 0, selected.timing.cues.length - 1)].page);
     setStatus('파트를 바꿨습니다. 반주 재생 위치는 그대로 유지됩니다.');
   } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }

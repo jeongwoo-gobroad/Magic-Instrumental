@@ -6,6 +6,8 @@
 
 ![태블릿용 실제 재생 화면](https://raw.githubusercontent.com/jeongwoo-gobroad/Magic-Instrumental/main/docs/images/mobile-player.png)
 
+.magic 파일을 열 수 없으면 파일 선택 버튼 아래에 이유가 표시됩니다. 다른 곡을 열다가 실패하면 제목·재생 시간·악보가 비워집니다. **.magic 파일 열기**를 눌러 사용하던 파일이나 다시 복사한 파일을 선택하세요.
+
 ## 1. 컴퓨터에서 준비하기
 
 1. Magic-Instrumental에서 곡을 선택하고 **반주 준비**를 누릅니다.
