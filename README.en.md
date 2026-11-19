@@ -12,6 +12,8 @@ In a small window, scroll down the left side to reach the save buttons. Drag the
 
 Download the latest **Magic-Instrumental-version.zip** from [Releases](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
+**On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
+
 The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OCR data and GP engraving tools without a preinstalled Python or administrator access. All project packages live in an external virtual environment. An internet connection is needed for initial setup and model downloads. Supported desktop targets: macOS 14+ Apple Silicon and Windows 10/11 x64. The interface is Korean.
 
 **If Windows freezes or closes while checking for updates:** close the app and error window, double-click the existing `update.bat`, then reopen with `start.bat`. Update to v2.3.1 or later; no in-app button is needed. Keep your audio, scores and processed results. Reinstallation is not required for this fix.
