@@ -1103,10 +1103,10 @@ class Window(QMainWindow):
             self.cancel_job()
             event.ignore()
             return
-        self.player.stop()
-        # Release decoder/output workers before releasing click sound sources.
-        # QSoundEffect shutdown may acquire the same native audio connection
-        # locks while a stopped FFmpeg renderer is still being destroyed.
+        # setSource stops playback and releases decoder/output workers itself.
+        # PySide explicitly releases the GIL for setSource, unlike stop(); a
+        # separate stop can deadlock with native renderer teardown on Windows.
+        # Clear media before releasing the click sound sources as well.
         self.player.setSource(QUrl())
         self.preferences.setValue("splitter", self.main_splitter.saveState())
         self.preferences.setValue("score_visible", self.score_visible.isChecked())

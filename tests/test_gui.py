@@ -177,6 +177,7 @@ def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_p
         window.close()
         app.processEvents()
     assert not window.count_in.active and not window.player.isPlaying()
+    assert window.player.source().isEmpty()
     reopened = Window(paths)
     try:
         assert reopened.count_in.enabled.isChecked() and reopened.count_in.bars.value() == 2
