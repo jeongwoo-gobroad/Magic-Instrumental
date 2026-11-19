@@ -2,6 +2,8 @@
 
 Source version: **2.3.2**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
+The desktop fits its initial window to the available screen. Keep both metronome rows accessible and allow score notices to wrap. On phones the file picker precedes the empty score. After a score opens, the playback and score links navigate within the current song. The Chromium/WebKit suite exercises both links at 360 px.
+
 ## Product requirements
 
 Python desktop GUI for macOS Apple Silicon and Windows x64. Separate vocals locally, play only the instrumental, preserve pitch while changing speed, and reuse full-content SHA-256 caches. Keep originals under `targets/`, matching PDFs/MusicXML/GP3–5 under `score_targets/`, results/settings under `processed/`, and downloaded weights under `models/`.

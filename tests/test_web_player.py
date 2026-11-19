@@ -100,6 +100,19 @@ def test_legacy_single_part_archive_still_plays(page, study_files):
     page.wait_for_function("MagicPlayer.state().position > .2")
 
 
+def test_phone_file_and_score_navigation(page, study_files):
+    page.set_viewport_size({"width": 360, "height": 780})
+    file_button = page.locator(".file-button")
+    score = page.locator("#scoreArea")
+    assert file_button.bounding_box()["y"] < score.bounding_box()["y"]
+    open_study(page, study_files["gp"])
+    page.locator("#scoreImage").wait_for(state="visible")
+    for target in ("#playerControls", "#scoreArea"):
+        page.locator(f'.practice-links a[href="{target}"]').click()
+        assert page.locator(target).bounding_box()["y"] < 5
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
 def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     open_study(page, study_files["gp"])
     assert page.locator("#part").inner_text() == "GP 파트 · Lead Guitar"

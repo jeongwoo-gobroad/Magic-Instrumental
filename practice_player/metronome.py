@@ -7,7 +7,6 @@ import math
 import struct
 import time
 import wave
-from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtMultimedia import QMediaPlayer, QSoundEffect
@@ -18,7 +17,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -107,11 +105,9 @@ class MetronomeBar(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        controls = QWidget()
-        row = QHBoxLayout(controls)
-        row.setContentsMargins(10, 4, 10, 4)
+        row = QHBoxLayout()
+        row.setContentsMargins(10, 2, 10, 0)
         row.setSpacing(8)
-        row.addWidget(QLabel("메트로놈"))
         self.toggle = QPushButton("메트로놈 켜기")
         self.toggle.setToolTip("메트로놈 켜기/끄기 · 음원 연동 시 재생·일시정지를 따라갑니다.")
         self.toggle.setCheckable(True)
@@ -150,6 +146,11 @@ class MetronomeBar(QWidget):
         self.bpm.setValue(120)
         self.bpm.setAccessibleName("BPM 또는 연동 시 원곡 BPM")
         row.addWidget(self.bpm)
+        row.addStretch()
+        layout.addLayout(row)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.setContentsMargins(10, 0, 10, 2)
         self.linked = QCheckBox("음원과 연동")
         self.linked.setToolTip(
             "체크하면 음원 시작·탐색·반복·배속을 따라갑니다. 단독 사용 시에는 해제하세요."
@@ -180,13 +181,7 @@ class MetronomeBar(QWidget):
         self.mute = QCheckBox("무음")
         self.mute.setToolTip("선택한 음량은 유지하고 클릭 소리만 잠시 끕니다.")
         row.addWidget(self.mute)
-        scroll = QScrollArea()
-        scroll.setWidget(controls)
-        scroll.setWidgetResizable(True)
-        scroll.setFixedHeight(66)
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        layout.addWidget(scroll)
-        # Keep status/help outside the horizontal scroller, visible in narrow windows.
+        layout.addLayout(row)
         info = QHBoxLayout()
         info.setContentsMargins(10, 0, 10, 2)
         info.setSpacing(18)

@@ -6,6 +6,8 @@ Make an instrumental on your computer, choose a score or Guitar Pro part, then p
 
 ![Desktop app with a project-authored GP study](docs/images/desktop-light.png)
 
+In a small window, scroll down the left side to reach the save buttons. Drag the divider to give the score more room. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
+
 ## Install and open
 
 Download the latest **Magic-Instrumental-version.zip** from [Releases](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.

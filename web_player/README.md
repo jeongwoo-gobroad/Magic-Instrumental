@@ -20,6 +20,8 @@
 
 **[▶ Magic Player 열기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/)**
 
+작은 화면에서는 **.magic 파일 열기**가 악보보다 먼저 나옵니다. 곡을 연 뒤에는 화면 위의 **재생 조절로**와 **악보로**를 눌러 이동하세요.
+
 위 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 위 주소에서 바로 사용하는 공개 재생기입니다.
 
 - **iPad**: Safari의 공유 버튼 → **홈 화면에 추가** → 추가.

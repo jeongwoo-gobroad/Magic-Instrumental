@@ -16,3 +16,30 @@
 body[data-session] .linked-choice{display:none}
 
 .support-footer{text-align:center;padding:16px 20px 24px;border-top:1px solid var(--line);color:var(--muted);font-size:13px;overflow-wrap:anywhere}.support-footer a{display:inline-block;padding:8px 0}
+
+/* Keep Korean labels together while still wrapping long song and instrument names. */
+body { word-break: keep-all; overflow-wrap: anywhere; }
+aside, .card, .score-area, select { min-width: 0; }
+.small, #status, .metro-help, .score-toolbar label, .score-toolbar select,
+.range-pair label, #clock, #effective { font-size: 13px; }
+:root:not([data-theme=dark]) { --muted: #53665e; }
+.score-toolbar > div:has(#measure) { display: grid; margin-right: auto; }
+#partChoice { max-width: 100%; flex-wrap: wrap; }
+#partSelect { max-width: 100%; }
+.file-button:focus-within { outline: 3px solid var(--accent); outline-offset: 3px; }
+.practice-links { display: none; }
+@media (max-width: 700px) {
+  main:has(#empty:not([hidden])) .score-area { order: 1; }
+  body:not([data-session]):has(#empty[hidden]) .practice-links {
+    display: flex; gap: 12px; margin: 0 16px 12px;
+  }
+  .practice-links a { display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; }
+  .transport, .row { flex-wrap: wrap; }
+  .metronome details[open] { flex-basis: 100%; }
+  .metro-settings { position: static; width: 100%; padding: 12px; box-shadow: none; }
+  #partChoice { flex: 1 0 100%; }
+  #partSelect { flex: 1; }
+  #sessionBanner .session-actions { flex: 1 0 100%; }
+  .score-toolbar .page-controls { margin-left: auto; }
+  #viewport { min-height: min(280px, 55dvh); }
+}

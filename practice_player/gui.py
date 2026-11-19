@@ -57,6 +57,7 @@ QLabel#speed { color: #87ddc4; font-size: 32px; font-weight: 700; }
 QPushButton, QComboBox { background: #242e3e; border: 1px solid #35425a;
     border-radius: 7px; padding: 6px 10px; }
 QPushButton:hover { background: #35425a; }
+QPushButton:focus, QComboBox:focus { border-color: #87ddc4; }
 QPushButton:disabled { color: #607087; background: #1b2330; }
 QPushButton#primary { background: #8cddc5; color: #102c26; font-weight: 700; }
 QPushButton#primary:disabled { background: #355b50; color: #8caaa2; }
@@ -110,11 +111,12 @@ class Window(QMainWindow):
             str(self.paths.processed / "ui.ini"), QSettings.Format.IniFormat
         )
         self.setWindowTitle("Magic-Instrumental · 인스트루먼탈 연습실")
+        available = self.screen().availableGeometry()
+        self.setMinimumSize(800, 560)
         self.resize(
-            self.preferences.value("window_width", 1500, type=int),
-            self.preferences.value("window_height", 930, type=int),
+            min(self.preferences.value("window_width", 1500, type=int), available.width() - 24),
+            min(self.preferences.value("window_height", 930, type=int), available.height() - 56),
         )
-        self.setMinimumSize(960, 700)
         self.audio_output = QAudioOutput(self)
         self.audio_output.setVolume(0.75)
         self.player = QMediaPlayer(self)
@@ -156,7 +158,9 @@ class Window(QMainWindow):
         left.addWidget(QLabel("음원 목록  ·  targets"))
         self.tracks = QListWidget()
         self.tracks.setAccessibleName("targets 음원 목록")
-        self.tracks.setMinimumHeight(190)
+        self.tracks.setWordWrap(True)
+        self.tracks.setTextElideMode(Qt.TextElideMode.ElideNone)
+        self.tracks.setMinimumHeight(105)
         self.tracks.setMaximumHeight(420)
         self.tracks.itemDoubleClicked.connect(lambda _: self.prepare())
         left.addWidget(self.tracks, 1)
