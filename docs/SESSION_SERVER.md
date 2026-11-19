@@ -65,6 +65,8 @@ Forward TCP 80 and 13579 to the server. A domain provider's CAA restrictions can
 
 References: [MDN mixed content](https://developer.mozilla.org/en-US/docs/Web/Security/Defenses/Mixed_content), [AudioWorklet secure context](https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet), [Let's Encrypt challenges](https://letsencrypt.org/docs/challenge-types/), [CAA restrictions](https://letsencrypt.org/docs/caa/), [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
 
+For DuckDNS, the optional [automatic IPv4 updater](DUCKDNS.md) provides a five-minute systemd timer, root-only credential loading, bounded retries and a last-success status file. It runs separately from Session and requires no changes to desktop installations.
+
 ## Timing and practical limits
 
 Synchronize the host's system clock with NTP before service startup. The relay takes a UTC epoch and advances it monotonically during the process lifetime; device wall-clock errors do not become playback offsets. Browser probes estimate clock offset using low-RTT samples. The slowest participant's observed delay determines a 1–5 second reservation lead. Every ready participant must acknowledge receipt. Delay above the supported threshold, missing acknowledgements and foreground/audio loss halt rather than silently starting late.
@@ -81,3 +83,12 @@ RUN_WEB_TESTS=1 python -m pytest -q tests/test_session_player.py
 ```
 
 The tests use authored studies and isolated local servers. They cover unauthorized member commands, clock probes, missing acknowledgements, authenticated file/QR transfer and cleanup, two-browser scheduled transport, different GP parts, counted loops and readiness loss. CI browser engines are not physical iPad/Android certification. The public health endpoint `/api/health` exposes only service/protocol readiness; it is not a proof of audio synchronization.
+
+
+## Certificate renewal and boot verification
+
+Caddy owns certificate issuance and automatic renewal for the configured HTTPS hostname on both 443 and 13579. `auto_https disable_redirects` disables redirects only; it does not disable certificate management. Keep the Caddy data directory persistent and writable by its service account, DNS current, and inbound port 80 reachable for HTTP-01 validation. Do not add a competing certificate-renewal cron job or delete a valid certificate to force renewal.
+
+Enable `caddy`, `magic-relay` and `magic-duckdns.timer` with systemd. After an authorized maintenance reboot, compare the boot ID, confirm each unit is active/enabled, check Caddy's current-boot certificate-management/maintenance log, verify DDNS's last-success time, and request the public HTTP/HTTPS landing and HTTPS Session health endpoint. Do not expose credential files or certificate private keys while collecting diagnostics. A valid certificate plus running renewal management verifies configuration; it does not mean a future expiry cycle has already occurred.
+
+The landing is static content served by Caddy; it needs no separate application startup command. The relay uses its external venv through its enabled systemd unit. A reboot ends in-memory Session rooms; users must create/join a new room afterwards. See [Caddy automatic HTTPS](https://caddyserver.com/docs/automatic-https).
