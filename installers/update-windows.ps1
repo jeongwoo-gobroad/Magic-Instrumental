@@ -22,7 +22,7 @@ try {
     $python = Join-Path ([Environment]::ExpandEnvironmentVariables($lines[0])) 'Scripts\python.exe'
     if (-not (Test-Path -LiteralPath $python)) { throw 'Run install.bat in the existing folder first.' }
     $env:PYTHONUTF8 = '1'
-    & $python (Join-Path $UpdaterDir 'update.py') --project $ProjectDir --pause
+    & $python (Join-Path $UpdaterDir 'update.py') --project $ProjectDir --pause --wait-for-app
     exit $LASTEXITCODE
 } catch {
     Write-Host "Update failed: $($_.Exception.Message)" -ForegroundColor Red

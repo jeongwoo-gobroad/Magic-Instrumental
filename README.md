@@ -30,7 +30,13 @@ Mac에서 처음 열기가 차단되면 내려받은 출처를 확인한 뒤 Fin
 
 ## 기존 자료를 유지하며 업데이트하기
 
-프로그램을 종료한 뒤, 평소 실행하던 폴더의 **Mac `update.command` / Windows `update.bat`**을 더블클릭하세요. **업데이트 완료**가 나오면 같은 폴더의 `start` 파일로 실행합니다. 필요한 도구도 자동으로 확인하므로 `install`을 따로 실행할 필요가 없습니다.
+프로그램을 실행하면 상단에 **현재 버전**과 **새 버전 확인 결과**가 표시됩니다. 새 버전이 있으면 **변경 내용**을 확인하고 **종료하고 업데이트**를 누르세요. 업데이트 창이 열리고 프로그램이 종료됩니다. **업데이트 완료** 후 평소 쓰던 `start` 파일로 다시 실행합니다. 음원·악보·처리 결과는 유지합니다.
+
+확인은 실행을 막지 않으며, 인터넷 연결이 안 되어도 연습할 수 있습니다. **다시 확인**으로 재시도할 수 있고, 반주 생성·악보 분석·저장 중에는 작업 완료 후 업데이트합니다. 자동으로 프로그램을 설치하거나 재생을 중단하지 않습니다.
+
+![새 버전을 찾았을 때의 안내 예시 — 현재 버전, 변경 내용, 종료하고 업데이트 버튼](docs/images/update-notice.png)
+
+GUI 버튼 대신 프로그램을 종료한 뒤, 평소 실행하던 폴더의 **Mac `update.command` / Windows `update.bat`**을 더블클릭하세요. **업데이트 완료**가 나오면 같은 폴더의 `start` 파일로 실행합니다. 필요한 도구도 자동으로 확인하므로 `install`을 따로 실행할 필요가 없습니다.
 
 **구버전이라 update 파일이 없다면:** [기존 사용자용 업데이트 도구 ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest/download/Magic-Instrumental-Updater.zip)을 받아 완전히 압축 해제하고, 그 안의 `update` 파일을 더블클릭하세요. 폴더 선택 창에서 **기존 `start` 파일과 `targets`가 들어 있는 프로그램 폴더**를 고릅니다. 이후에는 그 기존 폴더 안에 생긴 `update` 파일을 사용합니다.
 
@@ -111,3 +117,5 @@ Session을 켜면 **리더용 팀 제어 화면 / 멤버용 악보 중심 화면
 프로그램의 자체 코드와 문서는 **GPL-3.0-only**입니다. 사용한 모델과 외부 도구는 각각의 원래 라이선스를 따릅니다. PDF 인식에는 [Audiveris](https://github.com/Audiveris/audiveris), GP 읽기에는 [PyGuitarPro](https://github.com/Perlence/PyGuitarPro), GP 표시에 [Verovio](https://www.verovio.org/), 모바일 배속·키 변경에는 [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch)를 사용합니다. [라이선스와 모델 출처](THIRD_PARTY_NOTICES.md)
 
 보컬 분리와 악보 인식은 항상 완벽하지 않습니다. 모델의 보편적인 성능 우위를 주장하지 않습니다. DRM 파일·스트리밍 앱 내부 다운로드는 지원하지 않습니다. Windows NVIDIA GPU와 Apple Silicon GPU를 지원하지만, 실제 GPU·오디오 장치·모바일 기기별 동작은 달라질 수 있습니다. 검증 범위와 개발 안내는 [개발자 문서](CONTRIBUTING.md)에 따로 정리했습니다.
+
+데스크톱과 웹 앱 하단의 **버그 및 개선 사항 제보** 링크를 누르면 메일을 작성할 수 있습니다. 파일은 자동 첨부하지 않습니다.

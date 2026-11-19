@@ -83,6 +83,7 @@ IMAGES = (
     "docs/images/drum-count-in.png",
     "docs/images/measure-loop.png",
     "docs/images/desktop-light.png",
+    "docs/images/update-notice.png",
     "docs/images/desktop-dark.png",
     "docs/images/mobile-player.png",
     "docs/images/session-leader.png",
@@ -110,7 +111,9 @@ def public_files(root: Path = ROOT) -> list[Path]:
             raise ValueError(f"Personal Windows path in {path.relative_to(root)}")
         if re.search(r"(?:ghp_|github_pat_)[A-Za-z0-9_]{20,}", content):
             raise ValueError(f"Possible credential in {path.relative_to(root)}")
-        if re.search(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", content):
+        # Explicitly authorized public bug-report address; keep all other email checks.
+        emails = re.findall(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", content)
+        if any(address != "pps.jeongwoo@gmail.com" for address in emails):
             raise ValueError(f"Email address in {path.relative_to(root)}")
     return sorted(paths)
 

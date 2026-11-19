@@ -320,29 +320,73 @@ def test_full_update_orchestration_keeps_existing_paths(tmp_path, monkeypatch):
         assert (root / name).read_bytes() == before[name]
 
 
-@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='native launchers')
+@pytest.mark.skipif(sys.platform not in {"darwin", "win32"}, reason="native launchers")
 def test_double_click_launcher_keeps_path_and_survives_self_replacement(tmp_path):
-    kit = tmp_path / 'Application 한글 space'
+    kit = tmp_path / "Application 한글 space"
     kit.mkdir()
-    (kit / 'installers').mkdir()
-    (kit / 'main.py').touch()
-    (kit / 'venv-location.windows.txt').write_text(sys.prefix, encoding='utf-8')
-    for name in ['update.command', 'update.bat', 'installers/update-windows.ps1']:
+    (kit / "installers").mkdir()
+    (kit / "main.py").touch()
+    (kit / "venv-location.windows.txt").write_text(sys.prefix, encoding="utf-8")
+    for name in ["update.command", "update.bat", "installers/update-windows.ps1"]:
         shutil.copyfile(ROOT / name, kit / name)
     # No actual download or modification of the real application/venv.
-    (kit / 'update.py').write_text(
-        'import json, sys\nfrom pathlib import Path\n'
-        'root=Path(__file__).parent\n'
+    (kit / "update.py").write_text(
+        "import json, sys\nfrom pathlib import Path\n"
+        "root=Path(__file__).parent\n"
         'print("LAUNCH_PROOF="+json.dumps(sys.argv[1:], ensure_ascii=True))\n'
         'for name in ["update.bat", "update.command"]:\n'
-        ' (root/name).write_text("echo SHOULD_NOT_EXECUTE\\n"*30)\n', encoding='utf-8')
-    command = (['cmd.exe', '/d', '/c', str(kit / 'update.bat')] if sys.platform == 'win32'
-               else ['/bin/zsh', str(kit / 'update.command')])
-    result = subprocess.run(command, env={**os.environ, 'MAGIC_NO_PAUSE': '1'},
-                            capture_output=True, text=True, encoding='utf-8',
-                            errors='replace', timeout=30)
+        ' (root/name).write_text("echo SHOULD_NOT_EXECUTE\\n"*30)\n',
+        encoding="utf-8",
+    )
+    command = (
+        ["cmd.exe", "/d", "/c", str(kit / "update.bat")]
+        if sys.platform == "win32"
+        else ["/bin/zsh", str(kit / "update.command")]
+    )
+    result = subprocess.run(
+        command,
+        env={**os.environ, "MAGIC_NO_PAUSE": "1"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+    )
     assert result.returncode == 0, result.stdout + result.stderr
-    proof = next(line.split('=', 1)[1] for line in result.stdout.splitlines()
-                 if line.startswith('LAUNCH_PROOF='))
-    assert json.loads(proof) == ['--project', str(kit), '--pause']
-    assert 'SHOULD_NOT_EXECUTE' not in result.stdout
+    proof = next(
+        line.split("=", 1)[1]
+        for line in result.stdout.splitlines()
+        if line.startswith("LAUNCH_PROOF=")
+    )
+    assert json.loads(proof) == ["--project", str(kit), "--pause", "--wait-for-app"]
+    assert "SHOULD_NOT_EXECUTE" not in result.stdout
+
+
+def test_gui_handoff_waits_for_app_lock_then_proceeds(tmp_path, monkeypatch):
+    import time
+
+    monkeypatch.setattr(update, "check_legacy_processes", lambda _: None)
+    code = (
+        "from pathlib import Path; from app_guard import app_guard; import sys,time;\n"
+        "with app_guard(Path(sys.argv[1])):\n"
+        " print('READY',flush=True); time.sleep(.6)\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-u", "-c", code, str(tmp_path)],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    assert child.stdout.readline().strip() == "READY"
+    started = time.monotonic()
+    try:
+        with update.update_lock(tmp_path, wait_seconds=3):
+            assert time.monotonic() - started >= 0.4
+    finally:
+        child.wait(timeout=3)
+        child.stdout.close()
+    # A second instance that stays open must time out without altering data.
+    with app_guard(tmp_path):
+        with pytest.raises(RuntimeError):
+            with update.update_lock(tmp_path, wait_seconds=0.1):
+                pytest.fail("updated with app still open")

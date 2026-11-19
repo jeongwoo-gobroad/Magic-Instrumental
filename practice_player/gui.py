@@ -42,6 +42,7 @@ from .count_in import CountIn
 from .metronome import MetronomeBar
 from .region_loop import RegionLoop
 from .score_gui import ScorePanel
+from .updates import UpdateBar, open_updater
 
 STYLE = """
 QWidget { background: #11151d; color: #e7edf7; font-size: 14px; }
@@ -50,6 +51,8 @@ QLabel#title { font-size: 26px; font-weight: 700; }
 QLabel#subtitle, QLabel#muted { color: #99a9bf; }
 QLabel#metronomeState { color: #87ddc4; font-size: 13px; font-weight: 600; }
 QLabel#track { font-size: 21px; font-weight: 600; }
+QFrame#updateBar { border: 1px solid #35425a; border-radius: 7px; }
+QLabel#currentVersion { color: #87ddc4; font-weight: 700; }
 QLabel#speed { color: #87ddc4; font-size: 32px; font-weight: 700; }
 QPushButton, QComboBox { background: #242e3e; border: 1px solid #35425a;
     border-radius: 7px; padding: 6px 10px; }
@@ -395,6 +398,9 @@ class Window(QMainWindow):
         outer = QVBoxLayout(container)
         outer.setContentsMargins(6, 4, 6, 6)
         outer.setSpacing(3)
+        self.update_bar = UpdateBar(ROOT)
+        self.update_bar.update_requested.connect(self.begin_update)
+        outer.addWidget(self.update_bar)
         outer.addWidget(self.metronome)
         self.score_visible = QCheckBox("악보 표시 · 가운데 경계를 드래그하여 너비 조절")
         self.score_visible.setChecked(self.preferences.value("score_visible", True, type=bool))
@@ -402,6 +408,14 @@ class Window(QMainWindow):
         self.score_visible.toggled.connect(self.score_panel.setVisible)
         outer.addWidget(self.score_visible)
         outer.addWidget(self.main_splitter, 1)
+        self.support = QLabel(
+            '버그 및 개선 사항 제보: '
+            '<a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a>'
+        )
+        self.support.setObjectName("muted")
+        self.support.setOpenExternalLinks(True)
+        self.support.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        outer.addWidget(self.support)
         self.setCentralWidget(container)
         self.update_measure_controls()
         self.apply_theme()
@@ -636,6 +650,7 @@ class Window(QMainWindow):
         self.start_job(args)
 
     def set_busy(self, busy):
+        self.update_bar.set_busy(busy)
         if busy:
             self.count_in.cancel()
         for widget in (
@@ -669,6 +684,12 @@ class Window(QMainWindow):
 
         mode = self.theme.currentData()
         self.setStyleSheet(stylesheet(STYLE, mode))
+        link_color = "#12624e" if mode == "light" else "#87ddc4"
+        self.support.setText(
+            '버그 및 개선 사항 제보: '
+            f'<a style="color:{link_color}" href="mailto:pps.jeongwoo@gmail.com">'
+            'pps.jeongwoo@gmail.com</a>'
+        )
         self.preferences.setValue("theme", mode)
 
     def prepare_gp(self, options):
@@ -1062,6 +1083,16 @@ class Window(QMainWindow):
         self.status.setText(message)
         self.logs.appendPlainText(message)
 
+    def begin_update(self):
+        if self.worker or self.close_pending:
+            return
+        try:
+            open_updater(ROOT)
+        except (OSError, RuntimeError) as error:
+            self.update_bar.show_failure(str(error))
+            return
+        self.close()
+
     def closeEvent(self, event):
         self._region_closed = True
         self._region_generation += 1
@@ -1087,6 +1118,7 @@ class Window(QMainWindow):
         self.metronome.shutdown()
         self.score_panel.view.clear()
         self.score_panel.camera_timer.stop()
+        self.update_bar.stop()
         event.accept()
 
 
@@ -1097,4 +1129,5 @@ def run() -> int:
     app.setStyleSheet(STYLE)
     window = Window()
     window.show()
+    QTimer.singleShot(0, window.update_bar.check)
     return app.exec()

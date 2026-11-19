@@ -40,6 +40,12 @@ def test_public_bundle_excludes_media_settings_and_preserves_launch_modes(tmp_pa
         assert command_info.external_attr >> 16 & 0o100
     checksums = (tmp_path / 'dist/SHA256SUMS.txt').read_text()
     assert hashlib.sha256(helper.read_bytes()).hexdigest() in checksums
+    # Only the user's explicitly authorized public support address is exempt.
+    (tmp_path / "README.md").write_text("pps.jeongwoo@gmail.com", encoding="utf-8")
+    public_files(tmp_path)
+    (tmp_path / "README.md").write_text("private" + "@" + "example.invalid", encoding="utf-8")
+    with pytest.raises(ValueError, match="Email address"):
+        public_files(tmp_path)
     # A path leak in an allowlisted source is a release error, not silently ignored.
     (tmp_path / "README.md").write_text("/" + "Users" + "/fixture/private/", encoding="utf-8")
     with pytest.raises(ValueError, match="Personal home path"):

@@ -12,4 +12,4 @@ if [[ ! -x "$VENV_PYTHON" ]]; then
   exit 1
 fi
 export PYTHONUTF8=1
-exec "$VENV_PYTHON" "$UPDATER_DIR/update.py" --project "$UPDATE_TARGET" --pause
+exec "$VENV_PYTHON" "$UPDATER_DIR/update.py" --project "$UPDATE_TARGET" --pause --wait-for-app

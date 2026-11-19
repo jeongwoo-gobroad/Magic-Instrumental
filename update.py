@@ -17,6 +17,7 @@ import time
 import urllib.request
 import uuid
 import zipfile
+from contextlib import ExitStack, contextmanager
 from pathlib import Path, PurePosixPath
 
 from app_guard import app_guard
@@ -411,7 +412,34 @@ def check_legacy_processes(root: Path):
                 raise RuntimeError("기존 프로그램과 설치 창을 닫은 뒤 업데이트를 다시 실행하세요.")
 
 
-def update(root: Path):
+@contextmanager
+def update_lock(root: Path, wait_seconds=0):
+    """The GUI's launcher may start before both GUI and bootstrap have exited."""
+    deadline = time.monotonic() + wait_seconds
+    announced = False
+    while True:
+        stack = ExitStack()
+        try:
+            check_legacy_processes(root)
+            stack.enter_context(app_guard(root, updating=True))
+        except RuntimeError:
+            stack.close()
+            if time.monotonic() >= deadline:
+                raise
+            if not announced:
+                print(
+                    "프로그램이 닫히기를 기다립니다. 열려 있는 프로그램·설치 창을 닫아 주세요.",
+                    flush=True,
+                )
+                announced = True
+            time.sleep(0.25)
+            continue
+        with stack:
+            yield
+        return
+
+
+def update(root: Path, *, wait_seconds=0):
     root = root.resolve()
     if (root / ".git").exists():
         raise ValueError("개발용 Git 폴더입니다. 일반 ZIP 설치 폴더에서 업데이트하세요.")
@@ -424,8 +452,7 @@ def update(root: Path):
         or root in Path(sys.prefix).resolve().parents
     ):
         raise ValueError("기존 프로그램의 외부 가상환경으로 실행해야 합니다.")
-    check_legacy_processes(root)
-    with app_guard(root, updating=True):
+    with update_lock(root, wait_seconds):
         work_root = safe_target(root, ".magic-updates")
         work_root.mkdir(exist_ok=True)
         restore_pending(root)
@@ -451,10 +478,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", type=Path, default=Path(__file__).resolve().parent)
     parser.add_argument("--pause", action="store_true")
+    parser.add_argument("--wait-for-app", action="store_true")
     args = parser.parse_args()
     result = 0
     try:
-        update(args.project)
+        update(args.project, wait_seconds=60 if args.wait_for_app else 0)
     except (Exception, KeyboardInterrupt) as error:
         print(f"업데이트를 완료하지 못했습니다: {error}", file=sys.stderr, flush=True)
         print(

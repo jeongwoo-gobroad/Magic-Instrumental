@@ -225,6 +225,9 @@ def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp
 
 
 def test_standalone_metronome_hint_and_real_on_off_audio(page):
+    footer = page.locator('.support-footer')
+    assert '버그 및 개선 사항 제보:' in footer.inner_text()
+    assert footer.locator('a').get_attribute('href') == 'mailto:pps.jeongwoo@gmail.com'
     assert "해제" in page.locator(".metro-help").inner_text()
     page.locator("#metro").click()
     page.wait_for_function("MagicPlayer.state().metro")

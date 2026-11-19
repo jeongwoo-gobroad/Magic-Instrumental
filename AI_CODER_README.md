@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.2.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.3.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -221,3 +221,12 @@ Updates preserve original folder paths. Before replacing code, copy every affect
 `app_guard.py` provides OS-held shared locks for app/CLI/bootstrap processes and an exclusive updater lock. Windows uses LockFileEx; POSIX uses flock. Setup-only children of the updater explicitly bypass the parent's lock. Pending journals block normal startup. Legacy Python entry processes are checked because pre-2.2 apps do not cooperate with this lock; instruct users to close them. Tests verify preservation, verified manifests, corrupt/unsafe archives, partial-write rollback, retry after interrupted repair and real subprocess locks on both platforms. Beginner steps are in `docs/UPDATING.md`; operational details stay here.
 
 The web PDF loop integration check observes a real return to the loop start and at least 0.4 audio-clock seconds held there during the repeat count. Do not substitute a fixed sleep from the Play click: output preparation latency can place that sample just before the loop boundary on a busy runner. Keep the held-position and subsequent pause/offline assertions.
+
+
+## v2.3 startup update notice and support footer
+
+`practice_player/updates.py` checks the fixed public GitHub latest-stable endpoint through Qt Network after `gui.run()` shows the window. No startup check for CLI workers or direct test Window construction. Require numeric semantic versions and uploaded official source/manifest/checksum assets; never render remote release HTML or accept remote URLs as commands. Bound responses to 1 MiB and the whole request to eight seconds, reject redirects/TLS errors, cancel pending requests on close, allow explicit retry, and send no song paths, audio/score data, auth or cookies. No install/download of release archives without the user's update action.
+
+`UpdateBar` always shows the current version. A newer release exposes notes and the explicit close-and-update button, disabled while a worker is active. OS handoff opens the existing visible updater launcher; a launch error stays inline and keeps the GUI open. Close normally saves preferences and releases native audio and process locks. Both native launchers now pass `--wait-for-app`: `update_lock` waits up to 60 seconds for GUI and bootstrap shared locks to release, then takes the exclusive lock. Never force-terminate another instance; timeout preserves files. Native self-replacement, process lock waiting and asynchronous network failures are regression tested. Old 2.2 updater path policy accepts this release; no new root program filename was introduced.
+
+Both desktop and web have the exact user-authorized public footer “버그 및 개선 사항 제보” and a mailto link. `tools/build_release.py` permits only the explicitly authorized public support address, retaining rejection of every other email address and private data. Do not infer permission to publish other operator contact details. Regenerate web index/service worker together and synchronize the mobile-player root copies. `docs/images/update-notice.png` is a real Qt capture with explicit example older/newer version metadata and no user media; `tools/capture_update_screenshot.py` reproduces it.
