@@ -58,6 +58,9 @@ WEB_FILES = (
     "relay/__init__.py",
     "relay/server.py",
     "relay/requirements.txt",
+    "relay/duckdns_update.py",
+    "relay/magic-duckdns.service",
+    "relay/magic-duckdns.timer",
     "landing/index.html",
 )
 PLACEHOLDERS = tuple(
