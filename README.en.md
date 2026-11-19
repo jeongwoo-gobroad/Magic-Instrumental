@@ -23,7 +23,7 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed. PDF recognition and audio alignment can require manual correction. GPX and GP6/7/8 are currently unsupported. Drum parts use fixed-BPM timing.
 
-For iPad/Android, open the deployed player URL in Safari/Chrome and add it to the home screen. After offline preparation, it works without internet; songs remain local. Direct HTML opening on iPad's Files app is not reliable. Keep the player visible during practice; backgrounding pauses playback. [Tablet instructions](web_player/README.md)
+For iPad/Android, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari/Chrome and add it to the home screen. After offline preparation, it works without internet; songs remain local. Direct HTML opening on iPad's Files app is not reliable. Keep the player visible during practice; backgrounding pauses playback. [Tablet instructions](web_player/README.md)
 
 ## Rights and attribution
 

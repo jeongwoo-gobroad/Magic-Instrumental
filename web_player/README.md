@@ -18,7 +18,9 @@
 
 ## 2. 재생기 열기
 
-배포된 재생기 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 이 저장소의 `mobile-player` 브랜치는 정적 웹 배포용입니다. 배포 주소가 아직 안내되지 않았다면 데스크톱 저장소의 README에서 게시 상태를 확인해 주세요.
+**[▶ Magic Player 열기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/)**
+
+위 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 이 저장소의 `mobile-player` 브랜치에서 공개한 재생기입니다.
 
 - **iPad**: Safari의 공유 버튼 → **홈 화면에 추가** → 추가.
 - **Android**: Chrome 메뉴 **⋮** → **홈 화면에 추가** 또는 **앱 설치**.

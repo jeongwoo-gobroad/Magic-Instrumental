@@ -63,6 +63,8 @@ PDF의 복잡한 인쇄·스캔이나 음원과 다른 편곡은 수정이 필�
 
 ## iPad·Android로 가져가기
 
+**[▶ Magic Player 열기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/)** · iPad는 Safari, Android는 Chrome으로 여세요.
+
 컴퓨터에서 반주와 악보 분석을 마친 뒤 **태블릿으로 가져가기 · .magic 저장**을 누르세요. 이 파일에 반주, 원본 악보, 선택한 GP 파트의 악보 화면, 마디 시간표가 함께 들어갑니다. PDF에서 만들었든 GP에서 만들었든 모바일에서는 다시 분석하지 않습니다.
 
 AirDrop·USB·파일 전송 등으로 `.magic`을 기기에 복사한 뒤 **Magic Player**에서 엽니다. 앱스토어 설치 없이 사용하며, 기기 안의 파일을 읽고 서버로 올리지 않습니다. Safari·Chrome에서 웹주소를 처음 열어 홈 화면에 추가하면 오프라인으로 사용할 수 있습니다. [태블릿에서 시작하기](web_player/README.md)

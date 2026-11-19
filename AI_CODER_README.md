@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.0.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.0.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -170,3 +170,5 @@ Read `docs/MAGIC_FORMAT.md` before changing portable exports or web scheduling. 
 Opt-in real browser tests (`RUN_WEB_TESTS=1`) require pinned Playwright and its Chromium/WebKit downloads. They measure audible output frequencies at changed key/rate, original-clock progress, GP page changes/zoom/measure seeks, count/loop timing, offline app reload and corruption rejection. WebKit desktop automation is **not** physical iPad certification, nor is Chromium Android hardware testing. Update both beginner READMEs and the separate format/developer docs. Source publication includes the reviewed web sources and generated app, never `.magic` user bundles or diagnostics.
 
 The native GP/key GUI test also defers window deletion and flushes DeferredDelete events at teardown. Leaving an old multimedia window alive across later tests can trigger a Qt decoder/GIL lock inversion during sound-effect shutdown; keep fixtures independently disposed. Do not use this test-only lifetime fix to claim every physical audio device is validated.
+
+Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHub Pages, `mobile-player` branch root). Verified published bytes match the built HTML, and Chromium/WebKit open native-GP bundles and replay them after an offline reload without upload requests. When syncing the branch, update both static-root copies and their `web_player/` source counterparts.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 — 2026-11-19
+
+- 공개된 [태블릿 재생기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) 바로가기를 데스크톱·모바일·영문 README에 추가했습니다.
+- 실제 게시 주소에서 GP 기반 파일 열기·페이지 이동·오프라인 재실행을 Chromium·WebKit으로 확인했습니다. 재생·분석 기능은 2.0.0과 같습니다.
+
 ## 2.0.0 — 2026-11-19
 
 - GP3/4/5를 PDF 없이 열고 파트 이름으로 선택합니다. PyGuitarPro 원본 마디와 Verovio로 만든 오선·타브 화면을 직접 연결합니다. 타악기 파트는 BPM 시간표를 사용합니다.
