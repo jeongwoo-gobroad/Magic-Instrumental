@@ -142,6 +142,8 @@ def test_check_failures_are_inline_and_retryable(app, endpoint, failure):
         pump(app, lambda: bar.retry.isEnabled())
         assert not bar.install.isVisible()
         assert "확인" in bar.status.text()
+        if failure == "http":
+            assert "HTTP 403" in bar.status.text()
         assert "2.2.0" in bar.version_label.text()
         # The same checker can recover after network errors, without restarting the app.
         checker.timeout_ms = 2000

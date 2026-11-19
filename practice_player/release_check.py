@@ -76,6 +76,23 @@ def fetch_release(endpoint, current):
     return release_info(data, current)
 
 
+def error_code(error):
+    # Only static categories cross the process boundary, never exception text.
+    import ssl
+    from urllib.error import HTTPError, URLError
+
+    if isinstance(error, HTTPError):
+        return f"http{error.code}" if error.code in {403, 429} else "network"
+    reason = error.reason if isinstance(error, URLError) else error
+    if isinstance(reason, ssl.SSLCertVerificationError):
+        return "certificate"
+    if isinstance(error, (URLError, OSError)):
+        return "network"
+    if isinstance(error, (ValueError, KeyError, TypeError)):
+        return "metadata"
+    return "worker"
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--endpoint", default=API)
@@ -83,8 +100,9 @@ def main():
     args = parser.parse_args()
     try:
         info = fetch_release(args.endpoint, args.current)
-    except Exception:
+    except Exception as error:
         # Never send proxy credentials, remote bodies or local paths to the UI.
+        print(json.dumps({"error": error_code(error)}), flush=True)
         return 2
     print(json.dumps(info), flush=True)
     return 0

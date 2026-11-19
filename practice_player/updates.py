@@ -86,7 +86,21 @@ class ReleaseChecker(QObject):
         if self.closed:
             return
         if self.failure or code != 0 or status != QProcess.ExitStatus.NormalExit:
-            self.failed.emit(self.failure or CHECK_FAILED)
+            message = self.failure or CHECK_FAILED
+            if not self.failure and code == 2:
+                try:
+                    reason = json.loads(bytes(self.buffer))["error"]
+                    detail = {
+                        "http403": "확인 서버의 요청 제한 또는 접근 거부 (HTTP 403)",
+                        "http429": "확인 서버의 요청 제한 (HTTP 429)",
+                        "certificate": "인터넷 연결의 인증서 확인 실패",
+                        "network": "인터넷 연결 또는 확인 서버 응답 실패",
+                        "metadata": "올바른 새 버전 정보가 아님",
+                    }.get(reason, "확인 작업 실패")
+                    message += " · " + detail
+                except (ValueError, KeyError, TypeError, UnicodeError):
+                    pass
+            self.failed.emit(message)
             return
         try:
             result = json.loads(bytes(self.buffer))
