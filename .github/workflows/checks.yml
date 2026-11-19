@@ -19,6 +19,7 @@ jobs:
       QT_QPA_PLATFORM: offscreen
       QT_MEDIA_BACKEND: ffmpeg
       PYTHONUTF8: '1'
+      MAGIC_RENDER_CHECK_DIR: render-checks
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - name: Install macOS without system Python
@@ -62,6 +63,13 @@ jobs:
           name: Magic-Instrumental-source
           path: dist/
           if-no-files-found: error
+      - name: GP numeric rendering proof
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gp-numeric-render-${{ matrix.os }}
+          path: render-checks/
+          if-no-files-found: warn
   release:
     needs: checks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

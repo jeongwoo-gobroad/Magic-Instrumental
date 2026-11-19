@@ -16,7 +16,7 @@ from .cache import hash_file
 from .guitar_pro import GP_VERSION, list_tracks, node, read_gp
 from .score import atomic_json
 
-RENDER_VERSION = 2
+RENDER_VERSION = 3
 VEROVIO_VERSION = "6.4.1"
 SVG = "{http://www.w3.org/2000/svg}"
 
@@ -91,6 +91,89 @@ def display_xml(data, metadata):
     return XML.tostring(root, encoding="unicode")
 
 
+def outline_svg_text(root):
+    """Convert labels/digits to vector paths before Qt SVG/PDF font embedding.
+
+    Verovio's musical glyphs already use paths. Windows PDF font substitution
+    must not decide how fret numbers or measure labels appear in saved assets.
+    """
+    from PySide6.QtGui import QFont, QFontMetricsF, QPainterPath
+
+    serial = 0
+
+    def visit(element, inherited):
+        nonlocal serial
+        styles = dict(inherited)
+        classes = set(element.get("class", "").split())
+        if classes & {"mNum", "dir", "dynam"}:
+            styles["font-style"] = "italic"
+        if classes & {"ending", "fing", "reh", "tempo"}:
+            styles["font-weight"] = "bold"
+        for name in ("font-style", "font-weight", "font-size"):
+            if name in element.attrib:
+                styles[name] = element.get(name)
+        if element.tag != SVG + "text":
+            for child in element:
+                visit(child, styles)
+            return
+        spans = [e for e in element.iter() if e.tag in {SVG + "text", SVG + "tspan"}]
+        value = "".join(e.text or "" for e in spans).strip()
+        sizes = [e.get("font-size") for e in spans if e.get("font-size") not in (None, "0px")]
+        size = float((sizes[0] if sizes else "324px").removesuffix("px"))
+        if not 0 < size <= 4096:
+            raise ValueError("GP 악보 글자 크기가 표시 범위를 벗어났습니다.")
+        font = QFont()
+        font.setFamilies(["Times New Roman", "Times", "Liberation Serif", "DejaVu Serif"])
+        font.setStyleHint(QFont.StyleHint.Serif)
+        font.setPixelSize(round(size))
+        font.setItalic(styles.get("font-style") == "italic")
+        font.setBold(styles.get("font-weight") == "bold")
+
+        def attribute(name, default):
+            return next((e.get(name) for e in spans if name in e.attrib), default)
+
+        x, y = float(attribute("x", "0")), float(attribute("y", "0"))
+        anchor = attribute("text-anchor", "start")
+        advance = QFontMetricsF(font).horizontalAdvance(value)
+        x -= advance * ({"middle": 0.5, "end": 1}.get(anchor, 0))
+        outline = QPainterPath()
+        outline.addText(x, y, font, value)
+        commands, i = [], 0
+        while i < outline.elementCount():
+            point = outline.elementAt(i)
+            if point.isMoveTo():
+                commands.append(f"M{point.x:.4f},{point.y:.4f}")
+            elif point.isLineTo():
+                commands.append(f"L{point.x:.4f},{point.y:.4f}")
+            else:
+                second, end = outline.elementAt(i + 1), outline.elementAt(i + 2)
+                commands.append(
+                    f"C{point.x:.4f},{point.y:.4f} {second.x:.4f},{second.y:.4f} "
+                    f"{end.x:.4f},{end.y:.4f}"
+                )
+                i += 2
+            i += 1
+        transform = element.get("transform")
+        serial += 1
+        identity = element.get("id", f"gp-text-{serial}")
+        element.clear()
+        element.tag = SVG + "g"
+        element.set("class", "outlined-text")
+        element.set("aria-label", value)
+        if transform:
+            element.set("transform", transform)
+        if identity:
+            element.set("id", identity)
+        if commands:
+            XML.SubElement(element, SVG + "path", {
+                "d": " ".join(commands),
+                # Inline style overrides Verovio's generic path stroke rule.
+                "style": "fill:currentColor;stroke:none;stroke-width:0;fill-rule:nonzero",
+            })
+
+    visit(root, {})
+
+
 def flatten_svg(svg):
     """Flatten Verovio's nested viewport and debug boxes for Qt SVG Tiny."""
     root = SafeXML.fromstring(svg)
@@ -144,16 +227,7 @@ def flatten_svg(svg):
             classes = child.get("class", "").split()
             if "bounding-box" in classes or "placeholder" in classes:
                 parent.remove(child)
-    # SVG debug boxes nested in tspans and a zero-size text root are not Qt Tiny.
-    for text in root.iter(SVG + "text"):
-        sizes = [c.get("font-size") for c in text.iter() if c.get("font-size") not in (None, "0px")]
-        value = "".join(
-            c.text or "" for c in text.iter() if c.tag in {SVG + "text", SVG + "tspan"}
-        ).strip()
-        for child in list(text):
-            text.remove(child)
-        text.text = value
-        text.set("font-size", sizes[0] if sizes else "324px")
+    outline_svg_text(root)
     XML.register_namespace("", SVG[1:-1])
     XML.register_namespace("xlink", "http://www.w3.org/1999/xlink")
     return XML.tostring(root), bars

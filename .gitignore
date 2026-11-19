@@ -22,6 +22,7 @@ venv-location.windows.txt
 !.env.example
 *.log
 release-staging/
+render-checks/
 
 # User practice bundles include original scores and audio.
 *.magic

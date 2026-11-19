@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.1.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.1.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -163,7 +163,7 @@ Native loop integration tests use 120 BPM / four-beat counts, keeping the actual
 
 ## Version 2 desktop and portable player
 
-Read `docs/MAGIC_FORMAT.md` before changing portable exports or web scheduling. `gp_render.py` worker-only engraving uses pinned Verovio 6.4.1, `RENDER_VERSION=2`; GP display duplicates TAB but alignment uses single-part XML. Native geometry is mapped by measure IDs and verified generated file hashes. `--gp` supports standalone GP while `--pdf` plus optional notation retains the PDF route. `gp-prepare` lets the GUI show named parts before alignment. Associations retain original GP and selected track, not only generated PDF.
+Read `docs/MAGIC_FORMAT.md` before changing portable exports or web scheduling. `gp_render.py` worker-only engraving uses pinned Verovio 6.4.1, `RENDER_VERSION=3`; GP display duplicates TAB but alignment uses single-part XML. Native geometry is mapped by measure IDs and verified generated file hashes. `--gp` supports standalone GP while `--pdf` plus optional notation retains the PDF route. `gp-prepare` lets the GUI show named parts before alignment. Associations retain original GP and selected track, not only generated PDF.
 
 `transpose.py` (`PITCH_VERSION=1`) hashes the source instrumental, applies rounded asetrate/resampling/inverse atempo, then pads/trims to exactly the original sample count. Only prepared pitch files change; separation cache and score/media times do not. GUI key apply runs a separate worker, pauses transport, restores original media position when Qt reports loaded, and does not auto-resume. Theme preferences are private; `theme.py` styles large checkboxes using a project-owned SVG check mark. Hidden separation settings default closed; audio list is taller.
 
@@ -203,3 +203,6 @@ The landing/user guides must state that PNG/JPG/JPEG score files are not direct 
 Deployment management now uses dedicated `landing-page` and `serverside` branches, alongside `mobile-player`; see `docs/DEPLOYMENT_BRANCHES.md`. Keep branch/server/Raspberry Pi details in developer documents only. `main` retains integration copies for tests; synchronize reviewed subsets to their independent deployment branches. Public landing uses the hostname's ordinary HTTP/HTTPS ports; port 13579 exposes only Session `/api/*`. Invitations and Session links use GitHub Pages. The landing is served directly by Caddy from a separate static root, not through the Python relay. Post-release landing/documentation updates do not rewrite an immutable desktop release asset.
 
 Optional DuckDNS IPv4 maintenance uses `relay/duckdns_update.py` and the separate `magic-duckdns` systemd service/timer; see `docs/DUCKDNS.md`. It runs after boot and every five minutes, using direct IPv4 HTTPS and a blank `ip` for provider-side detection. Keep the real token in a root-only file outside checkouts and load it via systemd credentials; never put it in argv, environment variables, logs or public examples. Require confirmed public-IP responses, retain the last success across failures and preserve bounded retries. The standard-library utility installs no global packages and must not restart Session. Publish its reviewed sources/templates/tests to `serverside`; no desktop version bump or immutable release replacement is needed for this operator-only addition.
+
+
+GP display v3 outlines all ordinary SVG text with Qt glyph paths before PDF creation, avoiding platform PDF font embedding for fret/measure numbers. Resolve a real serif font, preserve inherited italic/bold, text anchor and nested header coordinates, and force no stroke on outlined paths. Native Verovio musical paths and bar geometry stay intact. Old GP display folders and reviewed timelines are retained, but reopening/reanalysis creates the new display signature; exported old `.magic` pages require re-export. `tests/test_gp_render.py` rasterizes a real generated PDF and rejects solid-box 0/8 glyphs on both OSes. `MAGIC_RENDER_CHECK_DIR` stores only authored diagnostic images for CI artifacts, never user scores.
