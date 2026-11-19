@@ -428,8 +428,7 @@ class Window(QMainWindow):
 
     def connect_player(self):
         self.player.mediaStatusChanged.connect(self.restore_pitch_position)
-        self.player.durationChanged.connect(lambda value: self.seek.setMaximum(value))
-        self.player.durationChanged.connect(lambda _: self.update_measure_controls())
+        self.player.durationChanged.connect(self.duration_changed)
         self.player.seekableChanged.connect(lambda _: self.update_measure_controls())
         self.player.positionChanged.connect(self.position_changed)
         self.player.playbackStateChanged.connect(self.update_play_button)
@@ -886,6 +885,10 @@ class Window(QMainWindow):
             if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             else "재생"
         )
+
+    def duration_changed(self, duration):
+        self.seek.setMaximum(duration)
+        self.position_changed(self.player.position())
 
     def position_changed(self, position):
         if not self.seek.isSliderDown():

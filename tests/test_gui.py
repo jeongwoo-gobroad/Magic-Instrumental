@@ -38,6 +38,7 @@ def test_gui_cache_worker_playback_controls_and_export(tone, tmp_path, fake_engi
         assert window.output_path == result.instrumental
         assert "캐시" in window.status.text()
         wait_until(app, lambda: window.player.duration() > 0)
+        assert window.clock.text() == "00:00 / 00:03"
         assert window.pitch.isChecked()
         window.speed.setValue(50)
         assert window.player.playbackRate() == 0.5
