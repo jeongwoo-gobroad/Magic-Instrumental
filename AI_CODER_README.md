@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.0.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.0.2**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -172,3 +172,7 @@ Opt-in real browser tests (`RUN_WEB_TESTS=1`) require pinned Playwright and its 
 The native GP/key GUI test also defers window deletion and flushes DeferredDelete events at teardown. Leaving an old multimedia window alive across later tests can trigger a Qt decoder/GIL lock inversion during sound-effect shutdown; keep fixtures independently disposed. Do not use this test-only lifetime fix to claim every physical audio device is validated.
 
 Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHub Pages, `mobile-player` branch root). Verified published bytes match the built HTML, and Chromium/WebKit open native-GP bundles and replay them after an offline reload without upload requests. When syncing the branch, update both static-root copies and their `web_player/` source counterparts.
+
+Mobile metronome: the always-visible hint explains that standalone use requires clearing the linked checkbox. The header displays off, waiting for playback, standalone, linked playback, first-beat wait or zero-volume state. The default remains linked. Track whether the seek slider is actively being edited, not merely focused, so its thumb follows playback after a seek.
+
+CI uses `tools/run_tests.py` to isolate test modules into separate external-venv Python processes, with a bounded timeout and faulthandler diagnostics. This prevents native multimedia lifetime state from leaking between unrelated test modules and gives a visible failure if a native call stalls.

@@ -38,7 +38,7 @@ jobs:
           "$VENV_PYTHON" -m playwright install chromium webkit
           "$VENV_PYTHON" tools/build_web.py
           git diff --exit-code -- web_player/index.html web_player/sw.js
-          RUN_WEB_TESTS=1 "$VENV_PYTHON" -m pytest -q
+          RUN_WEB_TESTS=1 "$VENV_PYTHON" tools/run_tests.py
           "$VENV_PYTHON" tools/build_release.py
       - name: Validate Windows
         if: runner.os == 'Windows'
@@ -51,7 +51,7 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & $VenvPython -m ruff check .
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          & $VenvPython -m pytest -q
+          & $VenvPython tools/run_tests.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           & $VenvPython tools/build_release.py --check
           exit $LASTEXITCODE

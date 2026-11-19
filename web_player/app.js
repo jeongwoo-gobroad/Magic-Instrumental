@@ -10,7 +10,7 @@ let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = nu
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
-let token = 0, timer = null, wakeLock = null;
+let token = 0, timer = null, wakeLock = null, seeking = false;
 const setStatus = text => { $('status').textContent = text; };
 const fail = error => { pause(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
 function phaseAt(input) {
@@ -165,6 +165,18 @@ function updateMetro() {
   const rate = $('linked').checked ? number('speed', 25, 200, 100) / 100 : 1;
   $('effective').textContent = `${(number('bpm', 20, 400, 120) * rate).toFixed(1)} BPM`;
 }
+function updateMetroState() {
+  let text = '꺼짐';
+  if (metro) {
+    if (number('metroVolume', 0, 100, 55) === 0) text = '음량 0% · 박자 설정에서 올려 주세요';
+    else if (!$('linked').checked) text = '메트로놈 단독 재생 중';
+    else if (!playing) text = '반주 대기 중';
+    else if (segment && ctx.currentTime < segment.out) text = segment.countBeats ? '드럼 카운트 후 반주와 시작' : '반주 시작 준비 중';
+    else if (nowPosition() < number('origin', 0, 1800, 0)) text = '설정한 첫 박을 기다리는 중';
+    else text = '반주와 함께 재생 중';
+  }
+  if ($('metroState').textContent !== text) $('metroState').textContent = text;
+}
 function updateDots() {
   let beat = null;
   if (ctx && playing && segment && ctx.currentTime < segment.out && ctx.currentTime >= segment.countStart) {
@@ -206,7 +218,7 @@ function resizePaper() {
 function showPosition() {
   const time = nowPosition(); position = time;
   $('clock').textContent = `${clockText(time)} / ${clockText(duration)}`;
-  if (document.activeElement !== $('seek')) $('seek').value = time;
+  if (!seeking) $('seek').value = time;
   const index = cueAt(time); currentCue = index;
   const cue = archive?.timing.cues[index];
   $('measure').textContent = cue ? `${cue.measure}마디 · ${cue.visit}회차` : '—';
@@ -229,7 +241,7 @@ function showPosition() {
     view.scrollTop += (desiredY - view.scrollTop) * .24;
   }
 }
-function frame() { if (ready) showPosition(); updateDots(); requestAnimationFrame(frame); }
+function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
 }
@@ -296,7 +308,9 @@ $('key').value = 0;
 $('file').onchange = event => openFile(event.target.files[0]);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
-$('seek').onchange = () => seek(Number($('seek').value)).catch(fail);
+$('seek').oninput = () => { seeking = true; };
+$('seek').onchange = () => { const target = Number($('seek').value); seeking = false; seek(target).catch(fail); };
+$('seek').addEventListener('pointercancel', () => { seeking = false; });
 for (const [id, direction] of [['back',-1],['forward',1]]) $(id).onclick = () => {
   if (!archive) return;
   const index = clamp(cueAt(nowPosition()) + direction * Math.round(number('step',1,10000,1)), 0, archive.timing.cues.length - 1);

@@ -88,6 +88,11 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     page.wait_for_timeout(1000)
     actual = frequency(page)
     assert actual["level"] > -60 and actual["frequency"] == pytest.approx(220, abs=4)
+    page.locator("#seek").focus()
+    page.locator("#seek").fill("3")
+    page.locator("#seek").dispatch_event("change")
+    page.wait_for_timeout(600)
+    assert float(page.locator("#seek").input_value()) > 3.2
     page.locator("#speed").fill("50")
     page.locator("#speed").dispatch_event("change")
     page.wait_for_timeout(400)
@@ -174,3 +179,29 @@ def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp
     page.wait_for_function("!MagicPlayer.state().loading")
     assert "허용되지 않은" in page.locator("#status").inner_text()
     assert not page.evaluate("window.executed || false")
+
+
+def test_standalone_metronome_hint_and_real_on_off_audio(page):
+    assert "해제" in page.locator(".metro-help").inner_text()
+    page.locator("#metro").click()
+    page.wait_for_function("MagicPlayer.state().metro")
+    page.wait_for_function("document.querySelector('#metroState').textContent === '반주 대기 중'")
+    page.locator("#linked").uncheck()
+    page.wait_for_function(
+        "document.querySelector('#metroState').textContent === '메트로놈 단독 재생 중'"
+    )
+    page.evaluate("""() => {
+      window.clickAnalyser=ctx.createAnalyser(); clickAnalyser.fftSize=2048;
+      clickGain.connect(clickAnalyser); window.clickPeak=0;
+      window.clickSampler=setInterval(()=>{const a=new Float32Array(2048);
+        clickAnalyser.getFloatTimeDomainData(a);
+        for(const n of a) clickPeak=Math.max(clickPeak,Math.abs(n));},5);
+    }""")
+    page.wait_for_timeout(1500)
+    assert page.evaluate("clickPeak") > 0.05
+    page.locator("#metro").click()
+    page.wait_for_timeout(200)
+    page.evaluate("clickPeak=0")
+    page.wait_for_timeout(700)
+    assert page.evaluate("clickPeak") < 0.001
+    assert page.locator("#metroState").inner_text() == "꺼짐"

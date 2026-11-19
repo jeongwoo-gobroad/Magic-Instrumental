@@ -25,6 +25,8 @@ Applied desktop key changes are included in the exported audio. The web player c
 
 For iPad/Android, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari/Chrome and add it to the home screen. After offline preparation, it works without internet; songs remain local. Direct HTML opening on iPad's Files app is not reliable. Keep the player visible during practice; backgrounding pauses playback. [Tablet instructions](web_player/README.md)
 
+**To use the mobile metronome alone, uncheck ‘반주와 함께’ (with accompaniment), then turn it on.** No song file is required. With that box checked, clicks wait until the accompaniment plays; the header shows the waiting state.
+
 ## Rights and attribution
 
 **Recordings and scores are not supplied.** Obtain your own materials lawfully, paying applicable charges. Buying a recording or score does not grant permission to redistribute its original, separated instrumental or `.magic` bundle.
