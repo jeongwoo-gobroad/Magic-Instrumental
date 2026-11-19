@@ -4,6 +4,7 @@
 import json
 import shutil
 import zipfile
+from pathlib import Path
 
 import soundfile as sf
 from PySide6.QtCore import QCoreApplication, QEvent, Qt, QTimer
@@ -73,7 +74,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         panel = window.score_panel
         click(panel.choose)
         finish()
-        assert panel.gp_source == score and panel.view.document
+        assert panel.gp_source.samefile(score) and panel.view.document
 
         def choose_tempo():
             dialog = app.activeModalWidget()
@@ -116,7 +117,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         assert reopened.theme.currentData() == "light"
         click(reopened.prepare_button)
         wait_until(app, lambda: reopened.worker is None and bool(reopened.score_panel.timeline))
-        assert reopened.score_panel.gp_source == score
+        assert reopened.score_panel.gp_source.samefile(score)
         assert reopened.score_panel.current_index in (None, 0)
         # A failed GP worker for another recording must leave no usable old timeline.
         other = paths.targets / "두 번째.wav"
@@ -126,8 +127,13 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         process(other, Settings(), paths, runner=fake_engine)
         (paths.score_targets / "두 번째.gp5").write_bytes(b"bad score")
         click(reopened.refresh_button)
-        matches = reopened.tracks.findItems(other.name, Qt.MatchFlag.MatchExactly)
-        reopened.tracks.setCurrentItem(matches[0])
+        for row in range(reopened.tracks.count()):
+            item = reopened.tracks.item(row)
+            if Path(item.data(Qt.ItemDataRole.UserRole)).samefile(other):
+                reopened.tracks.setCurrentItem(item)
+                break
+        else:
+            raise AssertionError("Second recording missing from the library")
         click(reopened.prepare_button)
         wait_until(app, lambda: reopened.worker is None and bool(reopened.job_error))
         assert not reopened.score_panel.timeline and not reopened.score_panel.view.document
