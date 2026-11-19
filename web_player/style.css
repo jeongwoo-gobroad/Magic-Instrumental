@@ -27,6 +27,7 @@ aside, .card, .score-area, select { min-width: 0; }
 #partChoice { max-width: 100%; flex-wrap: wrap; }
 #partSelect { max-width: 100%; }
 .file-button:focus-within { outline: 3px solid var(--accent); outline-offset: 3px; }
+.file-error { border-inline-start: 3px solid currentColor; padding-inline-start: 10px; font-weight: 650; }
 .practice-links { display: none; }
 @media (max-width: 700px) {
   main:has(#empty:not([hidden])) .score-area { order: 1; }
