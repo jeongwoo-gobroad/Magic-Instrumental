@@ -3,7 +3,7 @@ from copy import deepcopy
 
 import pytest
 from pypdf import PdfWriter
-from PySide6.QtCore import QSettings
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings
 from PySide6.QtWidgets import QApplication
 
 from practice_player.cache import hash_file
@@ -110,9 +110,13 @@ def loop_window(tmp_path, tone):
     path = tmp_path / "timeline.json"
     ScoreTimeline(data).save(path)
     window.score_panel.load_timeline(path)
-    yield app, window, path
-    window.close()
-    app.processEvents()
+    try:
+        yield app, window, path
+    finally:
+        window.close()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()
 
 
 def test_gui_range_clamps_seeks_and_whole_track_loop_is_exclusive(loop_window):
@@ -177,6 +181,11 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
 @pytest.mark.parametrize("count_each", [False, True])
 def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch, count_each):
     app, window, _ = loop_window
+    # This checks native EOF/restart, not the scheduler's stall tolerance. The
+    # fixture's 400 BPM / one-beat / 2x entry at 2.5 s lasts only 50 ms and can
+    # correctly cancel on a busy runner. Stall behavior has deterministic tests.
+    window.metronome.bpm.setValue(120)
+    window.metronome.beats.setValue(4)
     window.speed.setValue(200)
     window.region.first.setCurrentIndex(5)
     window.region.count_each.setChecked(count_each)
@@ -190,8 +199,11 @@ def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch
         original()
 
     monkeypatch.setattr(window, "restart_region", restart)
+    failures = []
+    window.count_in.failed.connect(failures.append)
     window.toggle_play()
-    wait_until(app, lambda: len(restarts) >= 1, timeout=10)
+    wait_until(app, lambda: len(restarts) >= 1 or bool(failures), timeout=10)
+    assert not failures, failures
     if count_each:
         assert window.count_in.active and window.player.position() == 2500
         wait_until(app, lambda: window.player.isPlaying(), timeout=5)
