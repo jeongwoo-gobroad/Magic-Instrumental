@@ -90,6 +90,8 @@ iPad의 ‘파일’ 앱에서 내려받은 HTML을 누르면 실행 대신 미�
 ![리더 Session 화면](https://raw.githubusercontent.com/jeongwoo-gobroad/Magic-Instrumental/main/docs/images/session-leader.png)
 ![멤버 Session 화면](https://raw.githubusercontent.com/jeongwoo-gobroad/Magic-Instrumental/main/docs/images/session-member.png)
 
+Session을 종료하면 이전 방의 참가자 목록과 초대 코드가 화면에서 사라집니다. 열어 둔 곡으로 혼자 연습을 이어갈 수 있습니다.
+
 ## 막히는 일이 있다면
 
 - **GP 악보 숫자가 네모로 보여요**: 컴퓨터 앱을 v2.1.1 이상으로 업데이트하고 GP를 다시 열어 사전 분석한 뒤 `.magic`을 새로 저장하세요. 이전 파일에 들어 있는 악보 이미지는 자동으로 바뀌지 않습니다.

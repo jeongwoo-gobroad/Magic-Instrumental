@@ -78,7 +78,7 @@ class Ensemble {
         const blob = await qr.blob();
         if (generation === this.generation) { this.qrURL = URL.createObjectURL(blob); $('inviteQR').src = this.qrURL; }
       }
-      this.status('시간을 맞추고 있습니다. 곡을 확인한 뒤 ‘합주 준비’를 누르세요.');
+      if (generation === this.generation) this.status('시간을 맞추고 있습니다. 곡을 확인한 뒤 ‘합주 준비’를 누르세요.');
     } finally { this.busy = false; this.update(); }
   }
   leave() {
@@ -86,6 +86,10 @@ class Ensemble {
     const ws = this.ws; this.ws = null; if (ws) ws.close();
     this.role = ''; this.auth = ''; this.code = ''; this.prepared = false;
     this.pending = null; this.remoteState = null; this.peers = []; this.shared = false;
+    document.body.classList.remove('room-open');
+    $('members').replaceChildren();
+    $('inviteQR').removeAttribute('src'); $('inviteLink').removeAttribute('href');
+    $('inviteCode').value = '';
     pause(); this.probes.clear();
     if (this.qrURL) URL.revokeObjectURL(this.qrURL); this.qrURL = null;
     this.status('합주 모드 꺼짐 · 혼자 연습할 수 있습니다.');
@@ -110,7 +114,10 @@ class Ensemble {
   async prepare() {
     if (!this.role || !ready || loading) return;
     if (this.prepared) { this.unready(); return; }
-    await audioReady(); this.serverNow();
+    const generation = this.generation;
+    await audioReady();
+    if (generation !== this.generation) return;
+    this.serverNow();
     const media = this.media();
     requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
     const rtt = Math.max(...this.samples.map(s => s.rtt));
