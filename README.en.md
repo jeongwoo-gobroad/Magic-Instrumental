@@ -37,7 +37,11 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 5. Play at 0.25–2× speed, change the instrumental key by ±12 semitones, jump by measures or repeat a selected range. Optional drum counts and the independently adjustable metronome follow the original-media clock.
 6. Save a `.magic` practice file and open it in the tablet player. New GP-derived files include every part's rendered pages and a shared timing reference, so mobile playback requires no score recognition or GP software.
 
-Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed. Supported PDF layouts contain one part’s standard staff or TAB staff per measure. PDFs displaying standard notation and TAB together are not supported; neither are multi-instrument full scores or irregular layouts. Automatic pitch recognition from TAB numerals is not provided. PDF recognition and audio alignment can require manual correction. PNG/JPG/JPEG score images are not direct inputs. Image-only or scanned PDFs can fail recognition because of resolution, skew or blur. GPX and GP6/7/8 are currently unsupported. Drum parts use fixed-BPM timing.
+Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
+
+**We recommend Guitar Pro scores in `.gp3`, `.gp4` or `.gp5` format.** The app reads notes and measures directly from these files and lets you choose a part by name.
+
+Supported PDF layouts contain one part’s standard staff or TAB staff per measure. PDFs displaying standard notation and TAB together are not supported; neither are multi-instrument full scores or irregular layouts. Automatic pitch recognition from TAB numerals is not provided. PDF recognition and audio alignment can require manual correction. PNG/JPG/JPEG score images are not direct inputs. Image-only or scanned PDFs can fail recognition because of resolution, skew or blur. GPX and GP6/7/8 are currently unsupported. Drum parts use fixed-BPM timing.
 
 **Desktop metronome alone:** uncheck ‘음원과 연동’ (link to audio), then press ‘메트로놈 켜기’ (turn metronome on). No song is required. An always-visible hint and status show standalone playback, waiting for audio, linked playback, or other waiting states; mute and zero volume are also indicated.
 
