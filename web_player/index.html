@@ -28,6 +28,7 @@ aside, .card, .score-area, select { min-width: 0; }
 #partChoice { max-width: 100%; flex-wrap: wrap; }
 #partSelect { max-width: 100%; }
 .file-button:focus-within { outline: 3px solid var(--accent); outline-offset: 3px; }
+.file-error { border-inline-start: 3px solid currentColor; padding-inline-start: 10px; font-weight: 650; }
 .practice-links { display: none; }
 @media (max-width: 700px) {
   main:has(#empty:not([hidden])) .score-area { order: 1; }
@@ -68,7 +69,7 @@ aside, .card, .score-area, select { min-width: 0; }
 <p id="ensembleRules" class="small" hidden>재생·일시정지·마디 이동은 리더만 조작합니다. 속도·키·반복 설정은 리더가 일시정지한 뒤 바꿉니다. 각자 파트·화면·음량·메트로놈 켜기는 자유롭게 고릅니다.</p>
 <p class="small">공유 버튼을 누른 파일만 중계 서버로 전송합니다. 방 종료 시 삭제됩니다. 각자 파일을 열면 전송하지 않습니다. 합주 중에는 화면을 켜 두세요.</p></details>
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>iPad는 Safari, Android는 Chrome에서 웹주소를 열고 ‘홈 화면에 추가’하면 앱스토어 없이 사용할 수 있습니다. 아래에 ‘오프라인 준비 완료’가 표시된 후에는 인터넷 없이도 열립니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
-<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.3.2</p>
+<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.3.3</p>
 </aside><section class="score-area" id="scoreArea"><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
 <footer class="support-footer">버그 및 개선 사항 제보: <a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a></footer>
 <script>
@@ -669,8 +670,13 @@ let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickU
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
 let token = 0, timer = null, wakeLock = null, seeking = false;
 let ensemble = null;
-const setStatus = text => { $('status').textContent = text; $('sessionFileStatus').textContent = text; };
-const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
+function setStatus(text, error = false) {
+  for (const id of ['status', 'sessionFileStatus']) {
+    $(id).textContent = text;
+    $(id).classList.toggle('file-error', error);
+  }
+}
+const fail = error => { pause(); ensemble?.unready(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.', true); };
 function phaseAt(input) {
   const step = 60 / number('bpm', 20, 400, 120) * 4 / Number($('unit').value);
   const beat = (input - number('origin', -30, 1800, 0)) / step;
@@ -910,14 +916,28 @@ function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
   ensemble?.update();
 }
+function clearScorePage() {
+  pageGeneration++; shownPage = pendingPage = -1;
+  $('scoreImage').hidden = true; $('highlight').hidden = true;
+  $('scoreImage').removeAttribute('src');
+  for (const url of urls.values()) URL.revokeObjectURL(url);
+  urls.clear();
+}
+async function releaseAudio() {
+  const node = stretch;
+  if (!node) return;
+  stretch = null;
+  try { await node.dropBuffers(); }
+  finally { node.disconnect(); node.port.close(); }
+}
 async function openFile(file) {
   if (!file || loading) return;
   ensemble?.unready();
   loading = true; pause(); ready = false; setAvailable(false); $('file').disabled = true;
-  pageGeneration++; shownPage = pendingPage = -1;
-  for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
-  $('scoreImage').hidden = true; $('highlight').hidden = true;
+  clearScorePage();
+  archive = null;
   try {
+    await releaseAudio();
     await audioReady();
     setStatus('연습 파일을 확인하고 있습니다…');
     const next = await new MagicArchive(file).open();
@@ -930,7 +950,6 @@ async function openFile(file) {
     }
     const decoded = await ctx.decodeAudioData(data);
     requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
-    if (stretch) { await stretch.dropBuffers(); stretch.disconnect(); stretch.port.close(); }
     stretch = await SignalsmithStretch(ctx, {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]});
     stretch.connect(musicGain); latency = await stretch.latency();
     const channels = [decoded.getChannelData(0).slice(), decoded.getChannelData(1).slice()];
@@ -961,8 +980,24 @@ async function openFile(file) {
     $('loopEnd').selectedIndex = $('loopEnd').options.length - 1;
     await showPage(0); ready = true; setAvailable(true); updateMetro(); updateKey();
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
-  } catch (error) { archive = null; fail(error); }
-  finally { loading = false; $('file').disabled = false; $('file').value = ''; }
+  } catch (error) {
+    archive = null; ready = false; seeking = false; position = duration = 0;
+    clearScorePage();
+    $('empty').hidden = false;
+    $('paper').removeAttribute('style');
+    $('pageText').textContent = '0 / 0';
+    $('title').textContent = '준비한 곡을 열어 주세요';
+    $('part').textContent = '컴퓨터에서 만든 .magic 파일을 선택하세요.';
+    $('partChoice').hidden = true;
+    for (const id of ['partSelect', 'loopStart', 'loopEnd']) $(id).replaceChildren();
+    $('loop').checked = false;
+    $('key').value = '0'; $('seek').max = 1;
+    showPosition(); updateKey();
+    fail(error);
+    await releaseAudio();
+  } finally {
+    loading = false; $('file').value = ''; setAvailable(ready);
+  }
 }
 function updateKey() {
   const base = archive?.manifest.audio.pitch_semitones || 0, extra = Number($('key').value), total = base + extra;
@@ -1010,10 +1045,8 @@ $('partSelect').onchange = async () => {
   try {
     await selected.selectPart(track);
     if (archive !== selected) return;
-    pageGeneration++; shownPage = pendingPage = -1;
-    for (const url of urls.values()) URL.revokeObjectURL(url); urls.clear();
+    clearScorePage();
     $('part').textContent = `GP 파트 · ${selected.activePart.name}`;
-    $('scoreImage').hidden = true; $('highlight').hidden = true;
     await showPage(selected.timing.cues[clamp(cueAt(nowPosition()), 0, selected.timing.cues.length - 1)].page);
     setStatus('파트를 바꿨습니다. 반주 재생 위치는 그대로 유지됩니다.');
   } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }

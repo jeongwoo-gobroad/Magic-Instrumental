@@ -75,6 +75,15 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         click(panel.choose)
         finish()
         assert panel.gp_source.samefile(score) and panel.view.document
+        window.resize(800, 600)
+        app.processEvents()
+        score_height = panel.view.viewport().height()
+        click(panel.tools_toggle)
+        wait_until(app, lambda: panel.view.viewport().height() > score_height)
+        assert not panel.choose.isVisible()
+        assert panel.page.value() == 1 and panel.view.document
+        click(panel.tools_toggle)
+        assert panel.choose.isVisible() and panel.analyze.isEnabled()
 
         def choose_tempo():
             dialog = app.activeModalWidget()

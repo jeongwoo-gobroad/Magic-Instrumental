@@ -6,7 +6,7 @@ Make an instrumental on your computer, choose a score or Guitar Pro part, then p
 
 ![Desktop app with a project-authored GP study](docs/images/desktop-light.png)
 
-In a small window, scroll down the left side to reach the save buttons. Drag the divider to give the score more room. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
+In a small window, scroll down the left side to reach the save buttons. Drag the divider to widen the score. Press **준비 도구 접기** in the score panel to hide the setup controls and make the page taller. Press the same button to bring them back. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
 
 ## Install and open
 

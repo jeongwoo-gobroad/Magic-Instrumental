@@ -217,6 +217,7 @@ def test_pdf_count_loop_and_offline_reload(page, study_files):
 
 def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp_path):
     source = study_files["gp"]
+    open_study(page, source)
     corrupted = bytearray(source.read_bytes())
     with zipfile.ZipFile(source) as z:
         entry = z.getinfo("audio/instrumental.wav")
@@ -228,6 +229,12 @@ def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp
     page.wait_for_function("!MagicPlayer.state().loading")
     assert "손상" in page.locator("#status").inner_text()
     assert not page.evaluate("MagicPlayer.state().ready")
+    assert page.locator("#title").inner_text() == "준비한 곡을 열어 주세요"
+    assert page.locator("#clock").inner_text() == "00:00 / 00:00"
+    assert page.locator("#pageText").inner_text() == "0 / 0"
+    assert page.locator("#partChoice").is_hidden() and page.locator("#empty").is_visible()
+    assert page.locator("#play").is_disabled()
+    open_study(page, study_files["pdf"])
     bad = tmp_path / "bad-path.magic"
     with zipfile.ZipFile(source) as original, zipfile.ZipFile(bad, "w") as changed:
         for entry in original.infolist():
