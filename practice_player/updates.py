@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QPushButton
 
 from . import __version__
 from .release_check import API, RELEASES, numeric_version
@@ -172,23 +172,25 @@ class UpdateBar(QFrame):
         self.checker = checker or ReleaseChecker(self)
         self.checker.completed.connect(self.show_release)
         self.checker.failed.connect(self.show_failure)
-        layout = QHBoxLayout(self)
+        layout = QGridLayout(self)
         layout.setContentsMargins(10, 6, 10, 6)
+        layout.setColumnStretch(0, 1)
+        layout.setVerticalSpacing(2)
         self.version_label = QLabel(f"현재 v{current}")
         self.version_label.setObjectName("currentVersion")
-        layout.addWidget(self.version_label)
+        layout.addWidget(self.version_label, 0, 0)
         self.status = QLabel("새 버전을 확인할 수 있습니다.")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setObjectName("updateStatus")
         self.status.setWordWrap(True)
-        layout.addWidget(self.status, 1)
+        layout.addWidget(self.status, 1, 0, 1, 4)
         self.retry = QPushButton("업데이트 확인")
         self.retry.clicked.connect(self.check)
-        layout.addWidget(self.retry)
+        layout.addWidget(self.retry, 0, 1)
         self.details = QPushButton("변경 내용")
         self.details.clicked.connect(self.open_details)
         self.details.hide()
-        layout.addWidget(self.details)
+        layout.addWidget(self.details, 0, 2)
         self.install = QPushButton("종료하고 업데이트")
         self.install.setObjectName("primary")
         self.install.setToolTip(
@@ -196,7 +198,7 @@ class UpdateBar(QFrame):
         )
         self.install.clicked.connect(self.update_requested)
         self.install.hide()
-        layout.addWidget(self.install)
+        layout.addWidget(self.install, 0, 3)
 
     def check(self):
         if self.checker.check(self.current):

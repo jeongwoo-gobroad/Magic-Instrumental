@@ -86,3 +86,4 @@ def test_payloads_reject_nonfinite_or_invalid_ranges():
         with pytest.raises(ValueError):
             transport_state(STATE | change, 60)
     assert json.dumps(transport_state(STATE, 60))
+    assert transport_state(STATE | {"origin": -0.25}, 60)["origin"] == -0.25

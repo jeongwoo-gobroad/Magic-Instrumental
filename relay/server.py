@@ -48,7 +48,7 @@ def transport_state(value, duration):
     if not isinstance(value, dict) or set(value) != STATE_KEYS:
         raise ValueError("재생 설정이 올바르지 않습니다.")
     for key, lo, hi in (("position", 0, duration), ("rate", .25, 2), ("key", -24, 24),
-                        ("bpm", 20, 400), ("beats", 1, 16), ("origin", 0, 1800)):
+                        ("bpm", 20, 400), ("beats", 1, 16), ("origin", -30, 1800)):
         if not finite(value[key], lo, hi):
             raise ValueError("재생 설정의 범위를 확인하세요.")
     if (type(value["key"]) is not int or type(value["beats"]) is not int

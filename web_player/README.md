@@ -20,6 +20,8 @@
 
 **[▶ Magic Player 열기](https://jeongwoo-gobroad.github.io/Magic-Instrumental/)**
 
+작은 화면에서는 **.magic 파일 열기**가 악보보다 먼저 나옵니다. 곡을 연 뒤에는 화면 위의 **재생 조절로**와 **악보로**를 눌러 이동하세요.
+
 위 주소를 **iPad에서는 Safari**, **Android에서는 Chrome**으로 여세요. 위 주소에서 바로 사용하는 공개 재생기입니다.
 
 - **iPad**: Safari의 공유 버튼 → **홈 화면에 추가** → 추가.
@@ -87,6 +89,8 @@ iPad의 ‘파일’ 앱에서 내려받은 HTML을 누르면 실행 대신 미�
 
 ![리더 Session 화면](https://raw.githubusercontent.com/jeongwoo-gobroad/Magic-Instrumental/main/docs/images/session-leader.png)
 ![멤버 Session 화면](https://raw.githubusercontent.com/jeongwoo-gobroad/Magic-Instrumental/main/docs/images/session-member.png)
+
+Session을 종료하면 이전 방의 참가자 목록과 초대 코드가 화면에서 사라집니다. 열어 둔 곡으로 혼자 연습을 이어갈 수 있습니다.
 
 ## 막히는 일이 있다면
 

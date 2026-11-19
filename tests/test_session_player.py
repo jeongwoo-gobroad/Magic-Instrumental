@@ -121,5 +121,9 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         leader.locator("#exitSession").click()
         member.wait_for_function("MagicEnsemble.state().role === ''")
         assert member.locator("#playerControls").is_visible()
+        for page in (leader, member):
+            assert page.locator("#members li").count() == 0
+            assert page.locator("#inviteCode").input_value() == ""
+            assert page.locator("#inviteLink").get_attribute("href") is None
         browser.close()
         assert not errors

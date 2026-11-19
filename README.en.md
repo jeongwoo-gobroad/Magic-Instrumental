@@ -6,6 +6,8 @@ Make an instrumental on your computer, choose a score or Guitar Pro part, then p
 
 ![Desktop app with a project-authored GP study](docs/images/desktop-light.png)
 
+In a small window, scroll down the left side to reach the save buttons. Drag the divider to give the score more room. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
+
 ## Install and open
 
 Download the latest **Magic-Instrumental-version.zip** from [Releases](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
@@ -15,6 +17,8 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 **If Windows freezes or closes while checking for updates:** close the app and error window, double-click the existing `update.bat`, then reopen with `start.bat`. Update to v2.3.1 or later; no in-app button is needed. Keep your audio, scores and processed results. Reinstallation is not required for this fix.
 
 ## Update without moving your songs
+
+On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
 
 At startup, the desktop shows your current version and checks the latest stable release in the background. When available, use **변경 내용** (release notes) and **종료하고 업데이트** (close and update). The updater waits for the app to exit, then preserves your files and settings. Reopen with `start` after completion. Offline checks never block practice, and **다시 확인** retries. Finish any analysis/export before updating. Nothing installs automatically.
 

@@ -104,15 +104,18 @@ def main() -> int:
         )
     )
     profile = "cuda" if use_cuda else "default"
-    signature = hashlib.sha256(
-        requirements.read_bytes()
-        + lock.read_bytes()
-        + (ROOT / "requirements-cuda.txt").read_bytes()
-        + profile.encode()
-    ).hexdigest()
+    pins = (requirements, lock, ROOT / "requirements-cuda.txt")
+    raw = b"".join(path.read_bytes() for path in pins)
+    normalized = raw.replace(b"\r\n", b"\n")
+    signature = hashlib.sha256(normalized + profile.encode()).hexdigest()
+    # Older ZIPs and Windows checkouts hashed the same pins with different line endings.
+    compatible = {
+        signature, hashlib.sha256(raw + profile.encode()).hexdigest(),
+        hashlib.sha256(normalized.replace(b"\n", b"\r\n") + profile.encode()).hexdigest(),
+    }
     marker = target / ".practice-player-requirements"
     previous = marker.read_text() if marker.exists() else ""
-    if args.launch_only and previous != signature:
+    if args.launch_only and previous not in compatible:
         raise RuntimeError(
             "이 버전의 설치가 필요합니다. install.command 또는 install.bat을 실행하세요."
         )
@@ -121,7 +124,7 @@ def main() -> int:
             "악보 인식 도구 준비가 필요합니다. install.command 또는 install.bat을 "
             "다시 더블클릭하세요. Audiveris와 영어 데이터도 자동으로 설치합니다."
         )
-    if args.reinstall or previous != signature:
+    if args.reinstall or previous not in compatible:
         subprocess.run([str(python), "-m", "pip", "install", "--upgrade", "pip"], check=True)
         if use_cuda:
             subprocess.run(

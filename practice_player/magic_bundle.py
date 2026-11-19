@@ -4,12 +4,11 @@
 import io
 import json
 import math
-import os
 import tempfile
 import zipfile
 from pathlib import Path
 
-from .audio import inspect_audio, run_ffmpeg
+from .audio import inspect_audio, publish_export, run_ffmpeg
 from .cache import hash_file
 from .config import ROOT, Paths
 from .gp_collection import portable_timing, prepare_collection
@@ -56,7 +55,7 @@ def export_magic(request, report=lambda *_: None):
         or not 20 <= practice["bpm"] <= 400
         or not 1 <= practice["beats"] <= 16
         or practice["unit"] not in (2, 4, 8, 16)
-        or not 0 <= practice["origin"] <= 1800
+        or not -30 <= practice["origin"] <= 1800
     ):
         raise ValueError("메트로놈 설정이 올바르지 않습니다.")
     if gp:
@@ -203,10 +202,6 @@ def export_magic(request, report=lambda *_: None):
             raise ValueError("연습 파일은 최대 1 GB입니다. 악보·곡을 나누어 준비하세요.")
         if any(hash_file(p) != digest for p, digest in inputs.items()):
             raise ValueError("저장 중 원본이 변경되었습니다. 다시 시도해 주세요.")
-        if request.get("overwrite"):
-            bundle.replace(output)
-        else:
-            # Atomic no-clobber publication, including a file created after the dialog.
-            os.link(bundle, output)
+        publish_export(bundle, output, overwrite=bool(request.get("overwrite")))
         report(".magic 저장 완료 · 태블릿 재생기에서 열어 주세요.", 1)
     return output

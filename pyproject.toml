@@ -1,4 +1,6 @@
 [tool.pytest.ini_options]
+# Native Qt FFmpeg threads keep stderr handles across test cases on Windows.
+addopts = "--capture=sys"
 testpaths = ["tests"]
 markers = ["integration: runs actual model weights; requires RUN_MODEL_TESTS=1"]
 

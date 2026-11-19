@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Optional drum count before transport playback; no media/score rewriting."""
 
+import io
 import math
 import random
 import struct
-import tempfile
 import time
 import wave
 from pathlib import Path
@@ -12,6 +12,8 @@ from pathlib import Path
 from PySide6.QtCore import Qt, QTimer, QUrl, Signal
 from PySide6.QtMultimedia import QMediaPlayer, QSoundEffect
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QSpinBox, QWidget
+
+from .metronome import wav_url
 
 
 class CountClock:
@@ -57,7 +59,7 @@ class CountClock:
         return self.first + index, False
 
 
-def write_drum(path: Path, accent: bool):
+def write_drum(path: Path | io.BytesIO, accent: bool):
     """Original short closed-hat/snare sound; accented beats add a low kick."""
     rate, frames = 44100, 3528
     noise = random.Random(712 if accent else 241)
@@ -74,7 +76,7 @@ def write_drum(path: Path, accent: bool):
         value = 0.55 * hat + (0.22 * snare + 0.5 * kick * math.exp(-t * 50) if accent else 0)
         value *= min(1, i / 20) * min(1, (frames - 1 - i) / 100)
         samples.extend(struct.pack("<h", int(max(-1, min(1, value)) * 26000)))
-    with wave.open(str(path), "wb") as output:
+    with wave.open(str(path) if isinstance(path, Path) else path, "wb") as output:
         output.setparams((1, 2, rate, 0, "NONE", "not compressed"))
         output.writeframes(samples)
 
@@ -94,13 +96,12 @@ class CountIn(QWidget):
         self.clock = None
         self.requested = 0
         self.position = 0
-        self._sound_dir = tempfile.TemporaryDirectory(prefix="practice-count-")
         self.sounds = []
         for accent in (False, True):
-            path = Path(self._sound_dir.name) / f"drum-{int(accent)}.wav"
-            write_drum(path, accent)
+            buffer = io.BytesIO()
+            write_drum(buffer, accent)
             sound = QSoundEffect(self)
-            sound.setSource(QUrl.fromLocalFile(str(path)))
+            sound.setSource(wav_url(buffer))
             self.sounds.append(sound)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
@@ -264,4 +265,3 @@ class CountIn(QWidget):
         self.cancel()
         for sound in self.sounds:
             sound.setSource(QUrl())
-        self._sound_dir.cleanup()

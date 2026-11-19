@@ -112,12 +112,23 @@ def tempo_filter(speed: float) -> str:
     return ",".join(f"atempo={factor:.8g}" for factor in factors)
 
 
+def publish_export(staged: Path, destination: Path, *, overwrite: bool) -> None:
+    if overwrite:
+        staged.replace(destination)
+    elif os.name == "nt":
+        # Windows rename fails if the destination exists, including on USB drives.
+        staged.rename(destination)
+    else:
+        os.link(staged, destination)
+
+
 def export_tempo(source: Path, destination: Path, speed: float, *, overwrite: bool = False) -> Path:
     effect = tempo_filter(speed)
     if destination.suffix.lower() not in {".wav", ".flac"}:
         raise ValueError("내보내기는 WAV 또는 FLAC을 선택하세요.")
     if source.resolve() == destination.resolve() or (
-        destination.name == "instrumental.wav" and (destination.parent / "manifest.json").exists()
+        destination == destination.with_name("instrumental.wav")
+        and (destination.parent / "manifest.json").exists()
     ):
         raise ValueError("원본 캐시를 덮어쓸 수 없습니다. 다른 경로를 선택하세요.")
     if destination.exists() and not overwrite:
@@ -132,9 +143,7 @@ def export_tempo(source: Path, destination: Path, speed: float, *, overwrite: bo
     try:
         run_ffmpeg(["-i", str(source), "-af", effect, *codec, str(temporary)])
         inspect_audio(temporary)
-        if destination.exists() and not overwrite:
-            raise FileExistsError("출력 경로에 다른 파일이 생성되었습니다. 다른 이름을 선택하세요.")
-        temporary.replace(destination)
+        publish_export(temporary, destination, overwrite=overwrite)
     finally:
         temporary.unlink(missing_ok=True)
     return destination
