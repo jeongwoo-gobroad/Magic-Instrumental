@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     env:
       MAGIC_NO_PAUSE: '1'
-      QT_QPA_PLATFORM: offscreen
+      QT_QPA_PLATFORM: ${{ matrix.os == 'windows-latest' && 'windows' || 'offscreen' }}
       QT_MEDIA_BACKEND: ffmpeg
       PYTHONUTF8: '1'
       MAGIC_RENDER_CHECK_DIR: render-checks

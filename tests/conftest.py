@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import os
 import shutil
+import sys
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "offscreen")
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
 import numpy as np

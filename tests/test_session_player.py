@@ -94,6 +94,7 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
                    member.evaluate("MagicPlayer.state().position")) < .13
         leader.locator("#play").click()
         member.wait_for_function("!MagicPlayer.state().playing", timeout=7000)
+        leader.wait_for_function("!MagicPlayer.state().playing", timeout=7000)
         assert abs(leader.evaluate("MagicPlayer.state().position") -
                    member.evaluate("MagicPlayer.state().position")) < .13
         # A member's internal command cannot bypass server authorization.

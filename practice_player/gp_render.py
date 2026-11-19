@@ -3,6 +3,7 @@
 
 import json
 import os
+import sys
 import uuid
 from copy import deepcopy
 from hashlib import sha256
@@ -16,9 +17,29 @@ from .cache import hash_file
 from .guitar_pro import GP_VERSION, list_tracks, node, read_gp
 from .score import atomic_json
 
-RENDER_VERSION = 3
+RENDER_VERSION = 4
 VEROVIO_VERSION = "6.4.1"
 SVG = "{http://www.w3.org/2000/svg}"
+_render_app = None
+
+
+def render_application():
+    """Create an invisible worker app with a real platform font database."""
+    from PySide6.QtWidgets import QApplication
+
+    global _render_app
+    app = QApplication.instance()
+    if app is None:
+        if sys.platform == "win32":
+            # Qt's Windows offscreen plugin can supply only box glyphs. Creating
+            # a native QApplication does not show a window; no QWidget is made.
+            os.environ["QT_QPA_PLATFORM"] = "windows"
+        else:
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        _render_app = app = QApplication([])
+    if sys.platform == "win32" and app.platformName() != "windows":
+        raise ValueError("Windows 악보 글꼴을 사용할 수 없습니다. 앱을 다시 실행해 주세요.")
+    return app
 
 
 def display_xml(data, metadata):
@@ -287,13 +308,11 @@ def prepare_gp(source, paths, track=1, report=lambda *_: None):
         count = renderer.getPageCount()
         if not 1 <= count <= 200:
             raise ValueError("GP 악보는 최대 200페이지까지 표시할 수 있습니다.")
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
         from PySide6.QtCore import QMarginsF, QRectF
         from PySide6.QtGui import QPageLayout, QPageSize, QPainter, QPdfWriter
         from PySide6.QtSvg import QSvgRenderer
-        from PySide6.QtWidgets import QApplication
 
-        app = QApplication.instance() or QApplication([])
+        app = render_application()
         temporary = folder / f".{uuid.uuid4().hex}.pdf"
         writer = QPdfWriter(str(temporary))
         writer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))

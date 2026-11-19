@@ -9,15 +9,16 @@ import numpy as np
 import pypdfium2 as pdfium
 from defusedxml import ElementTree as XML
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QApplication
 
 from practice_player.config import Paths
-from practice_player.gp_render import SVG, prepare_gp
+from practice_player.gp_render import SVG, prepare_gp, render_application
 from tests.test_guitar_pro import gp_song
 
 
 def test_gp_pdf_numbers_have_glyph_shapes_not_solid_boxes(tmp_path):
-    app = QApplication.instance() or QApplication([])
+    app = render_application()
+    if sys.platform == "win32":
+        assert app.platformName() == "windows"
 
     def digits(song):
         song.title = "Numeric Glyph Study"
@@ -39,6 +40,14 @@ def test_gp_pdf_numbers_have_glyph_shapes_not_solid_boxes(tmp_path):
         page = document[0]
         bitmap = page.render(scale=4)
         image = bitmap.to_pil().convert("RGB")
+        destination = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+        if destination:
+            folder = Path(destination)
+            folder.mkdir(parents=True, exist_ok=True)
+            image.save(folder / f"gp-numeric-{sys.platform}.png")
+            (folder / f"gp-numeric-{sys.platform}.svg").write_bytes(svg)
+            (folder / f"gp-numeric-{sys.platform}.pdf").write_bytes(
+                Path(result["pdf"]).read_bytes())
         samples = np.asarray(image)
         view = graphic.viewBoxF()
         for label in [e for e in labels if e.get("aria-label") in {"0", "8"}]:
@@ -53,11 +62,6 @@ def test_gp_pdf_numbers_have_glyph_shapes_not_solid_boxes(tmp_path):
             # A missing-font black block fills the box; 0/8 must retain counters.
             ink = (crop.mean(axis=2) < 128).mean()
             assert 0.12 < ink < 0.75, (label.get("aria-label"), ink)
-        destination = os.environ.get("MAGIC_RENDER_CHECK_DIR")
-        if destination:
-            folder = Path(destination)
-            folder.mkdir(parents=True, exist_ok=True)
-            image.save(folder / f"gp-numeric-{sys.platform}.png")
         bitmap.close()
         page.close()
     assert prepare_gp(source, Paths(tmp_path))["cached"]

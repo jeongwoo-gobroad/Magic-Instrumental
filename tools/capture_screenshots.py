@@ -13,7 +13,7 @@ import tempfile
 import time
 from pathlib import Path
 
-os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "offscreen")
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
 ROOT = Path(__file__).resolve().parent.parent
