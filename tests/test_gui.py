@@ -101,12 +101,14 @@ def test_click_volume_is_independent_persistent_and_does_not_restart_beats(tmp_p
         bar.tick()
         assert bar.last_beat == 2  # changing gain did not restart the clock
         bar.mute.setChecked(True)
+        assert bar.state_label.text() == "단독 재생 중 · 무음"
         assert bar.volume.value() == 75 and all(sound.volume() == 0 for sound in bar.sounds)
         bar.volume.setValue(80)
         assert all(sound.volume() == 0 for sound in bar.sounds)
         bar.mute.setChecked(False)
         assert all(abs(sound.volume() - 0.8) < 0.001 for sound in bar.sounds)
         bar.volume.setValue(0)
+        assert bar.state_label.text() == "단독 재생 중 · 음량 0%"
         now[0] += 0.5
         bar.tick()
         assert bar.last_beat == 3 and all(sound.volume() == 0 for sound in bar.sounds)
@@ -143,6 +145,7 @@ def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_p
         count.enabled.setChecked(True)
         window.toggle_play()
         assert count.active and window.player.position() == 0
+        assert window.metronome.state_label.text() == "드럼 카운트 중 · 무음"
         assert window.play_button.text() == "카운트 취소"
         assert window.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState
         wait_until(app, lambda: window.player.isPlaying())

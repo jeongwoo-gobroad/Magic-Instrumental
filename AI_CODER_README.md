@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.0.2**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.0.3**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -113,6 +113,8 @@ PDFium renders at the chosen zoom with bounded source image size and a 3-page pi
 Measure seeking uses `ScoreTimeline.playable_measures(duration)` and `measure_target(media_seconds, delta, duration)`. Add ±N to **visit index**, not printed bar number. Handle intro/outro, partial first cue, offset and track bounds. Seek to `ceil(seconds * 1000)` to avoid landing immediately before a fractional boundary. Keep play/pause state unchanged. The score panel's `timeline_changed` signal updates button availability.
 
 ## Metronome
+
+Desktop v2.0.3: `MetronomeBar` owns the horizontally scrollable controls and a separate always-visible help/status row. The hint explains clearing `음원과 연동` for standalone use. `update_status()` derives off, standalone, waiting for playback, linked playback, first-beat wait and count-in states, plus mute/zero-volume suffixes, from existing transport fields. It runs on relevant signals and ticks, only updates changed label text, and must never reset the beat clock or start audio. Keep the help/status row outside the horizontal scroller and readable in both themes at the minimum window size. The mobile player remains v2.0.2 for this desktop-only change.
 
 Synthesized 30 ms clicks via QSoundEffect; dedicated 0–100% click volume (default 35%) and mute, independent of QAudioOutput music gain. `MetronomeBar` accepts the window QSettings through `preferences=`; persist integer percent under `metronome/volume` in `processed/ui.ini`, globally across tracks, including standalone use. Missing/invalid saved values fall back to 35%. Mute applies zero effective gain while retaining the selected value. Zero gain stops pending clicks and skips new audio dispatch; visual beats continue. Volume/mute changes must never reset the scheduler or alter the music output. Meter numerator 1–12, denominator 2/4/8/16; quarter-note BPM 20–400. Independent monotonic clock or media anchor + elapsed × rate; 5 ms precise timer detects boundaries rather than accumulating tick counts. Late ticks/seek jumps must not burst queued clicks. Pause/stop silence the linked clock. Fixed entered tempo only; no automatic tempo/meter change tracking or sample-accurate audio synchronization.
 

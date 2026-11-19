@@ -51,11 +51,14 @@ def test_independent_linked_pause_seek_and_rate(monkeypatch):
     bar = MetronomeBar(transport)
     bar.mute.setChecked(True)
     try:
+        assert bar.state_label.text() == "꺼짐"
         bar.toggle.setChecked(True)
+        assert bar.state_label.text() == "단독 재생 중 · 무음"
         now[0] += 0.5
         bar.tick()
         assert bar.last_beat == 1  # independent while audio paused
         bar.linked.setChecked(True)
+        assert bar.state_label.text() == "음원 재생 대기 중 · 무음"
         bar.bpm.setValue(107)
         transport.rate = 0.75
         transport.playbackRateChanged.emit(0.75)
@@ -65,6 +68,7 @@ def test_independent_linked_pause_seek_and_rate(monkeypatch):
         assert bar.last_beat is None
         transport.playing = True
         transport.playbackStateChanged.emit(transport.playbackState())
+        assert bar.state_label.text() == "음원과 함께 재생 중 · 무음"
         now[0] += 60 / 80.25
         bar.tick()
         assert bar.last_beat == 1
@@ -74,6 +78,7 @@ def test_independent_linked_pause_seek_and_rate(monkeypatch):
         assert bar.last_beat == 107  # seek uses media time, not media time * rate
         transport.playing = False
         transport.playbackStateChanged.emit(transport.playbackState())
+        assert bar.state_label.text() == "음원 재생 대기 중 · 무음"
         now[0] += 10
         bar.tick()
         assert bar.last_beat is None
@@ -83,6 +88,7 @@ def test_independent_linked_pause_seek_and_rate(monkeypatch):
         bar.tick()
         assert bar.last_beat == 0
         assert bar.effective.text() == "107 BPM"
+        assert bar.state_label.text() == "단독 재생 중 · 무음"
     finally:
         bar.shutdown()
         bar.close()
@@ -175,16 +181,19 @@ def test_link_checkbox_arms_start_and_first_beat_offset(monkeypatch):
         assert bar.enabled and bar.toggle.isChecked()
         assert sum(s.played for s in bar.sounds) == 0
         start_clock(transport)
+        assert bar.state_label.text() == "음원의 첫 박 대기 중"
         now[0] += 1
         bar.tick()
         assert sum(s.played for s in bar.sounds) == 0
         now[0] += 0.25
         bar.tick()
         assert bar.last_beat == 0 and bar.sounds[1].played == 1
+        assert bar.state_label.text() == "음원과 함께 재생 중"
         now[0] += 0.5
         bar.tick()
         assert bar.last_beat == 1 and bar.sounds[0].played == 1
         bar.toggle.setChecked(False)
+        assert bar.state_label.text() == "꺼짐"
         transport.playing = False
         transport.playbackStateChanged.emit(transport.playbackState())
         start_clock(transport)

@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QScrollArea,
     QSpinBox,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -98,7 +100,11 @@ class MetronomeBar(QWidget):
             effect = QSoundEffect(self)
             effect.setSource(QUrl.fromLocalFile(str(path)))
             self.sounds.append(effect)
-        row = QHBoxLayout(self)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(2)
+        controls = QWidget()
+        row = QHBoxLayout(controls)
         row.setContentsMargins(10, 4, 10, 4)
         row.setSpacing(8)
         row.addWidget(QLabel("메트로놈"))
@@ -141,7 +147,9 @@ class MetronomeBar(QWidget):
         self.bpm.setAccessibleName("BPM 또는 연동 시 원곡 BPM")
         row.addWidget(self.bpm)
         self.linked = QCheckBox("음원과 연동")
-        self.linked.setToolTip("체크하면 클릭을 준비하고 음원 시작·탐색·반복·배속을 따라갑니다.")
+        self.linked.setToolTip(
+            "체크하면 음원 시작·탐색·반복·배속을 따라갑니다. 단독 사용 시에는 해제하세요."
+        )
         row.addWidget(self.linked)
         self.effective = QLabel("120 BPM")
         self.effective.setMinimumWidth(85)
@@ -168,6 +176,26 @@ class MetronomeBar(QWidget):
         self.mute = QCheckBox("무음")
         self.mute.setToolTip("선택한 음량은 유지하고 클릭 소리만 잠시 끕니다.")
         row.addWidget(self.mute)
+        scroll = QScrollArea()
+        scroll.setWidget(controls)
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(66)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(scroll)
+        # Keep status/help outside the horizontal scroller, visible in narrow windows.
+        info = QHBoxLayout()
+        info.setContentsMargins(10, 0, 10, 2)
+        info.setSpacing(18)
+        self.state_label = QLabel("꺼짐")
+        self.state_label.setObjectName("metronomeState")
+        self.state_label.setAccessibleName("메트로놈 현재 상태")
+        self.state_label.setWordWrap(True)
+        info.addWidget(self.state_label)
+        self.help_label = QLabel("메트로놈만 쓰려면 ‘음원과 연동’을 해제하고 ▶를 누르세요.")
+        self.help_label.setObjectName("muted")
+        self.help_label.setWordWrap(True)
+        info.addWidget(self.help_label, 1)
+        layout.addLayout(info)
         self.volume.valueChanged.connect(self.update_volume)
         self.mute.toggled.connect(self.update_volume)
         self.update_volume()
@@ -250,6 +278,7 @@ class MetronomeBar(QWidget):
             self.silence()
         if self.preferences is not None:
             self.preferences.setValue("metronome/volume", self.volume.value())
+        self.update_status()
 
     def align_now(self):
         self.origin.setValue(self.media_seconds(time.monotonic()))
@@ -268,6 +297,30 @@ class MetronomeBar(QWidget):
     def update_label(self):
         rate = self.player.playbackRate() if self.linked.isChecked() else 1
         self.effective.setText(f"{self.bpm.value() * rate:g} BPM")
+        self.update_status()
+
+    def update_status(self):
+        """Describe the existing transport state without changing its beat clock."""
+        if self.count_in_active:
+            text = "드럼 카운트 중"
+        elif not self.enabled:
+            text = "꺼짐"
+        elif not self.linked.isChecked():
+            text = "단독 재생 중"
+        elif (self.seeking or self.suspended
+              or self.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState):
+            text = "음원 재생 대기 중"
+        elif self.media_seconds(time.monotonic()) < self.origin.value():
+            text = "음원의 첫 박 대기 중"
+        else:
+            text = "음원과 함께 재생 중"
+        if self.enabled or self.count_in_active:
+            if self.mute.isChecked():
+                text += " · 무음"
+            elif self.volume.value() == 0:
+                text += " · 음량 0%"
+        if self.state_label.text() != text:
+            self.state_label.setText(text)
 
     def set_running(self, running):
         self.enabled = running
@@ -283,6 +336,7 @@ class MetronomeBar(QWidget):
             self.timer.stop()
             self.paint_beat(None)
             self.silence()
+        self.update_status()
 
     def reanchor(self, milliseconds):
         self.anchor_position = milliseconds / 1000
@@ -300,6 +354,7 @@ class MetronomeBar(QWidget):
         self.seeking = True
         if self.linked.isChecked():
             self.silence()
+        self.update_status()
 
     def end_seek(self, milliseconds):
         self.seeking = False
@@ -309,6 +364,7 @@ class MetronomeBar(QWidget):
             self.last_beat = None
             self.paint_beat(None)
             self.tick()
+        self.update_status()
 
     def anchor(self, milliseconds):
         if self.seeking:
@@ -357,6 +413,7 @@ class MetronomeBar(QWidget):
             self.silence()
             self.last_beat = None
             self.paint_beat(None)
+        self.update_status()
 
     def paint_beat(self, beat):
         for i, dot in enumerate(self.dot_labels):
@@ -372,8 +429,10 @@ class MetronomeBar(QWidget):
             self.reanchor(self.player.position())
             if self.linked.isChecked():
                 self.scheduler.reset()
+        self.update_status()
 
     def tick(self):
+        self.update_status()
         if not self.enabled or self.count_in_active:
             return
         now = time.monotonic()

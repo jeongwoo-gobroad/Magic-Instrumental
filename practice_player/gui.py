@@ -48,6 +48,7 @@ QWidget { background: #11151d; color: #e7edf7; font-size: 14px; }
 QMainWindow { background: #11151d; }
 QLabel#title { font-size: 26px; font-weight: 700; }
 QLabel#subtitle, QLabel#muted { color: #99a9bf; }
+QLabel#metronomeState { color: #87ddc4; font-size: 13px; font-weight: 600; }
 QLabel#track { font-size: 21px; font-weight: 600; }
 QLabel#speed { color: #87ddc4; font-size: 32px; font-weight: 700; }
 QPushButton, QComboBox { background: #242e3e; border: 1px solid #35425a;
@@ -383,16 +384,11 @@ class Window(QMainWindow):
             lambda *_: self.preferences.setValue("splitter", self.main_splitter.saveState())
         )
         self.score_panel.bpm_provider = lambda: self.metronome.bpm.value()
-        top = QScrollArea()
-        top.setWidget(self.metronome)
-        top.setWidgetResizable(True)
-        top.setFixedHeight(66)
-        top.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         container = QWidget()
         outer = QVBoxLayout(container)
         outer.setContentsMargins(6, 4, 6, 6)
         outer.setSpacing(3)
-        outer.addWidget(top)
+        outer.addWidget(self.metronome)
         self.score_visible = QCheckBox("악보 표시 · 가운데 경계를 드래그하여 너비 조절")
         self.score_visible.setChecked(self.preferences.value("score_visible", True, type=bool))
         self.score_panel.setVisible(self.score_visible.isChecked())
