@@ -105,3 +105,5 @@ iPad의 ‘파일’ 앱에서 내려받은 HTML을 누르면 실행 대신 미�
 자체 코드는 GPL-3.0-only, 배속·키 처리를 위한 Signalsmith Stretch는 MIT 라이선스입니다. [자세한 고지](https://github.com/jeongwoo-gobroad/Magic-Instrumental/blob/main/THIRD_PARTY_NOTICES.md). 모델 가중치는 포함하지 않습니다. [개발자 문서](https://github.com/jeongwoo-gobroad/Magic-Instrumental/blob/main/docs/MAGIC_FORMAT.md)
 
 Chromium·WebKit의 실제 브라우저 테스트를 수행합니다. 물리 iPad·Android 기기 전체를 검증했다는 의미는 아닙니다. 화면 크기·오디오 출력·브라우저 버전에 따른 차이가 있을 수 있습니다.
+
+화면 맨 아래의 **버그 및 개선 사항 제보** 링크를 누르면 메일을 작성할 수 있습니다. 연습 파일은 자동 첨부하지 않습니다.
