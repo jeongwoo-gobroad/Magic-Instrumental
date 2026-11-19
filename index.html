@@ -5,16 +5,18 @@
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:16px auto;min-height:100%;background:#fff;box-shadow:0 3px 12px #0002}#scoreImage{width:100%;height:auto;display:block}#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
 @media(max-width:900px){header{padding:20px}.metronome{margin:0 16px 16px}main{padding:0 16px 20px;grid-template-columns:300px minmax(0,1fr);gap:14px}.card{padding:15px}.score-toolbar{padding:10px}h1{font-size:24px}.row{gap:5px}.row button{padding:8px}#viewport{height:calc(100dvh - 300px)}}
 @media(max-width:700px){main{display:flex;flex-direction:column}.score-area{position:relative;top:0;width:100%;order:-1}aside{width:100%}#viewport{height:55dvh;min-height:280px}.metronome{gap:8px}header{padding:16px}h1{font-size:22px}.score-toolbar{gap:8px}.score-toolbar>div:first-child{min-width:65px}.metronome details{margin-left:0}.metro-settings{position:fixed;top:150px;right:12px;left:12px;width:auto}#empty{padding:40px 15px}.transport{flex-wrap:nowrap}.card{padding:18px}}
+
+.metro-help{flex-basis:100%;font-size:12px;margin:0;color:var(--muted)}.metro-state{font-size:12px;color:var(--accent);font-weight:700}
 </style></head>
 <body>
 <header><div><span class="eyebrow">MAGIC INSTRUMENTAL</span><h1>나의 속도로, 한 마디씩.</h1></div><button id="theme" aria-label="밝은 화면과 어두운 화면 전환">☼ 화면</button></header>
-<section class="metronome" aria-label="메트로놈"><button id="metro" aria-pressed="false">메트로놈 켜기</button><div id="dots" aria-label="박자 표시"></div><span id="effective">120 BPM</span><label><input id="linked" type="checkbox" checked> 반주와 함께</label><details><summary>박자 설정</summary><div class="metro-settings"><label>원곡 BPM <input id="bpm" type="number" min="20" max="400" value="120"></label><label>박자 <input id="beats" type="number" min="1" max="16" value="4"> / <select id="unit"><option>2</option><option selected>4</option><option>8</option><option>16</option></select></label><label>첫 박 (초) <input id="origin" type="number" min="0" max="1800" value="0" step=".01"></label><button id="firstBeat">지금을 첫 박으로</button><label>메트로놈 음량 <input id="metroVolume" type="range" min="0" max="100" value="55"></label></div></details></section>
+<section class="metronome" aria-label="메트로놈"><button id="metro" aria-pressed="false">메트로놈 켜기</button><div id="dots" aria-label="박자 표시"></div><span id="effective">120 BPM</span><label><input id="linked" type="checkbox" checked> 반주와 함께</label><span id="metroState" class="metro-state" role="status">꺼짐</span><details><summary>박자 설정</summary><div class="metro-settings"><label>원곡 BPM <input id="bpm" type="number" min="20" max="400" value="120"></label><label>박자 <input id="beats" type="number" min="1" max="16" value="4"> / <select id="unit"><option>2</option><option selected>4</option><option>8</option><option>16</option></select></label><label>첫 박 (초) <input id="origin" type="number" min="0" max="1800" value="0" step=".01"></label><button id="firstBeat">지금을 첫 박으로</button><label>메트로놈 음량 <input id="metroVolume" type="range" min="0" max="100" value="55"></label></div></details><p class="metro-help">메트로놈만 쓰려면 <b>‘반주와 함께’를 해제</b>하세요. 체크하면 반주가 재생되는 동안에만 소리가 납니다.</p></section>
 <main><aside>
 <section class="card"><span class="step">01 · 연습 파일</span><h2 id="title">준비한 곡을 열어 주세요</h2><p id="part">컴퓨터에서 만든 .magic 파일 하나면 됩니다.</p><label class="file-button">.magic 파일 열기<input id="file" type="file" accept=".magic,application/zip"></label><p id="status" role="status" aria-live="polite">파일은 이 기기 안에서만 읽습니다.</p></section>
 <section class="card"><span class="step">02 · 듣고 연습하기</span><div class="transport"><button id="play" class="primary" disabled>▶ 재생</button><button id="home" disabled>처음으로</button><span id="clock">00:00 / 00:00</span></div><input id="seek" type="range" min="0" max="1" step=".01" value="0" aria-label="재생 위치" disabled><div class="row"><button id="back" disabled>← 이전</button><label><input id="step" type="number" min="1" max="10000" value="1"> 마디</label><button id="forward" disabled>다음 →</button></div><hr><div class="row"><label for="speed">재생 속도</label><strong id="speedText">1.00×</strong><button id="speedReset">원래 속도</button></div><input id="speed" type="range" min="25" max="200" value="100" aria-label="재생 속도"><div class="row"><label for="key">반주 키</label><select id="key"></select><span id="keyText">원곡</span></div><p class="small">속도를 바꿔도 음정은 유지됩니다. 키 변경은 반주에 적용됩니다.</p><label class="range-label">반주 음량<input id="volume" type="range" min="0" max="100" value="75"></label><hr><label><input id="count" type="checkbox"> 시작 전 드럼 카운트</label><label class="inline"> <select id="countBars"><option value="1">1마디</option><option value="2">2마디</option><option value="4">4마디</option></select></label></section>
 <section class="card"><span class="step">03 · 어려운 구간 반복</span><label><input id="loop" type="checkbox" disabled> 마디 구간 반복</label><div class="range-pair"><label>시작 마디<select id="loopStart" disabled></select></label><label>끝 마디<select id="loopEnd" disabled></select></label></div><label><input id="loopCount" type="checkbox"> 반복할 때마다 드럼 카운트</label><p class="small">끝 마디까지 포함합니다. 도돌이표의 각 회차를 따로 고를 수 있습니다.</p></section>
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>iPad는 Safari, Android는 Chrome에서 웹주소를 열고 ‘홈 화면에 추가’하면 앱스토어 없이 사용할 수 있습니다. 아래에 ‘오프라인 준비 완료’가 표시된 후에는 인터넷 없이도 열립니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
-<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.0.1</p>
+<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.0.2</p>
 </aside><section class="score-area"><div class="score-toolbar"><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage">‹</button><span id="pageText">0 / 0</span><button id="nextPage">›</button></div></div><div id="viewport"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
 <script>
 var SignalsmithStretch = (() => {
@@ -571,7 +573,7 @@ let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = nu
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
-let token = 0, timer = null, wakeLock = null;
+let token = 0, timer = null, wakeLock = null, seeking = false;
 const setStatus = text => { $('status').textContent = text; };
 const fail = error => { pause(); setStatus(error?.message || '작업을 마치지 못했습니다. 다시 열어 주세요.'); };
 function phaseAt(input) {
@@ -726,6 +728,18 @@ function updateMetro() {
   const rate = $('linked').checked ? number('speed', 25, 200, 100) / 100 : 1;
   $('effective').textContent = `${(number('bpm', 20, 400, 120) * rate).toFixed(1)} BPM`;
 }
+function updateMetroState() {
+  let text = '꺼짐';
+  if (metro) {
+    if (number('metroVolume', 0, 100, 55) === 0) text = '음량 0% · 박자 설정에서 올려 주세요';
+    else if (!$('linked').checked) text = '메트로놈 단독 재생 중';
+    else if (!playing) text = '반주 대기 중';
+    else if (segment && ctx.currentTime < segment.out) text = segment.countBeats ? '드럼 카운트 후 반주와 시작' : '반주 시작 준비 중';
+    else if (nowPosition() < number('origin', 0, 1800, 0)) text = '설정한 첫 박을 기다리는 중';
+    else text = '반주와 함께 재생 중';
+  }
+  if ($('metroState').textContent !== text) $('metroState').textContent = text;
+}
 function updateDots() {
   let beat = null;
   if (ctx && playing && segment && ctx.currentTime < segment.out && ctx.currentTime >= segment.countStart) {
@@ -767,7 +781,7 @@ function resizePaper() {
 function showPosition() {
   const time = nowPosition(); position = time;
   $('clock').textContent = `${clockText(time)} / ${clockText(duration)}`;
-  if (document.activeElement !== $('seek')) $('seek').value = time;
+  if (!seeking) $('seek').value = time;
   const index = cueAt(time); currentCue = index;
   const cue = archive?.timing.cues[index];
   $('measure').textContent = cue ? `${cue.measure}마디 · ${cue.visit}회차` : '—';
@@ -790,7 +804,7 @@ function showPosition() {
     view.scrollTop += (desiredY - view.scrollTop) * .24;
   }
 }
-function frame() { if (ready) showPosition(); updateDots(); requestAnimationFrame(frame); }
+function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
 }
@@ -857,7 +871,9 @@ $('key').value = 0;
 $('file').onchange = event => openFile(event.target.files[0]);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
-$('seek').onchange = () => seek(Number($('seek').value)).catch(fail);
+$('seek').oninput = () => { seeking = true; };
+$('seek').onchange = () => { const target = Number($('seek').value); seeking = false; seek(target).catch(fail); };
+$('seek').addEventListener('pointercancel', () => { seeking = false; });
 for (const [id, direction] of [['back',-1],['forward',1]]) $(id).onclick = () => {
   if (!archive) return;
   const index = clamp(cueAt(nowPosition()) + direction * Math.round(number('step',1,10000,1)), 0, archive.timing.cues.length - 1);
