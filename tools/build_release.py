@@ -23,6 +23,10 @@ ROOT_FILES = (
     "THIRD_PARTY_NOTICES.md",
     "bootstrap.py",
     "main.py",
+    "app_guard.py",
+    "update.py",
+    "update.command",
+    "update.bat",
     "pyproject.toml",
     "install.command",
     "install.bat",
@@ -38,6 +42,7 @@ ROOT_FILES = (
     "installers/omr.json",
     "installers/macos.sh",
     "installers/windows.ps1",
+    "installers/update-windows.ps1",
     ".github/workflows/checks.yml",
 )
 PATTERNS = ("practice_player/*.py", "tests/*.py", "docs/*.md", "tools/*.py")
@@ -140,8 +145,26 @@ def build(root: Path = ROOT) -> Path:
         json.dumps({"version": version, "files": manifest}, indent=2) + "\n",
         encoding="utf-8",
     )
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    (output / "SHA256SUMS.txt").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    helper = output / "Magic-Instrumental-Updater.zip"
+    helper_files = ("update.py", "app_guard.py", "update.command", "update.bat",
+                    "installers/update-windows.ps1", "LICENSE", "docs/UPDATING.md")
+    with zipfile.ZipFile(helper, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+        for relative in helper_files:
+            data = (root / relative).read_bytes()
+            if Path(relative).suffix in {".bat", ".ps1"}:
+                data = data.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+            name = "README.md" if relative == "docs/UPDATING.md" else relative
+            info = zipfile.ZipInfo(f"Magic-Instrumental-Updater/{name}",
+                                   date_time=(2026, 11, 18, 0, 0, 0))
+            info.create_system = 3
+            mode = 0o755 if relative.endswith(".command") else 0o644
+            info.external_attr = (stat.S_IFREG | mode) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            bundle.writestr(info, data)
+    (output / "SHA256SUMS.txt").write_text("".join(
+        f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+        for path in (archive, helper)
+    ), encoding="utf-8")
     return archive
 
 

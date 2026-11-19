@@ -12,6 +12,14 @@ Download the latest **Magic-Instrumental-version.zip** from [Releases](https://g
 
 The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OCR data and GP engraving tools without a preinstalled Python or administrator access. All project packages live in an external virtual environment. An internet connection is needed for initial setup and model downloads. Supported desktop targets: macOS 14+ Apple Silicon and Windows 10/11 x64. The interface is Korean.
 
+## Update without moving your songs
+
+Close the app, then double-click **`update.command` (Mac)** or **`update.bat` (Windows)** in your existing app folder. Wait for completion and use the same `start` file. The updater checks required tools in your existing external environment automatically.
+
+If your older version has no update file, download and fully extract the [small updater ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest/download/Magic-Instrumental-Updater.zip). Double-click its update file and select your **existing app folder containing `start` and `targets`**. Future updates use the update file added to that original folder.
+
+Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` exports and personal settings stay in place. Do not delete the old folder. Internet is required. If interrupted, run the updater again to recover and retry. Developer Git checkouts are not updated by this tool. [Detailed steps (Korean)](docs/UPDATING.md)
+
 ## Your first practice session
 
 1. Put a lawfully obtained recording into `targets/`.

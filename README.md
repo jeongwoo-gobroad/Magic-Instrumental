@@ -19,7 +19,7 @@ Python·Java를 따로 설치하거나 명령어를 입력할 필요가 없습�
 3. 아래 표의 **처음 한 번** 파일을 더블클릭합니다. **설치 완료**가 나올 때까지 기다립니다.
 4. 이후에는 **평소 실행** 파일을 더블클릭합니다.
 
-| 사용하는 컴퓨터 | 처음 한 번 / 업데이트 후 | 평소 실행 |
+| 사용하는 컴퓨터 | 처음 한 번 | 평소 실행 |
 |---|---|---|
 | Apple Silicon Mac, macOS 14 이상 | `install.command` | `start.command` |
 | Windows 10·11, x64 | `install.bat` | `start.bat` |
@@ -27,6 +27,14 @@ Python·Java를 따로 설치하거나 명령어를 입력할 필요가 없습�
 설치 파일이 Python, 반주 분리에 필요한 도구, 악보 인식 도구 **Audiveris·영어 인식 데이터**, GP 악보 표시 도구까지 자동으로 준비하고 확인합니다. 관리자 권한이나 전역 Python 설치를 요구하지 않습니다. 모델은 첫 반주를 만들 때 추가로 받습니다.
 
 Mac에서 처음 열기가 차단되면 내려받은 출처를 확인한 뒤 Finder의 우클릭 → 열기 또는 시스템 설정 → 개인정보 보호 및 보안의 열기 안내를 따르세요. Windows에서는 ZIP 안의 파일을 바로 실행하지 말고 먼저 압축을 푸세요. [설치가 막힐 때](docs/USER_GUIDE.md)
+
+## 기존 자료를 유지하며 업데이트하기
+
+프로그램을 종료한 뒤, 평소 실행하던 폴더의 **Mac `update.command` / Windows `update.bat`**을 더블클릭하세요. **업데이트 완료**가 나오면 같은 폴더의 `start` 파일로 실행합니다. 필요한 도구도 자동으로 확인하므로 `install`을 따로 실행할 필요가 없습니다.
+
+**구버전이라 update 파일이 없다면:** [기존 사용자용 업데이트 도구 ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest/download/Magic-Instrumental-Updater.zip)을 받아 완전히 압축 해제하고, 그 안의 `update` 파일을 더블클릭하세요. 폴더 선택 창에서 **기존 `start` 파일과 `targets`가 들어 있는 프로그램 폴더**를 고릅니다. 이후에는 그 기존 폴더 안에 생긴 `update` 파일을 사용합니다.
+
+음원(`targets`), 악보(`score_targets`), 처리 결과·보정 시간표(`processed`), 모델(`models`), 저장한 `.magic`과 개인 설정을 유지합니다. 기존 폴더를 삭제하거나 자료를 옮기지 마세요. 인터넷이 필요하며, 실패하거나 중단되면 같은 업데이트 파일을 다시 실행하세요. [자세한 업데이트 순서](docs/UPDATING.md)
 
 ## 첫 곡 연습하기
 

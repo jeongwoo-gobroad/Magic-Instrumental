@@ -23,6 +23,8 @@ venv-location.windows.txt
 *.log
 release-staging/
 render-checks/
+.magic-updates/
+.magic-update.lock
 
 # User practice bundles include original scores and audio.
 *.magic

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import hashlib
 import shutil
 import stat
 import zipfile
@@ -30,6 +31,15 @@ def test_public_bundle_excludes_media_settings_and_preserves_launch_modes(tmp_pa
         assert (command.external_attr >> 16) & stat.S_IXUSR
         batch = next(name for name in names if name.endswith("start.bat"))
         assert b"\r\n" in archive.read(batch)
+    helper = tmp_path / 'dist/Magic-Instrumental-Updater.zip'
+    with zipfile.ZipFile(helper) as archive:
+        assert set(name.split('/', 1)[1] for name in archive.namelist()) == {
+            'update.py', 'app_guard.py', 'update.command', 'update.bat',
+            'installers/update-windows.ps1', 'LICENSE', 'README.md'}
+        command_info = archive.getinfo('Magic-Instrumental-Updater/update.command')
+        assert command_info.external_attr >> 16 & 0o100
+    checksums = (tmp_path / 'dist/SHA256SUMS.txt').read_text()
+    assert hashlib.sha256(helper.read_bytes()).hexdigest() in checksums
     # A path leak in an allowlisted source is a release error, not silently ignored.
     (tmp_path / "README.md").write_text("/" + "Users" + "/fixture/private/", encoding="utf-8")
     with pytest.raises(ValueError, match="Personal home path"):

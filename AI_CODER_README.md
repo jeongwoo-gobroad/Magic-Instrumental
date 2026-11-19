@@ -1,6 +1,6 @@
 # AI Coder handoff — Magic-Instrumental
 
-Public release: **2.1.1**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Public release: **2.2.0**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 ## Product requirements
 
@@ -208,3 +208,14 @@ Optional DuckDNS IPv4 maintenance uses `relay/duckdns_update.py` and the separat
 GP display v4 outlines all ordinary SVG text with Qt glyph paths before PDF creation, avoiding platform PDF font embedding for fret/measure numbers. Resolve a real serif font, preserve inherited italic/bold, text anchor and nested header coordinates, and force no stroke on outlined paths. Native Verovio musical paths and bar geometry stay intact. Old GP display folders and reviewed timelines are retained, but reopening/reanalysis creates the new display signature; exported old `.magic` pages require re-export. `tests/test_gp_render.py` rasterizes a real generated PDF and rejects solid-box 0/8 glyphs on both OSes. `MAGIC_RENDER_CHECK_DIR` stores only authored diagnostic images for CI artifacts, never user scores.
 
 Windows GP workers must create a native `windows` Qt application without showing a widget. The `offscreen` Windows plugin produced solid box glyphs even through `QPainterPath`; do not force it there. macOS retains offscreen rendering. CI and test defaults use the corresponding real font backend, and the PDF raster test checks the visible 0/8 counters. A pre-existing incompatible Windows Qt app fails visibly instead of caching broken output.
+
+
+## v2.2 in-place source updater
+
+`update.command` / `update.bat` use the existing external Python, never global packages. `update.py` fetches only the fixed public repository's latest stable release via HTTPS, checks the archive SHA-256 and every public manifest member, then applies only approved program paths. Reject traversal, duplicates, links/junctions, unexpected entries and oversized archives. Never open/write the four data directories (even placeholders), actual Windows venv configuration, user exports or unknown local files. Keep the updater path policy synchronized with `tools/build_release.py`; an incompatible future package must fail closed.
+
+`Magic-Instrumental-Updater.zip` contains the same updater plus native folder-selection launchers, its full source and GPL license. It migrates existing ZIP installations that have no update files. It chooses the original folder, keeps custom Windows venv and CPU/CUDA profile, and installs the ordinary future update launchers there. Refuse Git checkouts; do not run an actual update against this development workspace.
+
+Updates preserve original folder paths. Before replacing code, copy every affected existing program file to `.magic-updates/<transaction>/backup`; persist `pending.json` before mutations and before invoking the new platform installer. Individual replacements are atomic. On failure restore the code, remove only newly added program files, and rerun the prior installer if dependency changes could have started. Failed repair retains the journal; the next updater invocation retries recovery first. This is not a full venv snapshot: offline/interrupted dependency repair may require retrying with internet. Retain program backups for manual recovery, never copy user media into the transaction. No background update, forced app termination or automatic playback restart.
+
+`app_guard.py` provides OS-held shared locks for app/CLI/bootstrap processes and an exclusive updater lock. Windows uses LockFileEx; POSIX uses flock. Setup-only children of the updater explicitly bypass the parent's lock. Pending journals block normal startup. Legacy Python entry processes are checked because pre-2.2 apps do not cooperate with this lock; instruct users to close them. Tests verify preservation, verified manifests, corrupt/unsafe archives, partial-write rollback, retry after interrupted repair and real subprocess locks on both platforms. Beginner steps are in `docs/UPDATING.md`; operational details stay here.

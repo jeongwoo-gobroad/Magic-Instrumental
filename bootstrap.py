@@ -9,8 +9,10 @@ import shutil
 import subprocess
 import sys
 import venv
+from contextlib import nullcontext
 from pathlib import Path
 
+from app_guard import app_guard
 from practice_player.omr_runtime import managed_ready
 
 ROOT = Path(__file__).resolve().parent
@@ -191,7 +193,10 @@ def main() -> int:
 
 if __name__ == "__main__":
     try:
-        raise SystemExit(main())
+        # Only the updater's setup child may run under its parent's exclusive lock.
+        updating = os.environ.get("MAGIC_UPDATE_INSTALL") == "1" and "--setup-only" in sys.argv
+        with nullcontext() if updating else app_guard(ROOT):
+            raise SystemExit(main())
     except (OSError, ValueError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"설치/실행 실패: {error}", file=sys.stderr)
         raise SystemExit(1)

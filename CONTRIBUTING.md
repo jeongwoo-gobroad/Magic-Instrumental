@@ -90,3 +90,8 @@ CI invokes `tools/run_tests.py`, which runs each test module in a fresh process 
 Session tests use `relay/requirements.txt` through the developer requirements; end-user desktop dependencies remain unchanged. Run `RUN_WEB_TESTS=1 python -m pytest -q tests/test_session_player.py` for two-client scheduling, role-specific views, shared files and independent GP parts. Server operation is documented separately in [SESSION_SERVER.md](docs/SESSION_SERVER.md). `tools/capture_session_screenshots.py` captures both actual roles using authored fixtures. Update the versioned direct download in `landing/index.html` when releasing; deploy that page only after the linked release exists.
 
 Deployment maintainers: [separate branch and routing ownership](docs/DEPLOYMENT_BRANCHES.md). Publish landing-page and serverside independently; keep this information out of beginner-facing pages.
+
+
+## Source updater maintenance
+
+See the v2.2 section of `AI_CODER_README.md` and `tests/test_update.py`. Never exercise an updater against a real user's working folder during tests. Use isolated copies with authored sentinel data and verify byte-for-byte preservation. The release builder emits the full source ZIP and the small `Magic-Instrumental-Updater.zip`; SHA256SUMS covers both. Keep the release manifest and the updater's independent path policy in sync. Publish landing update links only after both release assets exist. Git checkouts are intentionally excluded from the end-user updater.
