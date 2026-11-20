@@ -32,6 +32,8 @@ jobs:
         run: install.bat -Cpu
       - name: Validate macOS
         if: runner.os == 'macOS'
+        env:
+          MAGIC_CI_RELEASE_TOKEN: ${{ github.token }}
         run: |
           VENV_PYTHON="$HOME/.vocal-separator-and-speed-adj/.venv/bin/python"
           "$VENV_PYTHON" -m pip install -r requirements-dev.txt
@@ -45,6 +47,8 @@ jobs:
       - name: Validate Windows
         if: runner.os == 'Windows'
         shell: pwsh
+        env:
+          MAGIC_CI_RELEASE_TOKEN: ${{ github.token }}
         run: |
           $VenvPython = "$env:LOCALAPPDATA\Magic-Instrumental\.venv\Scripts\python.exe"
           & $VenvPython -m pip install -r requirements-dev.txt

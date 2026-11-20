@@ -50,6 +50,7 @@ def release_info(data: bytes, current):
 
 def fetch_release(endpoint, current):
     # Imported here only: importing metadata helpers in the GUI must not load TLS.
+    import os
     import urllib.request
 
     class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -66,6 +67,10 @@ def fetch_release(endpoint, current):
     request = urllib.request.Request(endpoint, headers={
         "User-Agent": "Magic-Instrumental", "Accept": "application/vnd.github+json",
     })
+    if endpoint == API and os.environ.get("GITHUB_ACTIONS") == "true":
+        token = os.environ.get("MAGIC_CI_RELEASE_TOKEN")
+        if token:
+            request.add_unredirected_header("Authorization", f"Bearer {token}")
     # Default HTTPS context validates both certificate chain and host name.
     with urllib.request.build_opener(NoRedirect()).open(request, timeout=5) as response:
         if response.status != 200:

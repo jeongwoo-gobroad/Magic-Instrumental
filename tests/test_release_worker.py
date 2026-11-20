@@ -8,6 +8,27 @@ import pytest
 from practice_player import release_check
 
 
+@pytest.mark.parametrize("actions,endpoint,authorized", [
+    ("true", release_check.API, True),
+    ("true", "http://localhost/test", False),
+    ("false", release_check.API, False),
+])
+def test_ci_release_authorization(monkeypatch, actions, endpoint, authorized):
+    from urllib import request
+
+    class Capture:
+        def open(self, req, timeout):
+            assert req.get_header("Authorization") == ("Bearer fixture" if authorized else None)
+            assert "Authorization" not in req.headers
+            raise OSError("captured request")
+
+    monkeypatch.setenv("GITHUB_ACTIONS", actions)
+    monkeypatch.setenv("MAGIC_CI_RELEASE_TOKEN", "fixture")
+    monkeypatch.setattr(request, "build_opener", lambda *_: Capture())
+    with pytest.raises(OSError, match="captured request"):
+        release_check.fetch_release(endpoint, "2.3.4")
+
+
 @pytest.mark.parametrize("error,expected", [
     (HTTPError("https://private.invalid", 403, "private data", None, None), "http403"),
     (HTTPError("https://private.invalid", 429, "private data", None, None), "http429"),

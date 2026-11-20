@@ -4,6 +4,8 @@ Source version: **2.3.4**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` 
 
 Session readiness in the banner follows the relay's current participant list. A cancellation stops playback and preserves the other participants' readiness. Send the cancellation only on a true-to-false transition, including when replacing a file. Keep opt-in file sharing and receiving in the song panel, accessible with the roster closed and before either party is ready.
 
+The live desktop update test queries the public GitHub release API. Hosted CI uses the validation job's read-only token for that exact endpoint because runners share an anonymous request quota. Normal desktop checks use anonymous HTTPS. Keep authorization out of redirects, loopback fixtures, logs and command-line arguments.
+
 The desktop fits its initial window to the available screen. Keep both metronome rows accessible and allow score notices to wrap. Refresh the transport clock on duration and position changes so a loaded, paused track shows its full length. On phones the file picker precedes the empty score. After a score opens, the playback and score links navigate within the current song. The Chromium/WebKit suite exercises both links at 360 px.
 
 The score panel can fold its preparation controls while keeping the score, follow switch and page navigation visible. Resizing the viewport still invalidates a zoom-specific camera path. A failed web file replacement clears the song, parts, timeline choices, artwork and clock. Release the previous audio worklet and object URLs when switching files. Keep file errors visible in both solo and Session views and allow the same file to be picked again.
