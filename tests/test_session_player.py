@@ -161,7 +161,7 @@ def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_
 
     with sync_playwright() as playwright:
         browser = getattr(playwright, engine).launch()
-        leader, first, second = [browser.new_page() for _ in range(3)]
+        leader, first, second = [browser.new_page(service_workers="block") for _ in range(3)]
         for page in (leader, first, second):
             page.goto(web_url + "#ensemble")
             page.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
@@ -192,12 +192,16 @@ def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_
         first.locator("#getShared").click()
         first.locator("#sessionPrepare").click(timeout=4000)
         second.locator("#sessionPrepare").click()
-        expect(second.locator("#sessionPrepare")).to_have_text("준비 완료 · 해제하기", timeout=45000)
+        expect(second.locator("#sessionPrepare")).to_have_text(
+            "준비 완료 · 해제하기", timeout=45000
+        )
         assert len(held) == 2
         for route, response in held:
             route.fulfill(response=response)
         for page in (leader, first, second):
-            expect(page.locator("#sessionReadiness")).to_contain_text("모두 준비 완료", timeout=45000)
+            expect(page.locator("#sessionReadiness")).to_contain_text(
+                "모두 준비 완료", timeout=45000
+            )
 
         # Slow probes during a transfer can pause readiness. Two newer good
         # measurements restore the original request without another Ready click.
