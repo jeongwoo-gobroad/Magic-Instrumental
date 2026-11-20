@@ -136,6 +136,8 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
     app = QApplication.instance() or QApplication([])
     app.setStyleSheet(STYLE)
     window = Window(paths)
+    # Keep status text on one line so zoom restoration uses the same viewport.
+    window.resize(1500, 930)
     window.show()
     panel = window.score_panel
     try:
@@ -177,7 +179,10 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
         assert panel.view.verticalScrollBar().value() == before
         assert "재분석" in panel.view_status.text()
         panel.zoom.setCurrentIndex(panel.zoom.findData(2.0))
-        assert panel.view_matches()
+        assert panel.view_matches(), (
+            profile, panel.view.profile(), panel.status.height(), panel.status.text(),
+            panel.view_status.height(), panel.view_status.text(),
+        )
         window.main_splitter.setSizes([800, 600])
         app.processEvents()
         assert not panel.view_matches()

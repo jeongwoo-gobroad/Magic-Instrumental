@@ -85,6 +85,7 @@ class MagicArchive {
   get pages() { return this.activePart.pages; }
   async readTiming(part) {
     const timing = await this.json(part.timeline, 8000000);
+    requireMagic(timing.camera_mode === undefined || timing.camera_mode === 'system', '악보 화면 이동 방식이 올바르지 않습니다.');
     requireMagic(Array.isArray(timing.cues) && timing.cues.length > 0 && timing.cues.length <= 20000 && Number.isFinite(timing.offset) && Math.abs(timing.offset) <= 3600, '마디 시간표가 올바르지 않습니다.');
     let previous = -1;
     for (const cue of timing.cues) {

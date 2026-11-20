@@ -17,6 +17,7 @@ from pathlib import Path
 
 import numpy as np
 from defusedxml import ElementTree as ET
+from defusedxml.common import DefusedXmlException
 from filelock import FileLock
 
 from .cache import hash_file
@@ -26,6 +27,31 @@ from .omr_runtime import managed_ready, managed_root, omr_environment
 from .score import SCORE_VERSION, ScoreTimeline, atomic_json, matching_musicxml
 from .score_geometry import LAYOUT_VERSION
 from .score_input import OMR_VERSION, prepare_omr_input
+
+
+class _RecognitionFailure(RuntimeError):
+    def __init__(self, stage, reason):
+        self.stage = stage
+        super().__init__(str(reason))
+
+
+class _RouteError(ValueError):
+    pass
+
+
+def _recognize(mode, stage, operation, *args, **kwargs):
+    """Only recognition failures may select the geometry fallback."""
+    try:
+        return operation(*args, **kwargs)
+    except Exception as error:
+        if mode != "auto" or isinstance(error, (OSError, _RouteError)):
+            raise
+        if isinstance(error, (ValueError, RuntimeError, ET.ParseError, DefusedXmlException,
+                              zipfile.BadZipFile, KeyError, StopIteration)) or (
+            type(error).__module__.startswith("music21.")
+        ):
+            raise _RecognitionFailure(stage, error) from error
+        raise
 
 
 def audiveris_path() -> str | None:
@@ -184,12 +210,12 @@ def parse_route_override(text: str, count: int) -> list[int]:
     for item in text.split(","):
         match = re.fullmatch(r"\s*(\d+)(?:\s*-\s*(\d+))?\s*", item)
         if not match:
-            raise ValueError(
+            raise _RouteError(
                 "연주 순서는 1-8,1-6,9-16처럼 입력하세요 (인쇄 마디 번호 대신 원본 순번)."
             )
         first, last = int(match[1]), int(match[2] or match[1])
         if first < 1 or last < first or last > count or len(route) + last - first + 1 > 10000:
-            raise ValueError("연주 순서의 마디 범위가 올바르지 않습니다.")
+            raise _RouteError("연주 순서의 마디 범위가 올바르지 않습니다.")
         route.extend(range(first - 1, last))
     return route
 
@@ -539,6 +565,103 @@ def align_audio(audio: Path, notation: dict, report) -> tuple[list[float], float
     )
 
 
+def _analyze_pdf_timing(
+    audio, pdf, folder, audio_hash, pdf_hash, page_count, report,
+    *, bpm, lead_in, route_override, meter_beats, meter_unit, force,
+    automatic=None, cache_only=False, validate_source=lambda: None,
+):
+    """Use visible bars and an explicit meter, without OMR or note alignment."""
+    from .score_geometry import detect_pdf_layout
+
+    if (type(meter_beats) is not int or not 1 <= meter_beats <= 32
+            or type(meter_unit) is not int or meter_unit not in (1, 2, 4, 8, 16, 32)):
+        raise ValueError("PDF 마디 박자는 분자 1~32, 분모 1·2·4·8·16·32로 입력하세요.")
+    signature = {
+        "version": SCORE_VERSION, "mode": "pdf", "bpm": bpm, "lead_in": lead_in,
+        "meter_beats": meter_beats, "meter_unit": meter_unit, "route": route_override,
+        "pdf_recognition": LAYOUT_VERSION, "timing": "pdf-bars-fixed-tempo-v1",
+    }
+    if automatic is not None:
+        signature.update(mode="auto", automatic=automatic["request"])
+    key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
+    destination = folder / key
+    if not force and (destination / "timeline.json").is_file():
+        try:
+            plan = ScoreTimeline.load(destination / "timeline.json")
+            if (plan.data["audio_sha256"] == audio_hash
+                    and plan.data["pdf_sha256"] == pdf_hash
+                    and plan.data.get("signature") == signature):
+                cached = destination / "timeline.json"
+            else:
+                cached = None
+        except (ValueError, KeyError, OSError, TypeError):
+            cached = None
+        if cached:
+            if hash_file(audio) != audio_hash or hash_file(pdf) != pdf_hash:
+                raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
+            validate_source()
+            atomic_json(folder / "latest.json", {"analysis": key})
+            report("저장된 PDF 마디 시간표를 불러왔습니다.", 1.0)
+            return cached
+    if cache_only:
+        return None
+    _, bars, layout = detect_pdf_layout(pdf, None, report)
+    if not bars or set(bars) != set(range(len(bars))) or len(bars) > 2000:
+        raise ValueError("PDF에서 순서대로 연결할 수 있는 1~2,000마디가 필요합니다.")
+    route = (parse_route_override(route_override, len(bars))
+             if route_override else list(range(len(bars))))
+    # BPM은 4분음표 기준이므로 6/8 한 마디는 3박으로 계산한다.
+    quarter_beats = meter_beats * 4 / meter_unit
+    originals = [
+        {"source_index": index, "measure": str(index + 1), "page": bars[index]["page"],
+         "beats": quarter_beats, "marks": []}
+        for index in range(len(bars))
+    ]
+    visits, cues = Counter(), []
+    for position, index in enumerate(route):
+        visits[index] += 1
+        beat = position * quarter_beats
+        cues.append({**originals[index], "visit": visits[index], "beat": beat,
+                     "start": round(lead_in + beat * 60 / bpm, 4)})
+    end = lead_in + len(route) * quarter_beats * 60 / bpm
+    warnings = list(layout.get("warnings", [])) + [
+        "PDF 마디선과 입력한 BPM·박자로 계산한 시간 추정입니다. "
+        "음원과 맞는지 시간표에서 확인하세요.",
+        "못갖춘마디·박자/템포 변화·복합 쉼표는 자동 해석하지 않습니다. "
+        "해당 구간의 시간을 보정하세요.",
+        ("사용자가 입력한 연주 순서를 사용합니다. 반복·D.C./D.S.·코다를 포함하는지 확인하세요."
+         if route_override else
+         "PDF의 마디를 인쇄 순서대로 한 번씩 진행합니다. "
+         "반복·D.C./D.S.·코다는 연주 순서에 직접 입력하세요."),
+    ]
+    fallback = automatic.get("fallback") if automatic is not None else None
+    if fallback:
+        warnings.insert(0, "음표·반복 인식을 완료하지 못해 PDF 마디선과 입력 BPM·박자로 "
+                        "시간을 추정했습니다. 사유: " + fallback["reason"])
+    if hash_file(audio) != audio_hash or hash_file(pdf) != pdf_hash:
+        raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
+    validate_source()
+    plan = ScoreTimeline({
+        "version": SCORE_VERSION, "audio_sha256": audio_hash, "pdf_sha256": pdf_hash,
+        "pdf_name": pdf.name, "page_count": page_count,
+        "notation_source": {"method": "pdf-geometry", "version": 1},
+        "signature": signature, "cues": cues, "end": end,
+        "alignment": {"method": "pdf-fixed-tempo", "bpm": bpm, "lead_in": lead_in,
+                      "meter_beats": meter_beats, "meter_unit": meter_unit},
+        "warnings": warnings, "originals": originals, "pdf_layout": layout,
+        "reviewed": False, "offset": 0.0,
+        **({"analysis_fallback": fallback} if fallback else {}),
+    })
+    if destination.exists() and force:
+        key += f"-{time.time_ns()}"
+        destination = folder / key
+    destination.mkdir(exist_ok=True)
+    plan.save(destination / "timeline.json")
+    atomic_json(folder / "latest.json", {"analysis": key})
+    report("PDF 마디 시간표 준비 완료 · 반주와 시간을 확인하세요.", 1.0)
+    return destination / "timeline.json"
+
+
 def analyze_score(
     audio: Path,
     pdf: Path,
@@ -548,8 +671,10 @@ def analyze_score(
     musicxml: Path | None = None,
     gp_track=1,
     gp_display=None,
-    mode="audio",
+    mode="auto",
     bpm=120.0,
+    meter_beats=4,
+    meter_unit=4,
     lead_in=0.0,
     route_override="",
     force=False,
@@ -561,198 +686,297 @@ def analyze_score(
     if reader.is_encrypted or not 1 <= len(reader.pages) <= 200:
         raise ValueError("암호가 없는 1~200페이지 PDF가 필요합니다.")
     audio_hash, pdf_hash = hash_file(audio), hash_file(pdf)
-    if mode not in {"audio", "tempo"} or not 20 <= bpm <= 400 or not 0 <= lead_in <= 1800:
+    if (mode not in {"auto", "audio", "tempo", "pdf"}
+            or not 20 <= bpm <= 400 or not 0 <= lead_in <= 1800):
         raise ValueError("정렬 설정이 올바르지 않습니다.")
+    if mode in {"auto", "pdf"} and (
+        type(meter_beats) is not int or not 1 <= meter_beats <= 32
+        or type(meter_unit) is not int or meter_unit not in (1, 2, 4, 8, 16, 32)
+    ):
+        raise ValueError("마디 박자는 분자 1~32, 분모 1·2·4·8·16·32로 입력하세요.")
+    if route_override:
+        parse_route_override(route_override, 2000)
+    if mode == "pdf" and (musicxml is not None or gp_display is not None):
+        raise ValueError(
+            "PDF 마디선 모드에서는 PDF만 선택하세요. MusicXML/GP 정렬은 다른 모드를 사용하세요."
+        )
+    if musicxml is not None:
+        musicxml = musicxml.resolve(strict=True)
     folder = paths.processed / audio_hash / "scores" / pdf_hash
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".analysis.lock"), timeout=3600):
-        from .guitar_pro import GP_EXTENSIONS, GP_VERSION, read_gp
+        pdf_options = dict(bpm=bpm, lead_in=lead_in, route_override=route_override,
+                           meter_beats=meter_beats, meter_unit=meter_unit, force=force)
+        if mode == "pdf":
+            return _analyze_pdf_timing(
+                audio, pdf, folder, audio_hash, pdf_hash, len(reader.pages), report, **pdf_options,
+            )
+        from .guitar_pro import GP_EXTENSIONS
 
         musicxml = musicxml or matching_musicxml(pdf)
-        omr_folder = folder / "recognition"
-        source_path, source_hash, source_info = None, None, {}
         if musicxml is None:
             for name in ("reviewed.musicxml", f"v{OMR_VERSION}/score.mxl"):
-                if (omr_folder / name).is_file():
-                    musicxml = omr_folder / name
+                candidate = folder / "recognition" / name
+                if candidate.is_file():
+                    musicxml = candidate
                     break
-        if musicxml is None:
-            work = omr_folder / f"v{OMR_VERSION}" / f"work-{time.time_ns()}"
-            generated = run_omr(pdf, work, report)
-            if hash_file(pdf) != pdf_hash:
-                raise ValueError("인식 중 PDF가 변경되었습니다. 다시 분석하세요.")
-            musicxml = omr_folder / f"v{OMR_VERSION}" / "score.mxl"
-            shutil.copyfile(generated, musicxml)
-            atomic_json(
-                musicxml.with_suffix(".json"),
-                json.loads((work / "input.json").read_text(encoding="utf-8")),
-            )
-        if musicxml.suffix.lower() in GP_EXTENSIONS:
-            source_path = musicxml.resolve(strict=True)
-            source_hash = hash_file(source_path)
-            report("Guitar Pro의 음표·박자·반복을 직접 읽는 중…", None)
-            document, source_info = read_gp(source_path, gp_track)
-            if hash_file(source_path) != source_hash:
-                raise ValueError("분석 중 Guitar Pro 파일이 변경되었습니다.")
-            converted = folder / "notation"
-            converted.mkdir(exist_ok=True)
-            musicxml = converted / f"{source_hash}-track{gp_track}-v{GP_VERSION}.musicxml"
-            # Generated intermediate only; never rewrite the supplied score.
-            temporary = musicxml.with_suffix(".tmp")
-            temporary.write_bytes(document)
-            temporary.replace(musicxml)
-        elif musicxml == omr_folder / f"v{OMR_VERSION}" / "score.mxl":
-            source_info = json.loads(musicxml.with_suffix(".json").read_text(encoding="utf-8"))
-        xml_hash = hash_file(musicxml)
-        signature = {
-            "version": SCORE_VERSION,
-            "xml": xml_hash,
-            "mode": mode,
-            "bpm": bpm,
-            "lead_in": lead_in,
-            "route": route_override,
-            "music21": "10.5.2",
-            "alignment": "chroma-dtw-v3-full-score",
-            "pdf_recognition": LAYOUT_VERSION,
-            "omr": OMR_VERSION,
-            "source_sha256": source_hash,
-            "source_import": source_info,
-            "gp_display": gp_display["signature"] if gp_display else None,
-        }
-        key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
-        destination = folder / key
-        if not force and (destination / "timeline.json").exists():
-            try:
-                plan = ScoreTimeline.load(destination / "timeline.json")
-                if plan.data["audio_sha256"] == audio_hash and plan.data["pdf_sha256"] == pdf_hash:
-                    atomic_json(folder / "latest.json", {"analysis": key})
-                    report("저장된 악보 사전 분석을 불러왔습니다.", 1.0)
-                    return destination / "timeline.json"
-            except (ValueError, KeyError, OSError):
-                pass
-        report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
-        from .score_layout import analyze_layout
-        from .score_symbols import printed_measure_numbers, supplement_xml
+        source_hash = hash_file(musicxml) if musicxml is not None else None
+        if mode == "auto" and (gp_display or (
+            musicxml is not None and musicxml.suffix.lower() in GP_EXTENSIONS
+        )):
+            mode = "audio"
+        automatic = {"request": {"version": 1, "notation_sha256": source_hash,
+                                  "omr": OMR_VERSION}} if mode == "auto" else None
 
-        layout, pages, document, additions, extra_warnings = {}, None, None, [], []
+        def unchanged():
+            if (hash_file(audio) != audio_hash or hash_file(pdf) != pdf_hash
+                    or (musicxml is not None and hash_file(musicxml) != source_hash)):
+                raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
+
+        def record_generated(path, expected_hash):
+            nonlocal musicxml, source_hash
+            if hash_file(path) != expected_hash:
+                raise ValueError("인식 중 MusicXML 파일이 변경되었습니다. 다시 분석하세요.")
+            musicxml, source_hash = path, expected_hash
+            if automatic is not None:
+                automatic["request"]["notation_sha256"] = expected_hash
+            unchanged()
+
+        if automatic is not None:
+            cached = _analyze_pdf_timing(
+                audio, pdf, folder, audio_hash, pdf_hash, len(reader.pages), report,
+                automatic=automatic, cache_only=True, validate_source=unchanged, **pdf_options,
+            )
+            if cached:
+                unchanged()
+                return cached
         try:
-            if gp_display:
-                from .gp_render import native_layout
-
-                _, bars, layout = native_layout(gp_display)
-            else:
-                _, bars, layout = analyze_layout(pdf, musicxml, report)
-        except ValueError as error:
-            if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
-                raise ValueError(
-                    "원본 악보와 PDF의 마디를 정확히 연결하지 못했습니다. "
-                    "같은 판본·트랙인지 확인하세요. " + str(error)
-                ) from error
-            extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
-        else:
-            if source_info.get("method") == "standard-staves-from-mixed-pdf":
-                validate_omr_systems(musicxml, bars)
-            pages = {i: bar["page"] for i, bar in bars.items()}
-            extra_warnings.extend(layout.get("warnings", []))
-            # Geometric evidence is required before adding a missing navigation sign.
-            if layout["method"] == "pdf-staves-barlines" and not route_override:
-                document, additions, notes = supplement_xml(pdf, musicxml, bars)
-                extra_warnings.extend(notes)
-        notation = parse_notation(
-            musicxml, len(reader.pages), route_override, document=document, measure_pages=pages
-        )
-        notation["warnings"].extend(extra_warnings)
-        notation["warnings"].extend(source_info.get("warnings", []))
-        if source_info and layout.get("method") == "pdf-staves-barlines":
-            labels = printed_measure_numbers(pdf, bars)
-            changed = sum(label != notation["originals"][i]["measure"]
-                          for i, label in labels.items())
-            for cue in notation["originals"] + notation["cues"]:
-                if cue["source_index"] in labels:
-                    cue["measure"] = labels[cue["source_index"]]
-            layout["printed_measure_numbers"] = len(labels)
-            if changed:
-                notation["warnings"].append(
-                    f"인식 원본과 다른 {changed}개 마디 번호를 PDF 인쇄 번호로 표시합니다. "
-                    "연주 순서는 바꾸지 않았습니다."
-                )
-        if source_info.get("method") == "standard-staves-from-mixed-pdf":
-            notation["warnings"].append(
-                "오선 음표를 인식하고 타브는 원본 표시·마디 위치 확인에 사용했습니다. "
-                "타브 프렛 숫자의 음높이를 인식한 결과는 아닙니다."
+            return _analyze_notation(
+                audio, pdf, folder, audio_hash, pdf_hash, reader, report,
+                musicxml=musicxml, gp_track=gp_track, gp_display=gp_display, mode=mode,
+                bpm=bpm, lead_in=lead_in, route_override=route_override, force=force,
+                meter_beats=meter_beats, meter_unit=meter_unit, validate_source=unchanged,
+                record_generated=record_generated,
             )
-        text = " ".join(page.extract_text() or "" for page in reader.pages)
-        marks = {mark for cue in notation["originals"] for mark in cue["marks"]}
-        # Vector PDFs can reveal navigation words that OCR missed. Fail visibly;
-        # guessing a jump here could send the reader to an unrelated page.
-        if (
-            not route_override
-            and re.search(r"D\s*\.\s*S", text, re.I)
-            and not any(mark.startswith("DalSegno") for mark in marks)
-        ):
-            raise ValueError(
-                "PDF에는 D.S.가 있지만 인식 결과에 없습니다. Audiveris/MusicXML에서 "
-                "세뇨·코다를 보정하거나 연주 순서를 직접 입력하세요."
-            )
-        if (
-            not route_override
-            and re.search(r"D\s*\.\s*C", text, re.I)
-            and not any(mark.startswith("DaCapo") for mark in marks)
-        ):
-            raise ValueError(
-                "PDF의 D.C.를 인식하지 못했습니다. MusicXML 또는 연주 순서를 보정하세요."
-            )
-        if mode == "audio":
-            starts, end, alignment = align_audio(audio, notation, report)
-        else:
-            starts = [lead_in + cue["beat"] * 60 / bpm for cue in notation["cues"]]
-            end = lead_in + notation["beats"] * 60 / bpm
-            alignment = {"method": "fixed-tempo", "bpm": bpm, "lead_in": lead_in}
-            notation["warnings"].append(
-                "BPM 기반 추정입니다. 실제 연주 템포·페르마타는 시간표에서 보정하세요."
-            )
-        cues = [
-            {**cue, "start": round(float(start), 4)} for cue, start in zip(notation["cues"], starts)
-        ]
-        if (
-            hash_file(audio) != audio_hash
-            or hash_file(pdf) != pdf_hash
-            or hash_file(musicxml) != xml_hash
-            or (source_path is not None and hash_file(source_path) != source_hash)
-        ):
-            raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
-        plan = ScoreTimeline(
-            {
-                "version": SCORE_VERSION,
-                "audio_sha256": audio_hash,
-                "pdf_sha256": pdf_hash,
-                "pdf_name": pdf.name,
-                "page_count": len(reader.pages),
-                "xml_sha256": hash_file(musicxml),
-                "musicxml_path": str(musicxml),
-                "notation_source": {
-                    "path": str(source_path) if source_path else None,
-                    "sha256": source_hash, **source_info,
-                },
-                "signature": signature,
-                "cues": cues,
-                "end": end,
-                "alignment": alignment,
-                "warnings": notation["warnings"],
-                "originals": notation["originals"],
-                "pdf_layout": layout,
-                "gp_display": gp_display,
-                "pdf_symbols_added": additions,
-                "reviewed": False,
-                "offset": 0.0,
+        except _RecognitionFailure as error:
+            unchanged()
+            report("음표·반복 인식을 마치지 못해 마디선과 BPM으로 시간을 계산합니다.", None)
+            automatic["fallback"] = {
+                "from": "notation", "to": "pdf-geometry", "stage": error.stage,
+                "reason": str(error),
             }
+            result = _analyze_pdf_timing(
+                audio, pdf, folder, audio_hash, pdf_hash, len(reader.pages), report,
+                automatic=automatic, validate_source=unchanged, **pdf_options,
+            )
+            unchanged()
+            return result
+
+
+def _analyze_notation(
+    audio, pdf, folder, audio_hash, pdf_hash, reader, report, *, musicxml, gp_track,
+    gp_display, mode, bpm, lead_in, route_override, force, meter_beats, meter_unit,
+    validate_source, record_generated,
+):
+    from .guitar_pro import GP_EXTENSIONS, GP_VERSION, read_gp
+
+    omr_folder = folder / "recognition"
+    source_path, source_hash, source_info = None, None, {}
+    if musicxml is None:
+        work = omr_folder / f"v{OMR_VERSION}" / f"work-{time.time_ns()}"
+        generated = _recognize(mode, "omr", run_omr, pdf, work, report)
+        generated_hash = hash_file(generated)
+        if hash_file(pdf) != pdf_hash:
+            raise ValueError("인식 중 PDF가 변경되었습니다. 다시 분석하세요.")
+        musicxml = omr_folder / f"v{OMR_VERSION}" / "score.mxl"
+        shutil.copyfile(generated, musicxml)
+        # 첫 fallback도 다음 요청과 같은 인식 파일 해시를 사용해야 한다.
+        record_generated(musicxml, generated_hash)
+        atomic_json(
+            musicxml.with_suffix(".json"),
+            json.loads((work / "input.json").read_text(encoding="utf-8")),
         )
-        # Do not overwrite an edited timeline when explicitly re-running analysis.
-        if destination.exists() and force:
-            key += f"-{time.time_ns()}"
-            destination = folder / key
-        destination.mkdir(exist_ok=True)
-        plan.save(destination / "timeline.json")
-        atomic_json(folder / "latest.json", {"analysis": key})
-        report("악보 분석 완료 · 시간표와 반복 이동을 확인하세요.", 1.0)
-        return destination / "timeline.json"
+    if musicxml.suffix.lower() in GP_EXTENSIONS:
+        source_path = musicxml.resolve(strict=True)
+        source_hash = hash_file(source_path)
+        report("Guitar Pro의 음표·박자·반복을 직접 읽는 중…", None)
+        document, source_info = read_gp(source_path, gp_track)
+        if hash_file(source_path) != source_hash:
+            raise ValueError("분석 중 Guitar Pro 파일이 변경되었습니다.")
+        converted = folder / "notation"
+        converted.mkdir(exist_ok=True)
+        musicxml = converted / f"{source_hash}-track{gp_track}-v{GP_VERSION}.musicxml"
+        # Generated intermediate only; never rewrite the supplied score.
+        temporary = musicxml.with_suffix(".tmp")
+        temporary.write_bytes(document)
+        temporary.replace(musicxml)
+    elif musicxml == omr_folder / f"v{OMR_VERSION}" / "score.mxl":
+        source_info = json.loads(musicxml.with_suffix(".json").read_text(encoding="utf-8"))
+    xml_hash = hash_file(musicxml)
+    signature = {
+        "version": SCORE_VERSION,
+        "xml": xml_hash,
+        "mode": mode,
+        "bpm": bpm,
+        "lead_in": lead_in,
+        "route": route_override,
+        "music21": "10.5.2",
+        "alignment": "chroma-dtw-v3-full-score",
+        "pdf_recognition": LAYOUT_VERSION,
+        "omr": OMR_VERSION,
+        "source_sha256": source_hash,
+        "source_import": source_info,
+        "gp_display": gp_display["signature"] if gp_display else None,
+    }
+    if mode == "auto":
+        signature.update(meter_beats=meter_beats, meter_unit=meter_unit, automatic=1)
+    key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
+    destination = folder / key
+    if not force and (destination / "timeline.json").exists():
+        try:
+            plan = ScoreTimeline.load(destination / "timeline.json")
+            if plan.data["audio_sha256"] == audio_hash and plan.data["pdf_sha256"] == pdf_hash:
+                cached = destination / "timeline.json"
+            else:
+                cached = None
+        except (ValueError, KeyError, OSError):
+            cached = None
+        if cached:
+            validate_source()
+            atomic_json(folder / "latest.json", {"analysis": key})
+            report("저장된 악보 사전 분석을 불러왔습니다.", 1.0)
+            return cached
+    report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
+    from .score_layout import analyze_layout
+    from .score_symbols import printed_measure_numbers, supplement_xml
+
+    layout, pages, document, additions, extra_warnings = {}, None, None, [], []
+    try:
+        if gp_display:
+            from .gp_render import native_layout
+
+            _, bars, layout = native_layout(gp_display)
+        else:
+            _, bars, layout = _recognize(mode, "layout", analyze_layout, pdf, musicxml, report)
+    except ValueError as error:
+        if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
+            raise ValueError(
+                "원본 악보와 PDF의 마디를 정확히 연결하지 못했습니다. "
+                "같은 판본·트랙인지 확인하세요. " + str(error)
+            ) from error
+        extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
+    else:
+        if source_info.get("method") == "standard-staves-from-mixed-pdf":
+            _recognize(mode, "layout", validate_omr_systems, musicxml, bars)
+        pages = {i: bar["page"] for i, bar in bars.items()}
+        extra_warnings.extend(layout.get("warnings", []))
+        # Geometric evidence is required before adding a missing navigation sign.
+        if layout["method"] == "pdf-staves-barlines" and not route_override:
+            document, additions, notes = _recognize(
+                mode, "navigation", supplement_xml, pdf, musicxml, bars,
+            )
+            extra_warnings.extend(notes)
+    notation = _recognize(
+        mode, "notation", parse_notation, musicxml, len(reader.pages), route_override,
+        document=document, measure_pages=pages,
+    )
+    notation["warnings"].extend(extra_warnings)
+    notation["warnings"].extend(source_info.get("warnings", []))
+    if source_info and layout.get("method") == "pdf-staves-barlines":
+        labels = printed_measure_numbers(pdf, bars)
+        changed = sum(label != notation["originals"][i]["measure"]
+                      for i, label in labels.items())
+        for cue in notation["originals"] + notation["cues"]:
+            if cue["source_index"] in labels:
+                cue["measure"] = labels[cue["source_index"]]
+        layout["printed_measure_numbers"] = len(labels)
+        if changed:
+            notation["warnings"].append(
+                f"인식 원본과 다른 {changed}개 마디 번호를 PDF 인쇄 번호로 표시합니다. "
+                "연주 순서는 바꾸지 않았습니다."
+            )
+    if source_info.get("method") == "standard-staves-from-mixed-pdf":
+        notation["warnings"].append(
+            "오선 음표를 인식하고 타브는 원본 표시·마디 위치 확인에 사용했습니다. "
+            "타브 프렛 숫자의 음높이를 인식한 결과는 아닙니다."
+        )
+    text = " ".join(page.extract_text() or "" for page in reader.pages)
+    marks = {mark for cue in notation["originals"] for mark in cue["marks"]}
+    # Vector PDFs can reveal navigation words that OCR missed. Fail visibly;
+    # guessing a jump here could send the reader to an unrelated page.
+    if (
+        not route_override
+        and re.search(r"D\s*\.\s*S", text, re.I)
+        and not any(mark.startswith("DalSegno") for mark in marks)
+    ):
+        message = (
+            "PDF에는 D.S.가 있지만 인식 결과에 없습니다. Audiveris/MusicXML에서 "
+            "세뇨·코다를 보정하거나 연주 순서를 직접 입력하세요."
+        )
+        if mode == "auto":
+            raise _RecognitionFailure("navigation", message)
+        raise ValueError(message)
+    if (
+        not route_override
+        and re.search(r"D\s*\.\s*C", text, re.I)
+        and not any(mark.startswith("DaCapo") for mark in marks)
+    ):
+        message = "PDF의 D.C.를 인식하지 못했습니다. MusicXML 또는 연주 순서를 보정하세요."
+        if mode == "auto":
+            raise _RecognitionFailure("navigation", message)
+        raise ValueError(message)
+    if mode in {"auto", "audio"}:
+        starts, end, alignment = align_audio(audio, notation, report)
+    else:
+        starts = [lead_in + cue["beat"] * 60 / bpm for cue in notation["cues"]]
+        end = lead_in + notation["beats"] * 60 / bpm
+        alignment = {"method": "fixed-tempo", "bpm": bpm, "lead_in": lead_in}
+        notation["warnings"].append(
+            "BPM 기반 추정입니다. 실제 연주 템포·페르마타는 시간표에서 보정하세요."
+        )
+    cues = [
+        {**cue, "start": round(float(start), 4)} for cue, start in zip(notation["cues"], starts)
+    ]
+    if (
+        hash_file(audio) != audio_hash
+        or hash_file(pdf) != pdf_hash
+        or hash_file(musicxml) != xml_hash
+        or (source_path is not None and hash_file(source_path) != source_hash)
+    ):
+        raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
+    validate_source()
+    plan = ScoreTimeline(
+        {
+            "version": SCORE_VERSION,
+            "audio_sha256": audio_hash,
+            "pdf_sha256": pdf_hash,
+            "pdf_name": pdf.name,
+            "page_count": len(reader.pages),
+            "xml_sha256": hash_file(musicxml),
+            "musicxml_path": str(musicxml),
+            "notation_source": {
+                "path": str(source_path) if source_path else None,
+                "sha256": source_hash, **source_info,
+            },
+            "signature": signature,
+            "cues": cues,
+            "end": end,
+            "alignment": alignment,
+            "warnings": notation["warnings"],
+            "originals": notation["originals"],
+            "pdf_layout": layout,
+            "gp_display": gp_display,
+            "pdf_symbols_added": additions,
+            "reviewed": False,
+            "offset": 0.0,
+        }
+    )
+    # Do not overwrite an edited timeline when explicitly re-running analysis.
+    if destination.exists() and force:
+        key += f"-{time.time_ns()}"
+        destination = folder / key
+    destination.mkdir(exist_ok=True)
+    plan.save(destination / "timeline.json")
+    atomic_json(folder / "latest.json", {"analysis": key})
+    report("악보 분석 완료 · 시간표와 반복 이동을 확인하세요.", 1.0)
+    return destination / "timeline.json"

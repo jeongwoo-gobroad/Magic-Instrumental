@@ -164,7 +164,9 @@ def _detect_xml_layout(pdf, xml, report=lambda *_: None):
     return page_sizes, bars
 
 
-def analyze_layout(pdf, xml, report=lambda *_: None):
+def analyze_layout(pdf, xml=None, report=lambda *_: None):
+    if xml is None:
+        return detect_pdf_layout(pdf, None, report)
     try:
         return detect_pdf_layout(pdf, xml, report)
     except ValueError as pdf_error:
@@ -194,7 +196,7 @@ def detect_layout(pdf, xml, report=lambda *_: None):
     return sizes, bars
 
 
-def plan_camera(cues, end, page_sizes, bars, profile):
+def plan_camera(cues, end, page_sizes, bars, profile, *, keep_system=False):
     frames = []
     for index, cue in enumerate(cues):
         bar = bars[cue["source_index"]]
@@ -221,6 +223,9 @@ def plan_camera(cues, end, page_sizes, bars, profile):
                 "y",
             ),
         )
+        if keep_system:
+            # 총보의 동시 보표는 한 마디 안에서 위아래로 훑지 않는다.
+            y0 = y1 = clip(bar["top"] * height - profile["height"] * 0.10, "y")
         frame = {
             "page": cue["page"],
             "source_index": cue["source_index"],
@@ -259,22 +264,22 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
     if base.data["audio_sha256"] != audio_hash or base.data["pdf_sha256"] != pdf_hash:
         raise ValueError("음원·PDF와 기존 시간표가 다릅니다. 악보 전체 분석을 먼저 실행하세요.")
     folder = paths.processed / audio_hash / "scores" / pdf_hash
-    candidates = [
-        matching_musicxml(pdf),
-        Path(base.data.get("musicxml_path", "")),
-        folder / "recognition/reviewed.musicxml",
-        folder / "recognition/score.mxl",
-    ]
-    xml = next(
-        (
-            p
-            for p in candidates
-            if p and p.is_file() and hash_file(p) == base.data.get("xml_sha256")
-        ),
-        None,
-    )
-    if xml is None:
-        raise ValueError("기존 분석과 같은 MusicXML이 필요합니다. 악보 전체 분석을 실행하세요.")
+    pdf_only = base.data.get("notation_source", {}).get("method") == "pdf-geometry"
+    xml = None
+    if not pdf_only:
+        candidates = [
+            matching_musicxml(pdf),
+            Path(base.data.get("musicxml_path", "")),
+            folder / "recognition/reviewed.musicxml",
+            folder / "recognition/score.mxl",
+        ]
+        xml = next(
+            (p for p in candidates
+             if p and p.is_file() and hash_file(p) == base.data.get("xml_sha256")),
+            None,
+        )
+        if xml is None:
+            raise ValueError("기존 분석과 같은 MusicXML이 필요합니다. 악보 전체 분석을 실행하세요.")
     data = deepcopy(base.data)
     for name in ("scroll", "view_signature"):
         data.pop(name, None)
@@ -303,12 +308,18 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
             sizes, bars, layout = native_layout(data["gp_display"])
         else:
             sizes, bars, layout = analyze_layout(pdf, xml, report)
+        if pdf_only and len(bars) != len(data.get("originals", [])):
+            raise ValueError(
+                "PDF 마디 수가 기존 시간표와 다릅니다. 전체 분석 후 시간표를 확인하세요."
+            )
         if not data.get("reviewed"):
             for cue in data["cues"]:
                 cue["page"] = bars[cue["source_index"]]["page"]
             for original in data.get("originals", []):
                 original["page"] = bars[original["source_index"]]["page"]
-        data["scroll"] = plan_camera(data["cues"], data["end"], sizes, bars, profile)
+        data["scroll"] = plan_camera(
+            data["cues"], data["end"], sizes, bars, profile, keep_system=pdf_only,
+        )
         data["scroll"]["layout_method"] = layout["method"]
         data["pdf_layout"] = layout
         for warning in layout.get("warnings", []):
@@ -318,7 +329,7 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
         if (
             hash_file(audio) != audio_hash
             or hash_file(pdf) != pdf_hash
-            or hash_file(xml) != data["xml_sha256"]
+            or (xml is not None and hash_file(xml) != data["xml_sha256"])
             or hash_file(timeline_path) != timeline_hash
         ):
             raise ValueError("스크롤 분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")

@@ -41,8 +41,12 @@ def parser() -> argparse.ArgumentParser:
     score.add_argument("--gp", type=Path, help="PDF 없이 GP 파트로 표시·분석")
     score.add_argument("--musicxml", "--notation", type=Path, help="MusicXML 또는 GP3/4/5")
     score.add_argument("--gp-track", type=int, default=1, help="Guitar Pro 트랙 번호 (1부터)")
-    score.add_argument("--mode", choices=["audio", "tempo"], default="audio")
+    score.add_argument("--mode", choices=["auto", "audio", "tempo", "pdf"], default="auto",
+                       help="auto: 음표 인식 후 실패하면 마디선·BPM 사용; pdf: 마디선만 사용")
     score.add_argument("--bpm", type=float, default=120)
+    score.add_argument("--meter-beats", type=int, default=4, help="PDF 모드 박자표 분자 (1~32)")
+    score.add_argument("--meter-unit", type=int, default=4,
+                       choices=[1, 2, 4, 8, 16, 32], help="PDF 모드 박자표 분모")
     score.add_argument("--lead-in", type=float, default=0)
     score.add_argument("--route", default="")
     score.add_argument("--force", action="store_true")
@@ -154,6 +158,10 @@ def main(argv=None) -> int:
             from .score_layout import analyze_scroll
             from .score_view import view_profile
 
+            if args.mode == "pdf" and (args.gp or args.musicxml):
+                raise ValueError(
+                    "PDF 마디선 모드는 --pdf만 사용합니다. --gp/--musicxml은 빼 주세요."
+                )
             paths = Paths(args.root.resolve())
             paths.create()
             gp_display = None
@@ -180,6 +188,8 @@ def main(argv=None) -> int:
                 gp_display=gp_display,
                 mode=args.mode,
                 bpm=args.bpm,
+                meter_beats=args.meter_beats,
+                meter_unit=args.meter_unit,
                 lead_in=args.lead_in,
                 route_override=args.route,
                 force=args.force,

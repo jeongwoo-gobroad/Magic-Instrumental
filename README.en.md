@@ -43,7 +43,9 @@ Applied desktop key changes are included in the exported audio. The web player c
 
 **We recommend Guitar Pro scores in `.gp3`, `.gp4` or `.gp5` format.** The app reads notes and measures directly from these files and lets you choose a part by name.
 
-Supported PDF layouts contain one part’s standard staff or TAB staff per measure. PDFs displaying standard notation and TAB together are not supported; neither are multi-instrument full scores or irregular layouts. Automatic pitch recognition from TAB numerals is not provided. PDF recognition and audio alignment can require manual correction. PNG/JPG/JPEG score images are not direct inputs. Image-only or scanned PDFs can fail recognition because of resolution, skew or blur. GPX and GP6/7/8 are currently unsupported. Drum parts use fixed-BPM timing.
+**PDF full scores and combined notation/TAB:** enter quarter-note BPM, meter and lead-in, then run score pre-analysis. The app selects the analysis path automatically. If note recognition or layout matching fails, it falls back to reading shared measure boundaries directly from 4-, 5- and 6-line staves and estimating timing from your settings. You do not need to choose a MusicXML option. Review the estimated timing. The original full score stays together, with no part separation or TAB numeral-to-pitch transcription. Choose a zoom that fits the simultaneous staves.
+
+When the app falls back to PDF measure/BPM timing, it follows printed order unless you supply a performed measure route. Repeats/endings need that route; pickups, meter changes and tempo changes need timing review. Existing note/audio alignment still requires Audiveris or corresponding MusicXML/GP and does not guarantee full-score or TAB transcription. PNG/JPG/JPEG score images are not direct inputs. Image-only or scanned PDFs can fail because of resolution, skew, blur or ambiguous system grouping. GPX and GP6/7/8 are currently unsupported. GP drum parts use fixed-BPM timing.
 
 **Desktop metronome alone:** uncheck ‘음원과 연동’ (link to audio), then press ‘메트로놈 켜기’ (turn metronome on). No song is required. An always-visible hint and status show standalone playback, waiting for audio, linked playback, or other waiting states; mute and zero volume are also indicated.
 
@@ -67,7 +69,7 @@ Own files must derive from the identical original recording bytes and duration, 
 
 **Recordings and scores are not supplied.** Obtain your own materials lawfully, paying applicable charges. Buying a recording or score does not grant permission to redistribute its original, separated instrumental or `.magic` bundle.
 
-Original project code/docs: GPL-3.0-only. Models and dependencies retain their own licenses. PDF recognition uses Audiveris; GP parsing uses PyGuitarPro; engraving uses Verovio; mobile rate/pitch processing uses Signalsmith Stretch. See [third-party notices and model provenance](THIRD_PARTY_NOTICES.md). Screenshots contain only project-authored synthetic music.
+Original project code/docs: GPL-3.0-only. Models and dependencies retain their own licenses. PDF note/symbol recognition uses Audiveris; the PDF-only measure/BPM mode does not run it. GP parsing uses PyGuitarPro; engraving uses Verovio; mobile rate/pitch processing uses Signalsmith Stretch. See [third-party notices and model provenance](THIRD_PARTY_NOTICES.md). Screenshots contain only project-authored synthetic music.
 
 Automated checks distinguish desktop installation, browser execution, and real hardware validation; see [developer documentation](CONTRIBUTING.md). No claim of universally best separation, perfect recognition, or testing on every physical device is made.
 

@@ -38,6 +38,10 @@ def export_magic(request, report=lambda *_: None):
     if plan.data["audio_sha256"] != hash_file(audio) or plan.data["pdf_sha256"] != hash_file(pdf):
         raise ValueError("현재 음원·악보와 분석 결과가 다릅니다. 다시 분석하세요.")
     gp = plan.data.get("gp_display")
+    pdf_only = (
+        plan.data.get("notation_source", {}).get("method") == "pdf-geometry"
+        or plan.data.get("pdf_layout", {}).get("method") == "pdf-only-staves-barlines"
+    )
     source = Path(gp["source"]).resolve(strict=True) if gp else pdf
     if gp and hash_file(source) != gp["signature"]["source"]:
         raise ValueError("GP 원본이 분석 이후 변경되었습니다. 다시 분석하세요.")
@@ -68,6 +72,15 @@ def export_magic(request, report=lambda *_: None):
         for part in collection:
             for path in (Path(part["prepared"]["pdf"]), part["timing"]):
                 inputs[path] = hash_file(path)
+    elif pdf_only:
+        from .score_geometry import detect_pdf_layout
+
+        sizes, bars, _ = detect_pdf_layout(pdf, report=report)
+        if len(plan.data.get("originals", [])) != len(bars) or any(
+            cue["source_index"] not in bars for cue in plan.cues
+        ):
+            raise ValueError("PDF 마디 수가 시간표와 다릅니다. PDF만으로 분석을 다시 실행하세요.")
+        collection = []
     else:
         from .score_layout import analyze_layout
 
@@ -77,6 +90,8 @@ def export_magic(request, report=lambda *_: None):
         sizes, bars, _ = analyze_layout(pdf, xml, report)
         collection = []
     portable = portable_timing(plan, bars)
+    if pdf_only and not gp:
+        portable["camera_mode"] = "system"
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".magic-", dir=output.parent) as scratch:
         scratch = Path(scratch)

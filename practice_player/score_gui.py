@@ -397,12 +397,19 @@ class ScorePanel(QWidget):
         geometry = plan.data.get("pdf_layout", {})
         method = {
             "pdf-staves-barlines": "PDF 마디선 인식",
+            "pdf-only-staves-barlines": "PDF 마디선 + 입력 BPM·박자",
             "musicxml-assisted": "MusicXML 보조 배치",
             "guitar-pro-native": "GP 원본 마디 직접 연결",
         }.get(geometry.get("method"), "")
+        review_lines = len({
+            (item["page"], item["system"]) for item in geometry.get("review_required", [])
+        })
         self.status.setText(
             f"{len(plan.cues)}개 연주 마디 · {state}"
             + (f"\n{method} · 원본 {geometry['measure_count']}마디" if method else "")
+            + ("\n음표 인식 대신 마디선·BPM으로 계산 · 시간표 확인"
+               if plan.data.get("analysis_fallback") else "")
+            + (f"\n배치 확인 필요 {review_lines}줄" if review_lines else "")
         )
         details = []
         for index, page in enumerate(geometry.get("pages", [])):
@@ -523,74 +530,67 @@ class ScorePanel(QWidget):
         reuse.setChecked(self.timeline is not None)
         reuse.setEnabled(self.timeline is not None)
         form.addRow(reuse)
-        mode = QComboBox()
-        mode.addItem("음표와 음원을 자동 정렬 (추정)", "audio")
-        mode.addItem("일정 BPM으로 마디 시간 계산", "tempo")
-        if self.gp_info and self.gp_info["metadata"]["percussion"]:
-            mode.setCurrentIndex(1)
-            mode.setEnabled(False)
-        form.addRow("정렬", mode)
+        saved = self.timeline.data.get("signature", {}) if self.timeline else {}
+        mode = None
+        if self.gp_source:
+            mode = QComboBox()
+            mode.setObjectName("scoreAlignmentMode")
+            mode.addItem("음표와 음원을 자동 정렬 (추정)", "audio")
+            mode.addItem("일정 BPM으로 마디 시간 계산", "tempo")
+            if self.gp_info and self.gp_info["metadata"]["percussion"]:
+                mode.setCurrentIndex(1)
+            form.addRow("정렬", mode)
         bpm = QDoubleSpinBox()
         bpm.setRange(20, 400)
-        bpm.setValue(self.bpm_provider())
+        bpm.setValue(saved.get("bpm", self.bpm_provider()))
         form.addRow("원곡 BPM ♩", bpm)
+        meter_beats = QSpinBox()
+        meter_beats.setObjectName("scoreMeterBeats")
+        meter_beats.setRange(1, 32)
+        meter_beats.setValue(saved.get("meter_beats", 4))
+        meter_unit = QComboBox()
+        meter_unit.setObjectName("scoreMeterUnit")
+        for unit in (1, 2, 4, 8, 16, 32):
+            meter_unit.addItem(str(unit), unit)
+        meter_unit.setCurrentIndex(meter_unit.findData(saved.get("meter_unit", 4)))
+        meter = QHBoxLayout()
+        meter.addWidget(meter_beats)
+        meter.addWidget(QLabel("/"))
+        meter.addWidget(meter_unit)
+        if not self.gp_source:
+            form.addRow("마디 박자", meter)
         lead = QDoubleSpinBox()
         lead.setRange(0, 1800)
         lead.setDecimals(3)
-        form.addRow("악보 첫 박 (초, BPM 모드)", lead)
+        lead.setValue(saved.get("lead_in", 0))
+        form.addRow("악보 첫 박 (초)", lead)
         route = QLineEdit()
         route.setPlaceholderText("자동 인식 · 보정 예: 1-8,1-6,9-16")
         route.setToolTip("인쇄 번호가 아닌 원본 마디 순번(1부터). 반복을 모두 펼친 순서입니다.")
+        route.setText(saved.get("route", ""))
         form.addRow("연주 순서 직접 보정", route)
-        xml = QLineEdit()
-        xml.setPlaceholderText("비우면 같은 이름 MusicXML/GP 또는 PDF 인식")
-        browse = QPushButton("MusicXML / GP 선택")
-
-        def select_xml():
-            path, _ = QFileDialog.getOpenFileName(
-                dialog,
-                "원본 악보 선택",
-                str(self.paths.score_targets),
-                "원본 악보 (*.mxl *.musicxml *.xml *.gp3 *.gp4 *.gp5)",
-            )
-            if path:
-                xml.setText(path)
-
-        browse.clicked.connect(select_xml)
-        form.addRow(xml, browse)
-        gp_track = QSpinBox()
-        gp_track.setRange(1, 64)
-        gp_track.setToolTip("GP 파일에서 PDF와 같은 악기 트랙 번호를 선택하세요 (1부터).")
-        form.addRow("GP 악기 트랙", gp_track)
         force = QCheckBox("시간 정렬 다시 계산 (기존 보정본 보존)")
         form.addRow(force)
 
-        def reuse_changed(checked):
-            for widget in (mode, bpm, lead, route, xml, browse, gp_track, force):
+        def controls_changed(*_):
+            checked = reuse.isChecked()
+            for widget in (bpm, lead, route, meter_beats, meter_unit, force):
                 widget.setEnabled(not checked)
+            if mode is not None:
+                mode.setEnabled(not checked and not (
+                    self.gp_info and self.gp_info["metadata"]["percussion"]
+                ))
 
-        reuse.toggled.connect(reuse_changed)
-        reuse_changed(reuse.isChecked())
-        if self.gp_source:
-            xml.setVisible(False)
-            browse.setVisible(False)
-            gp_track.setVisible(False)
-            form.labelForField(gp_track).setVisible(False)
+        reuse.toggled.connect(controls_changed)
+        controls_changed()
 
-            def keep_drum_mode(_checked):
-                if self.gp_info["metadata"]["percussion"]:
-                    mode.setCurrentIndex(1)
-                    mode.setEnabled(False)
-
-            reuse.toggled.connect(keep_drum_mode)
-            keep_drum_mode(reuse.isChecked())
         hint = QLabel(
-            "PDF 인식 도구와 영어 데이터는 설치 파일에서 자동 준비합니다.\n"
-            "PDF의 규격·보표·마디선을 분석하므로 "
-            "줄바꿈 정보가 없는 MusicXML도 사용할 수 있습니다.\n"
-            "오선과 타브가 함께 인쇄된 PDF는 지원 범위에서 제외됩니다.\n"
-            "GP3/4/5는 음표·박자·반복을 직접 읽습니다. PDF와 같은 판본이어야 합니다.\n"
-            "복잡한 기호는 인식 후 시간표와 연주 순서를 확인하세요."
+            ("악보의 음표·반복과 음원을 자동으로 연결합니다.\n"
+             "인식이 어려우면 마디선과 입력한 BPM·박자로 시간을 계산합니다.\n"
+             "이때 반복은 직접 연주 순서를 입력하고, 못갖춘마디·박자/템포 변화는 "
+             "시간표에서 보정하세요.\n" if not self.gp_source else
+             "GP의 음표·박자·반복을 직접 읽어 반주와 연결합니다.\n")
+            + "분석 후 마디 수·연주 순서·시간을 확인하고 자동 스크롤을 켜세요."
         )
         hint.setWordWrap(True)
         form.addRow(hint)
@@ -604,12 +604,14 @@ class ScorePanel(QWidget):
             options = {
                 "audio": str(self.audio),
                 "pdf": str(self.pdf),
-                "mode": mode.currentData(),
+                "mode": mode.currentData() if mode is not None else "auto",
                 "bpm": bpm.value(),
+                "meter-beats": meter_beats.value(),
+                "meter-unit": meter_unit.currentData(),
                 "lead-in": lead.value(),
                 "route": route.text().strip(),
-                "musicxml": xml.text().strip(),
-                "gp-track": gp_track.value(),
+                "musicxml": "",
+                "gp-track": 1,
                 "force": force.isChecked(),
                 "zoom": profile["zoom"],
                 "view-width": profile["width"],
