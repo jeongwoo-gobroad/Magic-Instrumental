@@ -8,6 +8,7 @@ class Ensemble {
     this.pending = null; this.prepared = false; this.remoteState = null; this.seq = 0;
     this.peers = []; this.busy = false; this.probes = new Map(); this.generation = 0;
     this.shared = false; this.qrURL = null;
+    this.uploading = false; this.downloadTask = null; this.preparing = false; this.wantsReady = false;
     this.base = 'https://music-helper.duckdns.org:13579';
     try { this.base = localStorage.getItem('magic-relay') || this.base; } catch (_) {}
     const query = new URLSearchParams(location.hash.slice(1));
@@ -20,7 +21,13 @@ class Ensemble {
     $('ensembleReady').onclick = () => this.prepare().catch(e => this.error(e));
     $('shareFile').onclick = () => this.share().catch(e => this.error(e));
     $('getShared').onclick = () => this.download().catch(e => this.error(e));
-    this.clockTimer = setInterval(() => { if (this.ws?.readyState === WebSocket.OPEN) this.probe(); this.update(); }, 2000);
+    this.clockTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.probe();
+        if (this.prepared && this.recentSamples().length < 3) this.clearReady();
+      }
+      this.update();
+    }, 2000);
     $('exitSession').onclick = () => this.leave();
     $('sessionPrepare').onclick = () => this.prepare().catch(e => this.error(e));
     $('sessionRoom').onclick = () => document.body.classList.toggle('room-open');
@@ -79,13 +86,14 @@ class Ensemble {
         const blob = await qr.blob();
         if (generation === this.generation) { this.qrURL = URL.createObjectURL(blob); $('inviteQR').src = this.qrURL; }
       }
-    } finally { this.busy = false; this.update(); }
+    } finally { if (generation === this.generation) { this.busy = false; this.update(); } }
   }
   leave() {
     ++this.generation;
     const ws = this.ws; this.ws = null; if (ws) ws.close();
     this.role = ''; this.auth = ''; this.code = ''; this.prepared = false;
     this.pending = null; this.remoteState = null; this.peers = []; this.shared = false;
+    this.busy = this.uploading = this.preparing = this.wantsReady = false; this.downloadTask = null;
     document.body.classList.remove('room-open');
     $('members').replaceChildren();
     $('inviteQR').removeAttribute('src'); $('inviteLink').removeAttribute('href');
@@ -96,10 +104,15 @@ class Ensemble {
     setAvailable(ready); this.update();
   }
   unready() {
+    this.wantsReady = false;
+    this.clearReady();
+    this.update();
+  }
+  clearReady() {
     if (!this.prepared) return;
     this.prepared = false; this.pending = null;
     this.send({type: 'ready', ready: false});
-    pause(); this.update();
+    pause();
   }
   probe() {
     const id = performance.now(); this.probes.set(id, id);
@@ -107,35 +120,56 @@ class Ensemble {
     this.send({type: 'ping', id});
   }
   serverNow() {
-    requireMagic(this.samples.length >= 3, '시간 확인 중입니다. 잠시 뒤 준비를 눌러 주세요.');
-    const best = this.samples.reduce((a, b) => a.rtt < b.rtt ? a : b);
+    const recent = this.recentSamples();
+    requireMagic(recent.length >= 3, '합주 시간을 다시 맞추고 있습니다.');
+    const best = recent.reduce((a, b) => a.rtt < b.rtt ? a : b);
     return performance.now() + best.offset;
   }
+  recentSamples() {
+    const cutoff = performance.now() - 10000;
+    return this.samples.filter(sample => sample.sent >= cutoff)
+      .sort((a, b) => b.sent - a.sent).slice(0, 3);
+  }
   async prepare() {
-    if (this.prepared) { this.unready(); return; }
-    if (!this.role || !ready || loading || this.busy) return;
+    if (this.wantsReady) { this.unready(); return; }
+    if (!this.role || this.preparing) return;
     const generation = this.generation;
-    await audioReady();
-    if (generation !== this.generation || this.prepared || loading || !ready || this.busy || document.hidden) return;
-    this.serverNow();
-    const media = this.media();
-    requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
-    const rtt = Math.max(...this.samples.map(s => s.rtt));
-    requireMagic(rtt <= 1300, '연결이 많이 지연됩니다. 인터넷 상태를 확인해 주세요.');
-    this.prepared = true; document.body.classList.remove('room-open'); window.scrollTo(0,0); $('linked').checked = true;
-    this.send({type: 'ready', ready: true, media, rtt});
-    this.status('');
-    this.update();
+    this.preparing = true; this.update();
+    try {
+      await audioReady();
+      if (generation !== this.generation) return;
+      if (this.downloadTask || (!ready && this.role === 'member' && this.shared)) await this.download();
+      if (generation !== this.generation || document.hidden) return;
+      requireMagic(ready && !loading, '연습 파일을 연 뒤 준비를 눌러 주세요.');
+      const media = this.media();
+      requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
+      this.wantsReady = true;
+      document.body.classList.remove('room-open'); window.scrollTo(0,0); $('linked').checked = true;
+      this.status(''); this.syncReady();
+    } finally {
+      if (generation === this.generation) { this.preparing = false; this.update(); }
+    }
+  }
+  syncReady() {
+    if (!this.wantsReady || !ready || loading || this.ws?.readyState !== WebSocket.OPEN) return;
+    // A single slow pong during an upload should not cancel someone's Ready request.
+    const recent = this.recentSamples();
+    const rtt = recent.map(sample => sample.rtt).sort((a, b) => a - b)[1];
+    if (recent.length < 3 || rtt > 1300) {
+      this.clearReady();
+      return;
+    }
+    this.prepared = true;
+    this.send({type: 'ready', ready: true, media:this.media(), rtt});
   }
   receive(data) {
     if (data.type === 'welcome') {
       for (let i = 0; i < 5; i++) setTimeout(() => this.probe(), i * 100);
     } else if (data.type === 'pong' && this.probes.has(data.id)) {
       const start = this.probes.get(data.id), end = performance.now(); this.probes.delete(data.id);
-      const sample = {rtt: end - start, offset: data.time - (start + end) / 2};
+      const sample = {sent: start, rtt: end - start, offset: data.time - (start + end) / 2};
       this.samples.push(sample); if (this.samples.length > 10) this.samples.shift();
-      if (this.prepared && sample.rtt > 1300) { this.unready(); this.status('연결 지연이 커져 준비를 해제했습니다.'); }
-      else if (this.prepared) this.send({type:'ready', ready:true, media:this.media(), rtt: Math.max(...this.samples.map(s => s.rtt))});
+      this.syncReady();
     } else if (data.type === 'presence') {
       const previouslyReady = this.allReady();
       this.peers = data.peers; this.shared = data.shared;
@@ -215,37 +249,54 @@ class Ensemble {
   }
   async share() {
     requireMagic(this.role === 'leader' && archive?.manifest.version === 2 && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
-    this.busy = true; this.update(); this.status('멤버에게 공유할 파일을 서버로 보내고 있습니다…');
+    if (this.uploading) return;
+    const generation = this.generation;
+    this.uploading = true; this.update(); this.status('멤버에게 공유할 파일을 서버로 보내고 있습니다…');
     try {
       await this.api(`/api/rooms/${this.code}/file`, {method:'POST', body:archive.file, headers:{'Content-Type':'application/octet-stream'}});
-      this.status('공유 완료 · 멤버가 ‘리더 파일 받기’를 누르면 됩니다. 방이 끝나면 서버 사본은 삭제됩니다.');
-    } finally { this.busy = false; this.update(); }
+      if (generation === this.generation) this.status('공유 완료 · 멤버가 ‘리더 파일 받기’를 누르면 됩니다. 방이 끝나면 서버 사본은 삭제됩니다.');
+    } catch (error) {
+      if (generation === this.generation) throw error;
+    } finally {
+      if (generation === this.generation) { this.uploading = false; this.update(); }
+    }
   }
   async download() {
-    if (this.role !== 'member' || !this.shared || this.busy || loading) return;
-    this.unready(); this.busy = true; this.update(); const generation = this.generation;
+    if (this.downloadTask) return this.downloadTask;
+    if (this.role !== 'member' || !this.shared || loading) return;
+    const generation = this.generation;
+    this.unready();
+    this.downloadTask = this.openShared(generation); this.update();
     try {
-      await audioReady(); this.status('리더의 연습 파일을 받고 있습니다…');
-      const response = await this.api(`/api/rooms/${this.code}/file`);
-      const length = Number(response.headers.get('Content-Length'));
-      requireMagic(length >= 22 && length <= MAGIC_LIMIT, '공유 파일 크기를 확인할 수 없습니다.');
-      const blob = await response.blob();
-      requireMagic(blob.size === length, '파일 전송이 끝나지 않았습니다.');
-      if (generation !== this.generation) return;
-      await openFile(new File([blob], 'shared-practice.magic'));
-      requireMagic(ready, $('status').textContent);
-      this.status('리더 파일을 열었습니다.');
-    } finally { this.busy = false; this.update(); }
+      await this.downloadTask;
+    } finally {
+      if (generation === this.generation) { this.downloadTask = null; this.update(); }
+    }
+  }
+  async openShared(generation) {
+    this.status('리더의 연습 파일을 받고 있습니다…'); await audioReady();
+    if (generation !== this.generation) return;
+    const response = await this.api(`/api/rooms/${this.code}/file`);
+    const length = Number(response.headers.get('Content-Length'));
+    requireMagic(length >= 22 && length <= MAGIC_LIMIT, '공유 파일 크기를 확인할 수 없습니다.');
+    const blob = await response.blob();
+    requireMagic(blob.size === length, '파일 전송이 끝나지 않았습니다.');
+    if (generation !== this.generation) return;
+    await openFile(new File([blob], 'shared-practice.magic'));
+    if (generation !== this.generation) return;
+    requireMagic(ready, $('status').textContent);
+    this.status('리더 파일을 열었습니다.');
   }
   allReady() {
     return this.peers.length > 0 && this.peers.every(peer => peer.connected && peer.ready);
   }
   readinessText() {
     if (!ready) {
-      if (loading || this.busy) return '곡을 준비하고 있습니다.';
+      if (loading || this.downloadTask) return '곡을 준비하고 있습니다.';
       return this.shared ? '리더 파일을 받거나 내 파일을 선택하세요.' : '리더가 파일을 공유하면 받을 수 있습니다. 내 파일을 먼저 선택해도 됩니다.';
     }
-    if (!this.prepared) return this.samples.length < 3 ? '합주 시간을 맞추고 있습니다.' : '내 준비 대기 · 파트를 확인하고 ‘합주 준비’를 누르세요.';
+    if (this.wantsReady && !this.prepared) return '연결을 확인하고 있습니다. 시간이 맞으면 자동으로 준비가 완료됩니다.';
+    if (!this.prepared) return '내 준비 대기 · 파트를 확인하고 ‘합주 준비’를 누르세요.';
     if (this.allReady()) return this.role === 'leader' ? '모두 준비 완료 · 재생할 수 있습니다.' : '모두 준비 완료 · 리더가 재생할 수 있습니다.';
     const waiting = this.peers.filter(peer => !peer.connected || !peer.ready);
     return waiting.length ? '준비 대기 중인 참가자 · ' + waiting.map(peer => peer.leader ? '리더' : peer.name).join(', ') : '준비 상태를 확인하고 있습니다.';
@@ -265,7 +316,7 @@ class Ensemble {
     }
     $('sessionTitle').textContent = archive?.manifest.title || '연습 파일을 선택해 주세요';
     $('sessionClock').textContent = `${clockText(nowPosition())} / ${clockText(duration)}`;
-    $('sessionOpenFile').hidden = !member; $('sessionOpenFile').disabled = this.busy || loading;
+    $('sessionOpenFile').hidden = !member; $('sessionOpenFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
     $('sessionVolumeLabel').hidden = !member;
     if (active) $('ensemblePanel').open = true;
     $('leaderMode').textContent = leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기';
@@ -274,16 +325,23 @@ class Ensemble {
     $('leaderMode').disabled = this.busy || member; $('memberMode').disabled = this.busy || leader;
     $('relayURL').disabled = active || this.busy; $('memberName').disabled = active || this.busy; $('inviteCode').disabled = active || this.busy;
     $('invitation').hidden = !leader; $('roomCode').textContent = this.code;
-    $('ensembleReady').hidden = !active; $('ensembleReady').disabled = !this.prepared && (!ready || loading || this.busy || this.samples.length < 3);
-    $('ensembleReady').textContent = this.prepared ? '준비 완료 · 해제하기' : '합주 준비';
-    $('ensembleReady').setAttribute('aria-pressed',String(this.prepared));
+    const canReceive = member && this.shared;
+    $('ensembleReady').hidden = !active;
+    $('ensembleReady').disabled = this.preparing || (!this.wantsReady && !this.downloadTask && (loading || (!ready && !canReceive)));
+    let label = '합주 준비';
+    if (this.prepared) label = '준비 완료 · 해제하기';
+    else if (this.wantsReady) label = '연결 확인 중 · 준비 취소';
+    else if (this.preparing) label = '준비 처리 중';
+    else if (canReceive && (!ready || this.downloadTask)) label = '리더 파일 받고 준비';
+    $('ensembleReady').textContent = label;
+    $('ensembleReady').setAttribute('aria-pressed',String(this.wantsReady));
     $('sessionPrepare').textContent = $('ensembleReady').textContent;
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
-    $('sessionPrepare').setAttribute('aria-pressed',String(this.prepared));
-    $('shareFile').hidden = !leader; $('shareFile').disabled = this.busy || archive?.manifest.version !== 2 || archive?.manifest.score.kind !== 'gp';
-    $('getShared').hidden = !member; $('getShared').disabled = !this.shared || this.busy || loading;
+    $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
+    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || archive?.manifest.version !== 2 || archive?.manifest.score.kind !== 'gp';
+    $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
     $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
-    $('file').disabled = loading || this.busy || leader;
+    $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
     $('linked').disabled = active;
     for (const id of ensembleTransport) $(id).disabled = !ready || member || (leader && (!this.prepared || !this.allReady() || !!this.pending));
     for (const id of ensembleSettings) $(id).disabled = member || (leader && (playing || !!this.pending)) || (['loop','loopStart','loopEnd'].includes(id) && !ready);
