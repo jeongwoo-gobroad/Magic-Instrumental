@@ -1,8 +1,10 @@
 # AI Coder handoff — Magic-Instrumental
 
-Source version: **2.3.4**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Source version: **2.3.5**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
 
 Session readiness in the banner follows the relay's current participant list. A cancellation stops playback and preserves the other participants' readiness. Send the cancellation only on a true-to-false transition, including when replacing a file. Keep opt-in file sharing and receiving in the song panel, accessible with the roster closed and before either party is ready.
+
+Uploads do not lock the leader's Ready button. Download and Ready share a single in-flight download per member. Track explicit readiness intent separately from readiness reported to the relay. Use the median RTT of the latest three probes by send time within ten seconds. Missing or slow measurements suspend readiness, and healthy measurements restore it without restarting playback. Explicit cancellation, a file change or leaving the session clears the intent.
 
 The live desktop update test queries the public GitHub release API. Hosted CI uses the validation job's read-only token for that exact endpoint because runners share an anonymous request quota. Normal desktop checks use anonymous HTTPS. Keep authorization out of redirects, loopback fixtures, logs and command-line arguments.
 

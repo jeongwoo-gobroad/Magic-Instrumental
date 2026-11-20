@@ -72,9 +72,9 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.locator("#sessionRoom").click()
         assert member.locator("#ensemblePanel").is_hidden()
         assert member.locator("#getShared").is_visible()
-        assert member.locator("#sessionPrepare").is_disabled()
         if engine == "webkit":
             assert member.locator("#getShared").is_disabled()
+            assert member.locator("#sessionPrepare").is_disabled()
             leader.locator("#shareFile").click()
         member.wait_for_function("!document.getElementById('getShared').disabled")
         member.locator("#getShared").click()
@@ -153,3 +153,77 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
             assert page.locator("#inviteLink").get_attribute("href") is None
         browser.close()
         assert not errors
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_files):  # noqa: F811
+    from playwright.sync_api import expect, sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = getattr(playwright, engine).launch()
+        leader, first, second = [browser.new_page() for _ in range(3)]
+        for page in (leader, first, second):
+            page.goto(web_url + "#ensemble")
+            page.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
+        open_study(leader, study_files["gp"])
+        leader.locator("#leaderMode").click()
+        leader.wait_for_function("MagicEnsemble.state().peers.length === 1")
+        code = leader.locator("#roomCode").inner_text()
+        for member in (first, second):
+            member.locator("#inviteCode").fill(code)
+            member.locator("#memberMode").click()
+            expect(member.locator("#sessionPrepare")).to_be_disabled()
+
+        # The relay has published the file, but its HTTP reply has not reached the leader.
+        held = []
+
+        def hold_response(route):
+            response = route.fetch()
+            assert response.ok
+            held.append((route, response))
+
+        leader.route("**/api/rooms/*/file", hold_response)
+        leader.locator("#shareFile").click()
+        for member in (first, second):
+            expect(member.locator("#sessionPrepare")).to_have_text("리더 파일 받고 준비")
+        leader.locator("#sessionPrepare").click(timeout=4000)
+        # One member is already downloading. Ready must reuse that transfer.
+        first.route("**/api/rooms/*/file", hold_response)
+        first.locator("#getShared").click()
+        first.locator("#sessionPrepare").click(timeout=4000)
+        second.locator("#sessionPrepare").click()
+        expect(second.locator("#sessionPrepare")).to_have_text("준비 완료 · 해제하기", timeout=45000)
+        assert len(held) == 2
+        for route, response in held:
+            route.fulfill(response=response)
+        for page in (leader, first, second):
+            expect(page.locator("#sessionReadiness")).to_contain_text("모두 준비 완료", timeout=45000)
+
+        # Slow probes during a transfer can pause readiness. Two newer good
+        # measurements restore the original request without another Ready click.
+        first.evaluate("""() => {
+            const now = performance.now();
+            const offset = ensemble.serverNow() - now;
+            ensemble.samples = [5900, 4000, 2000].map(age => ({
+                sent: now - age, rtt: 1600, offset
+            }));
+            ensemble.syncReady();
+            if (ensemble.prepared || !ensemble.wantsReady) throw Error('Lost readiness request');
+        }""")
+        expect(leader.locator("#play")).to_be_disabled()
+        first.evaluate("""() => {
+            const now = performance.now();
+            const offset = ensemble.samples[0].offset;
+            for (const age of [70, 45]) {
+                const id = now - age;
+                ensemble.probes.set(id, id);
+                ensemble.receive({type:'pong', id, time:now - age / 2 + offset});
+            }
+            if (!ensemble.prepared) throw Error('Did not recover after transfer');
+        }""")
+        for page in (leader, first, second):
+            page.wait_for_function("MagicEnsemble.state().peers.filter(p => p.ready).length === 3")
+        leader.locator("#play").click()
+        for page in (leader, first, second):
+            page.wait_for_function("MagicPlayer.state().playing", timeout=7000)
+        browser.close()
