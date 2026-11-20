@@ -183,8 +183,31 @@ def test_browser_pdf_only_system_camera_and_invalid_mode(pdf_only_study, web_url
 
         def at(seconds):
             page.evaluate("t => MagicPlayer.seek(t, false)", seconds)
-            page.wait_for_timeout(500)
-            return page.locator("#viewport").evaluate("el => el.scrollTop")
+            page.wait_for_function("""() => {
+                const image = document.getElementById('scoreImage');
+                return image.complete && image.naturalWidth > 0;
+            }""", timeout=10000)
+            # Camera easing advances per animation frame, not per elapsed millisecond.
+            return page.evaluate("""() => new Promise((resolve, reject) => {
+                const view = document.getElementById('viewport');
+                const paper = document.getElementById('paper');
+                let previous = [], stable = 0, frame;
+                const timer = setTimeout(() => {
+                    cancelAnimationFrame(frame);
+                    reject(new Error('Score camera did not settle'));
+                }, 10000);
+                const sample = () => {
+                    const current = [view.scrollLeft, view.scrollTop,
+                        view.clientWidth, view.clientHeight, paper.clientWidth, paper.clientHeight];
+                    stable = current.every((value, i) => value === previous[i]) ? stable + 1 : 0;
+                    previous = current;
+                    if (stable >= 3) {
+                        clearTimeout(timer);
+                        resolve(view.scrollTop);
+                    } else frame = requestAnimationFrame(sample);
+                };
+                frame = requestAnimationFrame(sample);
+            })""")
 
         first = at(0.25)
         assert at(1.9) == pytest.approx(first, abs=2)
