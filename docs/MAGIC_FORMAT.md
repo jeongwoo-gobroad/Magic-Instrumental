@@ -40,6 +40,8 @@ Desktop GP rendering is pre-analysis only: source SHA + part + GP converter v2 +
 
 Mobile loads at most three page Blob URLs, renders one current page, and interpolates the saved bar coordinates for the current viewport/zoom. It does not rerun recognition/alignment. Manual gestures suspend following until the user re-enables it. Reviewed page corrections override generated geometry; their unknown positions fall back to page bounds.
 
+PDF-only measure/BPM exports remain format 1, require no XML source, and retain the original full score without part separation. Their portable timeline has optional `camera_mode: "system"`: horizontal following still uses the current bar, while vertical position stays at the common system top instead of sweeping through simultaneous instruments within every bar. Readers validate this optional enum; missing fields keep legacy behavior. The timing is fixed BPM/meter or user-reviewed timing, not automatic audio alignment or repeat recognition.
+
 `tools/build_web.py` creates `web_player/index.html` with all JS/CSS/WASM in one file, and a versioned service worker. Initial HTTPS (or localhost during development) is required for PWA installation. The worker caches only the static app, never `.magic` contents. Each launch asks the user to select a local file again. iPad Files HTML previews are not presented as a supported installation route. Solo static hosting needs no server-side code, API, analytics or account. Optional Session mode uses the separately deployed relay described in `SESSION_SERVER.md`; its API responses are never persisted in the app cache.
 
 ## Development

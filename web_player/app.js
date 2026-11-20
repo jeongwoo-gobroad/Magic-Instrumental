@@ -246,7 +246,8 @@ function showPosition() {
     const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
     const x = (b.left + (b.right - b.left) * fraction) * width - view.clientWidth * .35;
     const tall = Math.max(0, (b.bottom - b.top) * height - view.clientHeight * .7);
-    const y = b.top * height - 32 + tall * fraction;
+    // Simultaneous staves stay together; bar time must not scan down the parts.
+    const y = b.top * height - 32 + (archive.timing.camera_mode === 'system' ? 0 : tall * fraction);
     const desiredX = clamp(x, 0, Math.max(0, paper.offsetWidth + 32 - view.clientWidth));
     const desiredY = clamp(y, 0, Math.max(0, paper.offsetHeight + 32 - view.clientHeight));
     view.scrollLeft += (desiredX - view.scrollLeft) * .24;
