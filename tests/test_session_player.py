@@ -161,7 +161,7 @@ def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_
 
     with sync_playwright() as playwright:
         browser = getattr(playwright, engine).launch()
-        leader, first, second = [browser.new_page(service_workers="block") for _ in range(3)]
+        leader, first, second = [browser.new_page() for _ in range(3)]
         for page in (leader, first, second):
             page.goto(web_url + "#ensemble")
             page.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
@@ -174,30 +174,36 @@ def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_
             member.locator("#memberMode").click()
             expect(member.locator("#sessionPrepare")).to_be_disabled()
 
-        # The relay has published the file, but its HTTP reply has not reached the leader.
-        held = []
-
-        def hold_response(route):
-            response = route.fetch()
-            assert response.ok
-            held.append((route, response))
-
-        leader.route("**/api/rooms/*/file", hold_response)
+        # Hold the actual browser response after the relay has published the file.
+        # Forwarding the upload via Playwright can change its binary body in WebKit.
+        for page in (leader, first):
+            page.evaluate("""() => {
+                const fetchFile = window.fetch.bind(window);
+                const gate = new Promise(resolve => { window.releaseSharedFile = resolve; });
+                window.sharedResponses = 0;
+                window.fetch = async (...args) => {
+                    const response = await fetchFile(...args);
+                    if (response.ok && new URL(response.url).pathname.endsWith('/file')) {
+                        window.sharedResponses++;
+                        await gate;
+                    }
+                    return response;
+                };
+            }""")
         leader.locator("#shareFile").click()
         for member in (first, second):
             expect(member.locator("#sessionPrepare")).to_have_text("리더 파일 받고 준비")
         leader.locator("#sessionPrepare").click(timeout=4000)
         # One member is already downloading. Ready must reuse that transfer.
-        first.route("**/api/rooms/*/file", hold_response)
         first.locator("#getShared").click()
         first.locator("#sessionPrepare").click(timeout=4000)
         second.locator("#sessionPrepare").click()
         expect(second.locator("#sessionPrepare")).to_have_text(
             "준비 완료 · 해제하기", timeout=45000
         )
-        assert len(held) == 2
-        for route, response in held:
-            route.fulfill(response=response)
+        for page in (leader, first):
+            page.wait_for_function("window.sharedResponses === 1")
+            page.evaluate("window.releaseSharedFile()")
         for page in (leader, first, second):
             expect(page.locator("#sessionReadiness")).to_contain_text(
                 "모두 준비 완료", timeout=45000
@@ -230,4 +236,5 @@ def test_ready_while_shared_transfer_finishes(engine, web_url, relay_url, study_
         leader.locator("#play").click()
         for page in (leader, first, second):
             page.wait_for_function("MagicPlayer.state().playing", timeout=7000)
+        assert first.evaluate("window.sharedResponses") == 1
         browser.close()
