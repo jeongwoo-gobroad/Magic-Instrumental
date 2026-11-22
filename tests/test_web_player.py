@@ -93,6 +93,39 @@ def open_study(page, path):
     page.wait_for_function("MagicPlayer.state().ready", timeout=45000)
 
 
+def choose_file(page, payload, button=".file-button"):
+    with page.expect_file_chooser() as opened:
+        page.locator(button).click()
+    chooser = opened.value
+    # iPad's native picker must not filter an unregistered extension by MIME type.
+    assert not chooser.element.get_attribute("accept")
+    chooser.set_files(payload)
+
+
+@pytest.mark.parametrize("kind,mime_type", [("gp", ""), ("pdf", "application/octet-stream")])
+def test_file_button_reads_unknown_types_and_recovers(page, study_files, kind, mime_type):
+    payload = {"name": "연습곡.magic", "mimeType": mime_type,
+               "buffer": study_files[kind].read_bytes()}
+    choose_file(page, payload)
+    page.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+    page.locator("#scoreImage").wait_for(state="visible")
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+    page.locator("#play").click()
+
+    choose_file(page, {"name": "notes.txt", "mimeType": "text/plain",
+                       "buffer": b"This is a text document, not a Magic practice archive."})
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert "올바른 .magic 파일이 아닙니다" in page.locator("#status").inner_text()
+    assert not page.evaluate("MagicPlayer.state().ready")
+    assert page.locator("#play").is_disabled()
+
+    choose_file(page, payload)
+    page.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+    assert page.locator("#title").inner_text() == "Practice Study"
+    assert page.locator("#play").is_enabled()
+
+
 def frequency(page):
     return page.evaluate("""() => {
         const a = window.testAnalyser, data = new Float32Array(a.frequencyBinCount);
