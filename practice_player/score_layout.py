@@ -13,7 +13,7 @@ from filelock import FileLock
 from .cache import hash_file
 from .score import ScoreTimeline, atomic_json, matching_musicxml, recover_notation_source
 from .score_geometry import LAYOUT_VERSION, detect_pdf_layout
-from .score_view import SCROLL_VERSION, rendered_size, view_profile
+from .score_view import MEASURE_BOX_VERSION, SCROLL_VERSION, rendered_size, view_profile
 
 
 def printed_systems(xml):
@@ -230,6 +230,7 @@ def plan_camera(cues, end, page_sizes, bars, profile, *, keep_system=False):
             "page": cue["page"],
             "source_index": cue["source_index"],
             "system": bar["system"],
+            "box": {key: float(bar[key]) for key in ("left", "top", "right", "bottom")},
             "x0": clip(bar["left"] * width - profile["width"] * 0.45, "x"),
             "x1": clip(bar["right"] * width - profile["width"] * 0.45, "x"),
             "y0": y0 + (y1 - y0) * bar["fraction0"],
@@ -293,6 +294,7 @@ def analyze_scroll(
     signature = {
         "version": SCROLL_VERSION,
         "layout": LAYOUT_VERSION,
+        "measure_boxes": MEASURE_BOX_VERSION,
         "timing": digest,
         "profile": profile,
     }

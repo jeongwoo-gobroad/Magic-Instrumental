@@ -80,6 +80,7 @@ PLACEHOLDERS = tuple(
 IMAGES = (
     "docs/images/player-overview.png",
     "docs/images/score-zoom.png",
+    "docs/images/score-highlight.png",
     "docs/images/drum-count-in.png",
     "docs/images/measure-loop.png",
     "docs/images/desktop-light.png",

@@ -41,6 +41,10 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 
 Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
 
+**See the current measure on the desktop.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. The measure number and repeat visit update with playback even when **자동 넘김 · 스크롤** (automatic page turns and scrolling) is off. That checkbox controls automatic page and camera movement. If you manually open another page, the highlight stays hidden until you return to the current measure's page. Pausing keeps the highlight in place; seeking, repeats and coda jumps update it to the new playback position. Zooming or resizing scales the highlight with the page.
+
+**If an older analysis has no highlight:** open score pre-analysis and select **기존 마디 시간표 유지 · 화면 이동 경로만 분석** (keep the existing measure timeline and rebuild only the display path). This adds measure positions while preserving your corrected timings. It does not rerun note recognition or audio alignment, and the original score stays unchanged.
+
 **We recommend Guitar Pro scores in `.gp3`, `.gp4` or `.gp5` format.** The app reads notes and measures directly from these files and lets you choose a part by name.
 
 **If you have MusicXML:** use **MusicXML 선택** in the analysis dialog to choose `.musicxml`, `.mxl` or `.xml`, or place a file with the same name beside the PDF. The app checks the explicit source, matching file, reviewed source, verified previous recognition and genuine PDF MusicXML attachment before running Audiveris. Watermark XML is not musical notation. Errors in a supplied source remain visible; the app does not silently replace that source with measure/BPM estimates. **정렬** offers automatic selection, estimated note/audio alignment, or fixed-BPM timing.

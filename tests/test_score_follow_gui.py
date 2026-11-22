@@ -17,8 +17,10 @@ from tests.test_score import xml_file
 from tests.test_score_geometry import vector_pdf
 
 
-@pytest.mark.parametrize("size", [(1500, 930), (800, 600)])
-def test_first_worker_result_follows_real_playback_and_resized_pages(tmp_path, monkeypatch, size):
+@pytest.mark.parametrize("size,lead_in", [((1500, 930), 0), ((800, 600), 0), ((800, 930), 2)])
+def test_first_worker_result_follows_real_playback_and_resized_pages(
+    tmp_path, monkeypatch, size, lead_in,
+):
     paths = Paths(tmp_path / "project")
     paths.create()
     audio = paths.targets / "study.wav"
@@ -52,11 +54,13 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(tmp_path, m
         mode.setCurrentIndex(mode.findData("tempo"))
         bpm = next(x for x in dialog.findChildren(QDoubleSpinBox) if x.minimum() == 20)
         bpm.setValue(120)
+        lead = next(x for x in dialog.findChildren(QDoubleSpinBox) if x.maximum() == 1800)
+        lead.setValue(lead_in)
         dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Ok).click()
 
     def play_at(seconds, index, page):
         matching_view = panel.view_matches()
-        milliseconds = round(seconds * 1000)
+        milliseconds = round((seconds + lead_in) * 1000)
         window.player.setPosition(milliseconds)
         window.player.play()
         wait_until(app, lambda: (
@@ -65,6 +69,9 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(tmp_path, m
         ), timeout=10)
         assert panel.camera_timer.isActive()
         assert not matching_view or panel.view_matches()
+        box = panel.timeline.data["scroll"]["frames"][index]["box"]
+        assert panel.view.label.highlight_box == box
+        assert not panel.view.label.highlight_rect().isEmpty()
         window.player.pause()
         assert not panel.camera_timer.isActive()
         return panel.view.verticalScrollBar().value()
@@ -98,8 +105,10 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(tmp_path, m
         monkeypatch.setattr("practice_player.score_layout.analyze_layout", no_analysis)
         monkeypatch.setattr("practice_player.score_geometry.detect_pdf_layout", no_analysis)
         top = play_at(0.25, 0, 0)
+        first_box = panel.view.label.highlight_box
         bottom = play_at(4.25, 2, 0)
         assert bottom > top
+        assert panel.view.label.highlight_box != first_box
         play_at(6.25, 3, 1)
         returned = play_at(8.25, 4, 0)
         assert returned < bottom and "2회차" in panel.measure.text()
@@ -131,8 +140,11 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(tmp_path, m
 
         panel.manual_page(2)
         assert not panel.follow.isChecked()
-        window.player.setPosition(250)
+        window.player.setPosition(round((lead_in + 0.25) * 1000))
         assert panel.view.page == 1
+        assert panel.view.label.highlight_box is None
+        panel.manual_page(1)
+        assert panel.view.label.highlight_box == first_box
     finally:
         if window.worker:
             window.cancel_job()

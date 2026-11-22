@@ -4,6 +4,7 @@
 import math
 
 SCROLL_VERSION = 1
+MEASURE_BOX_VERSION = 1
 
 
 def view_profile(zoom, width, height):
@@ -40,6 +41,16 @@ def validate_scroll(data, cues, page_count):
     for cue, frame in zip(cues, frames):
         if frame["page"] != cue["page"] or frame["source_index"] != cue["source_index"]:
             raise ValueError("페이지/마디 변경 후 스크롤을 다시 분석하세요.")
+        if "box" in frame:
+            box = frame["box"]
+            if not isinstance(box, dict) or any(
+                type(box.get(key)) not in (int, float) or not math.isfinite(box[key])
+                for key in ("left", "top", "right", "bottom")
+            ):
+                raise ValueError("마디 표시 위치의 형식이 올바르지 않습니다.")
+            if not (0 <= box["left"] < box["right"] <= 1
+                    and 0 <= box["top"] < box["bottom"] <= 1):
+                raise ValueError("마디 표시 위치가 페이지 범위를 벗어났습니다.")
         width, height = rendered_size(sizes[cue["page"]], profile)
         for key in ("x0", "x1", "y0", "y1", "intro_y"):
             limit = max(
