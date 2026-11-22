@@ -132,15 +132,14 @@ class Ensemble {
   async prepare() {
     if (this.wantsReady) { this.unready(); return; }
     if (!this.role || this.preparing) return;
-    const generation = this.generation;
+    const generation = this.generation, outputGeneration = audioGeneration;
     this.preparing = true; this.update();
     try {
-      await audioReady();
-      if (generation !== this.generation) return;
+      if (!await audioReady() || generation !== this.generation || outputGeneration !== audioGeneration) return;
       if (this.downloadTask || (!ready && this.role === 'member' && this.shared)) await this.download();
-      if (generation !== this.generation || document.hidden) return;
+      if (generation !== this.generation || outputGeneration !== audioGeneration || document.hidden) return;
       requireMagic(ready && !loading, '연습 파일을 연 뒤 준비를 눌러 주세요.');
-      if (!await preparePlayback() || generation !== this.generation || document.hidden) return;
+      if (!await preparePlayback() || generation !== this.generation || outputGeneration !== audioGeneration || document.hidden) return;
       requireMagic(ctx.state === 'running', '소리가 일시정지되었습니다. 합주 준비를 다시 눌러 주세요.');
       const media = this.media();
       requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');

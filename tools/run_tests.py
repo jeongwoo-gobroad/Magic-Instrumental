@@ -13,7 +13,7 @@ def main():
         print(f"\nTesting {module.name} in a fresh process", flush=True)
         child_env = None
         if sys.platform == "darwin" and module.name in {
-            "test_session_player.py", "test_web_player.py",
+            "test_session_player.py", "test_web_audio.py", "test_web_player.py",
         }:
             # Preserve native browser exit diagnostics without changing test behavior.
             child_env = os.environ.copy()
