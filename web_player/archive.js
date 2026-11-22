@@ -8,6 +8,35 @@ const crcTable = Uint32Array.from({length: 256}, (_, n) => {
   for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
   return n >>> 0;
 });
+function validateMp3(data, audio) {
+  const bytes = new DataView(data), error = 'MP3 반주 정보가 손상되었거나 지원하지 않는 형식입니다. 데스크톱에서 다시 저장해 주세요.';
+  const rates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+  let at = 0, count = 0, declared = 0;
+  while (at < bytes.byteLength) {
+    requireMagic(at + 4 <= bytes.byteLength, error);
+    const header = bytes.getUint32(at), bitrate = rates[(header >>> 12) & 15];
+    requireMagic((header >>> 21) === 0x7ff && ((header >>> 19) & 3) === 3 && ((header >>> 17) & 3) === 1 && ((header >>> 10) & 3) === 0 && ((header >>> 6) & 3) !== 3 && bitrate === audio.bitrate_kbps, error);
+    const size = Math.floor(144000 * bitrate / 44100) + ((header >>> 9) & 1);
+    requireMagic(at + size <= bytes.byteLength, error);
+    if (!count) {
+      // The first frame carries Info/Xing; only subsequent frames contain audio.
+      const tag = 4 + ((header & 0x10000) ? 0 : 2) + 32;
+      requireMagic(tag + 16 <= size && [0x496e666f, 0x58696e67].includes(bytes.getUint32(tag)), error);
+      const flags = bytes.getUint32(tag + 4);
+      requireMagic((flags & 3) === 3 && (flags & ~15) === 0, error);
+      declared = bytes.getUint32(tag + 8);
+      requireMagic(bytes.getUint32(tag + 12) === bytes.byteLength, error);
+      const lame = tag + 16 + ((flags & 4) ? 100 : 0) + ((flags & 8) ? 4 : 0);
+      requireMagic(lame + 36 <= size && [0x4c414d45, 0x4c617663, 0x4c617666].includes(bytes.getUint32(lame)), error);
+      const padding = bytes.getUint8(lame + 21) * 65536 + bytes.getUint16(lame + 22);
+      const samples = declared * 1152 - (padding >>> 12) - (padding & 4095);
+      requireMagic(declared > 0 && samples === audio.frames && samples * 4 <= AUDIO_LIMIT, error);
+    }
+    at += size; count++;
+    requireMagic(count <= declared + 1 && (count - 1) * 1152 <= AUDIO_LIMIT / 4 + 8190, error);
+  }
+  requireMagic(count === declared + 1, error);
+}
 class MagicArchive {
   constructor(file) { this.file = file; this.entries = new Map(); }
   async open() {
@@ -31,7 +60,7 @@ class MagicArchive {
       const names = central.getUint16(cursor + 28, true), extra = central.getUint16(cursor + 30, true), comment = central.getUint16(cursor + 32, true), offset = central.getUint32(cursor + 42, true);
       requireMagic((flags & ~0x800) === 0 && method === 0 && packed === bytes && bytes <= AUDIO_LIMIT && offset + 30 < start && cursor + 46 + names + extra + comment <= size && central.getUint16(cursor + 34, true) === 0, '압축·암호화·분할 파일은 지원하지 않습니다. .magic 저장으로 다시 만들어 주세요.');
       const name = decoder.decode(new Uint8Array(central.buffer, cursor + 46, names));
-      requireMagic(/^(manifest\.json|timeline\.json|audio\/instrumental\.wav|score\/source\.(pdf|gp3|gp4|gp5)|pages\/\d{4}\.png|parts\/\d{2}\/(timeline\.json|pages\/\d{4}\.png))$/.test(name) && !this.entries.has(name), '중복되거나 허용되지 않은 파일 이름입니다.');
+      requireMagic(/^(manifest\.json|timeline\.json|audio\/instrumental\.(wav|mp3)|score\/source\.(pdf|gp3|gp4|gp5)|pages\/\d{4}\.png|parts\/\d{2}\/(timeline\.json|pages\/\d{4}\.png))$/.test(name) && !this.entries.has(name), '중복되거나 허용되지 않은 파일 이름입니다.');
       const local = new DataView(await file.slice(offset, offset + 30).arrayBuffer());
       requireMagic(local.getUint32(0, true) === 0x04034b50 && local.getUint16(6, true) === flags && local.getUint16(8, true) === method && local.getUint32(14, true) === crc && local.getUint32(18, true) === bytes && local.getUint32(22, true) === bytes && local.getUint16(26, true) === names, '파일 정보가 일치하지 않습니다.');
       const from = offset + 30 + names + local.getUint16(28, true), to = from + bytes;
@@ -42,10 +71,17 @@ class MagicArchive {
     spans.sort((a, b) => a[0] - b[0]);
     requireMagic(cursor === size && spans.every((s, i) => !i || s[0] >= spans[i - 1][1]), '파일 영역이 겹치거나 손상되었습니다.');
     const manifest = await this.json('manifest.json', 1000000);
-    requireMagic(manifest.format === 'Magic-Instrumental' && [1, 2].includes(manifest.version), '이 .magic 버전은 지원하지 않습니다. 재생기를 업데이트해 주세요.');
+    requireMagic(manifest.format === 'Magic-Instrumental' && [1, 2, 3].includes(manifest.version), '이 .magic 버전은 지원하지 않습니다. 재생기를 업데이트해 주세요.');
     requireMagic(typeof manifest.title === 'string' && manifest.title.length <= 200 && Array.isArray(manifest.pages) && manifest.pages.length >= 1 && manifest.pages.length <= 200, '곡·악보 정보가 올바르지 않습니다.');
     const audio = manifest.audio, score = manifest.score;
-    requireMagic(audio?.path === 'audio/instrumental.wav' && Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration <= 3600 && audio.channels === 2 && audio.sample_rate === 44100 && Number.isInteger(audio.pitch_semitones) && Math.abs(audio.pitch_semitones) <= 12 && manifest.timeline === 'timeline.json', '반주 정보가 올바르지 않습니다.');
+    requireMagic(audio && Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration <= 3600 && audio.channels === 2 && audio.sample_rate === 44100 && Number.isInteger(audio.pitch_semitones) && Math.abs(audio.pitch_semitones) <= 12 && manifest.timeline === 'timeline.json', '반주 정보가 올바르지 않습니다.');
+    if (manifest.version === 3) {
+      requireMagic(audio.path === 'audio/instrumental.mp3' && audio.codec === 'mp3' && [128, 192, 256, 320].includes(audio.bitrate_kbps), 'MP3 반주 형식이 올바르지 않습니다.');
+      requireMagic(Number.isSafeInteger(audio.frames) && audio.frames > 0 && audio.frames * 4 <= AUDIO_LIMIT && audio.duration === audio.frames / audio.sample_rate, 'MP3 원본 길이가 올바르지 않거나 재생 메모리 한도를 넘습니다.');
+      requireMagic(typeof audio.source_sha256 === 'string' && /^[a-f0-9]{64}$/.test(audio.source_sha256), '원곡 식별 정보가 올바르지 않습니다.');
+    } else {
+      requireMagic(audio.path === 'audio/instrumental.wav' && audio.codec === undefined, '기존 연습 파일에는 WAV 반주가 필요합니다. 재생기를 업데이트하거나 파일을 다시 저장해 주세요.');
+    }
     requireMagic(['pdf', 'gp'].includes(score?.kind) && typeof score.part === 'string' && score.part.length <= 500 && (score.kind === 'pdf' ? score.path === 'score/source.pdf' : /^score\/source\.gp[345]$/.test(score.path)), '악보 종류가 올바르지 않습니다.');
     const expected = new Set(['manifest.json', 'timeline.json', audio.path, score.path]);
     const addPages = (pages, prefix) => {
@@ -57,7 +93,7 @@ class MagicArchive {
     };
     addPages(manifest.pages, 'pages');
     this.parts = [{track: score.track ?? 1, name: score.part || '악보', pages: manifest.pages, timeline: manifest.timeline}];
-    if (manifest.version === 2) {
+    if (manifest.version === 2 || (manifest.version === 3 && score.kind === 'gp')) {
       requireMagic(score.kind === 'gp' && Array.isArray(manifest.parts) && manifest.parts.length >= 1 && manifest.parts.length <= 64 && manifest.timing_basis?.shared === true && manifest.timing_basis.track === score.track, '전체 파트 정보가 올바르지 않습니다.');
       const tracks = new Set(); let total = 0;
       for (const part of manifest.parts) {
@@ -71,6 +107,8 @@ class MagicArchive {
       }
       requireMagic(tracks.has(score.track) && total <= 1000, '기준 파트가 없거나 전체 페이지가 너무 많습니다.');
       this.parts = manifest.parts;
+    } else if (manifest.version === 3) {
+      requireMagic(manifest.parts === undefined && manifest.timing_basis === undefined, 'PDF 파트 정보가 올바르지 않습니다.');
     }
     requireMagic(expected.size === this.entries.size && [...expected].every(n => this.entries.has(n)), '연습 파일의 구성 요소가 빠졌습니다.');
     for (const name of expected) if (name !== 'manifest.json') {
