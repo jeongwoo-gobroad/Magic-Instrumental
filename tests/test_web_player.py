@@ -120,7 +120,102 @@ def test_phone_file_and_score_navigation(page, study_files):
     for target in ("#playerControls", "#scoreArea"):
         page.locator(f'.practice-links a[href="{target}"]').click()
         assert page.locator(target).bounding_box()["y"] < 5
+    assert page.get_by_label("마디 강조", exact=True).is_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_highlight_toggle_preserves_paused_follow_and_camera(page, study_files):
+    open_study(page, study_files["gp"])
+    toggle, highlight = page.locator("#highlightEnabled"), page.locator("#highlight")
+    assert toggle.is_checked() and highlight.is_visible()
+    # Inspect within the change event's turn, before another animation frame can hide it.
+    assert toggle.evaluate("""el => {
+      el.checked = false; el.dispatchEvent(new Event('change'));
+      return document.getElementById('highlight').hidden;
+    }""")
+    assert page.locator("#follow").is_checked()
+    page.locator("#zoom").select_option("3")
+    page.evaluate("MagicPlayer.seek(52, false)")
+    page.wait_for_function("MagicPlayer.state().page > 0")
+    page.wait_for_function("document.getElementById('viewport').scrollTop > 20")
+    assert highlight.is_hidden() and not page.evaluate("MagicPlayer.state().playing")
+    assert "27마디" in page.locator("#measure").inner_text()
+
+    page.locator("#follow").uncheck()
+    shown = page.evaluate("MagicPlayer.state().page")
+    page.evaluate("MagicPlayer.seek(0, false)")
+    toggle.check()
+    assert page.evaluate("MagicPlayer.state().page") == shown
+    assert highlight.is_hidden() and "1마디" in page.locator("#measure").inner_text()
+    while shown > 0:
+        page.locator("#prevPage").click()
+        page.wait_for_function("page => MagicPlayer.state().page === page", arg=shown - 1)
+        shown -= 1
+    assert highlight.is_visible()
+
+    camera = page.locator("#viewport").evaluate("el => [el.scrollLeft, el.scrollTop]")
+    page.evaluate("MagicPlayer.seek(4, false)")
+    assert "3마디" in page.locator("#measure").inner_text()
+    assert highlight.evaluate("""el => {
+      const box = MagicPlayer.archive().timing.cues[MagicPlayer.state().cue].box;
+      return Math.abs(parseFloat(el.style.left) - box.left * 100) < .0001 &&
+             Math.abs(parseFloat(el.style.top) - box.top * 100) < .0001;
+    }""")
+    toggle.uncheck()
+    assert toggle.evaluate("""el => {
+      el.checked = true; el.dispatchEvent(new Event('change'));
+      return !document.getElementById('highlight').hidden;
+    }""")
+    assert not page.locator("#follow").is_checked()
+    assert page.locator("#viewport").evaluate("el => [el.scrollLeft, el.scrollTop]") == camera
+    assert page.evaluate("MagicPlayer.state().position") == 4
+    assert not page.evaluate("MagicPlayer.state().playing")
+
+
+def test_highlight_preference_survives_parts_files_and_reload(page, study_files):
+    open_study(page, study_files["gp"])
+    toggle, highlight = page.locator("#highlightEnabled"), page.locator("#highlight")
+    toggle.uncheck()
+    page.locator("#partSelect").select_option("1")
+    page.wait_for_function("MagicPlayer.archive().activePart.track === 1")
+    assert not toggle.is_checked() and highlight.is_hidden()
+    open_study(page, study_files["pdf"])
+    assert not toggle.is_checked() and highlight.is_hidden()
+    assert page.evaluate("localStorage.getItem('magic-measure-highlight')") == "false"
+    page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    assert not toggle.is_checked()
+    open_study(page, study_files["pdf"])
+    assert highlight.is_hidden()
+    toggle.check()
+    assert highlight.is_visible()
+    assert page.evaluate("localStorage.getItem('magic-measure-highlight')") == "true"
+    page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    assert toggle.is_checked()
+    open_study(page, study_files["pdf"])
+    assert highlight.is_visible()
+
+
+def test_highlight_toggle_works_without_local_storage(page, study_files):
+    page.add_init_script("""
+      for (const method of ['getItem', 'setItem']) {
+        Storage.prototype[method] = () => {
+          throw new DOMException('Storage blocked', 'SecurityError');
+        };
+      }
+    """)
+    page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    open_study(page, study_files["pdf"])
+    toggle, highlight = page.locator("#highlightEnabled"), page.locator("#highlight")
+    assert toggle.is_checked() and highlight.is_visible()
+    toggle.uncheck()
+    assert highlight.is_hidden()
+    page.evaluate("MagicPlayer.seek(4, false)")
+    assert highlight.is_hidden() and "3마디" in page.locator("#measure").inner_text()
+    toggle.check()
+    assert highlight.is_visible() and not page.evaluate("MagicPlayer.state().playing")
 
 
 def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):

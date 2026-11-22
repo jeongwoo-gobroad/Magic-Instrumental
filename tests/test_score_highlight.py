@@ -5,13 +5,13 @@ from copy import deepcopy
 
 import pytest
 from pypdf import PdfWriter
-from PySide6.QtCore import QCoreApplication, QEvent, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings, QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialogButtonBox, QTableWidget
 
 from practice_player.cache import hash_file
 from practice_player.config import Paths
-from practice_player.gui import STYLE
+from practice_player.gui import STYLE, Window
 from practice_player.score import ScoreTimeline
 from practice_player.score_gui import PdfView, ScorePanel
 from practice_player.theme import stylesheet
@@ -202,6 +202,72 @@ def test_highlight_tracks_seek_repeat_offset_and_manual_page_while_paused(shown_
     check_box(label, FIRST)
     panel.clear_score()
     assert panel.timeline is None and label.highlight_box is None
+
+
+def test_highlight_toggle_preserves_paused_position_following_and_view(shown_score):
+    app, panel, path = shown_score
+    panel.on_position(2250)
+    assert panel.highlight.isChecked()
+    check_box(panel.view.label, FIRST)
+    profile, timeline = panel.view.profile(), deepcopy(panel.timeline.data)
+    saved = path.read_bytes()
+    camera = (panel.view.horizontalScrollBar().value(), panel.view.verticalScrollBar().value())
+
+    panel.highlight.click()
+    assert panel.view.label.highlight_box is None
+    assert panel.view.highlight_box == FIRST
+    assert panel.follow.isChecked() and panel.current_index == 0
+    assert panel.last_position == 2250 and "1마디" in panel.measure.text()
+    assert not panel.camera_timer.isActive()
+    panel.highlight.click()
+    check_box(panel.view.label, FIRST)
+    app.processEvents()
+    assert panel.view.profile() == profile and panel.view_matches()
+    assert camera == (
+        panel.view.horizontalScrollBar().value(), panel.view.verticalScrollBar().value(),
+    )
+
+    panel.manual_page(2)
+    panel.highlight.click()
+    panel.highlight.click()
+    assert not panel.follow.isChecked() and panel.view.page == 1
+    assert panel.view.label.highlight_box is None
+    panel.manual_page(1)
+    check_box(panel.view.label, FIRST)
+    panel.highlight.click()
+    panel.on_position(4250)
+    assert panel.current_index == 1 and "2마디" in panel.measure.text()
+    assert panel.view.page == 0 and panel.view.label.highlight_box is None
+    panel.highlight.click()
+    assert panel.view.label.highlight_box is None
+    panel.manual_page(2)
+    check_box(panel.view.label, SECOND)
+    assert panel.timeline.data == timeline and path.read_bytes() == saved
+
+
+def test_window_remembers_highlight_choice_in_ui_settings(tmp_path):
+    app = QApplication.instance() or QApplication([])
+    paths = Paths(tmp_path / "project")
+    paths.create()
+    window = Window(paths)
+    try:
+        assert window.score_panel.highlight.isChecked()
+        assert window.score_panel.view.highlight_enabled
+        window.score_panel.highlight.click()
+        assert not window.score_panel.view.highlight_enabled
+    finally:
+        dispose(window, app)
+
+    restored = Window(paths)
+    try:
+        assert not restored.score_panel.highlight.isChecked()
+        assert not restored.score_panel.view.highlight_enabled
+        restored.score_panel.highlight.click()
+        assert restored.score_panel.view.highlight_enabled
+    finally:
+        dispose(restored, app)
+    preferences = QSettings(str(paths.processed / "ui.ini"), QSettings.Format.IniFormat)
+    assert preferences.value("score_highlight", False, type=bool)
 
 
 def test_reviewed_page_edit_removes_stale_highlight_geometry(shown_score):

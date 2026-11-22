@@ -219,6 +219,7 @@ async function showPage(index) {
   pendingPage = -1; shownPage = index; $('scoreImage').src = url; $('scoreImage').hidden = false; $('empty').hidden = true;
   $('pageText').textContent = `${index + 1} / ${archive.pages.length}`;
   $('viewport').scrollTo(0, 0); resizePaper();
+  showHighlight(archive.timing.cues[cueAt(nowPosition())]);
 }
 function resizePaper() {
   if (!archive || shownPage < 0) return;
@@ -227,6 +228,12 @@ function resizePaper() {
   $('paper').style.width = width + 'px'; $('paper').style.minHeight = '0';
   $('paper').style.height = (width * page.height / page.width) + 'px';
 }
+function showHighlight(cue) {
+  const highlight = $('highlight'), box = cue?.box;
+  highlight.hidden = !$('highlightEnabled').checked || !box || shownPage !== cue.page;
+  if (highlight.hidden) return;
+  Object.assign(highlight.style, {left: box.left * 100 + '%', top: box.top * 100 + '%', width: (box.right - box.left) * 100 + '%', height: (box.bottom - box.top) * 100 + '%'});
+}
 function showPosition() {
   const time = nowPosition(); position = time;
   $('clock').textContent = `${clockText(time)} / ${clockText(duration)}`;
@@ -234,13 +241,12 @@ function showPosition() {
   const index = cueAt(time); currentCue = index;
   const cue = archive?.timing.cues[index];
   $('measure').textContent = cue ? `${cue.measure}마디 · ${cue.visit}회차` : '—';
-  if (!cue) { $('highlight').hidden = true; return; }
+  showHighlight(cue);
+  if (!cue) return;
   if ($('follow').checked && shownPage !== cue.page) { showPage(cue.page).catch(fail); return; }
   const b = cue.box;
-  if (shownPage !== cue.page) { $('highlight').hidden = true; return; }
+  if (shownPage !== cue.page) return;
   const paper = $('paper'), view = $('viewport'), width = paper.clientWidth, height = paper.clientHeight;
-  Object.assign($('highlight').style, {left: b.left * 100 + '%', top: b.top * 100 + '%', width: (b.right - b.left) * 100 + '%', height: (b.bottom - b.top) * 100 + '%'});
-  $('highlight').hidden = false;
   if ($('follow').checked) {
     const end = archive.timing.cues[index + 1]?.start ?? archive.timing.end;
     const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
@@ -399,6 +405,11 @@ $('zoom').onchange = resizePaper; window.addEventListener('resize',resizePaper);
 $('scoreImage').onload = resizePaper;
 for (const [id, direction] of [['prevPage',-1],['nextPage',1]]) $(id).onclick = () => { $('follow').checked = false; showPage(shownPage + direction).catch(fail); };
 for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEventListener(event, () => { $('follow').checked = false; }, {passive:true});
+try { $('highlightEnabled').checked = localStorage.getItem('magic-measure-highlight') !== 'false'; } catch (_) {}
+$('highlightEnabled').onchange = () => {
+  try { localStorage.setItem('magic-measure-highlight', String($('highlightEnabled').checked)); } catch (_) {}
+  showHighlight(archive?.timing.cues[cueAt(nowPosition())]);
+};
 function theme(mode) { document.documentElement.dataset.theme = mode; try { localStorage.setItem('magic-theme',mode); } catch (_) {} }
 try { theme(localStorage.getItem('magic-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')); } catch (_) { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');

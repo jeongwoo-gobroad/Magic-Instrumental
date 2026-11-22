@@ -108,6 +108,7 @@ class PdfView(QScrollArea):
         self.page = 0
         self.zoom = "page"
         self.cache = OrderedDict()
+        self.highlight_enabled = True
         self.highlight_page = None
         self.highlight_box = None
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
@@ -196,8 +197,14 @@ class PdfView(QScrollArea):
         self.highlight_page, self.highlight_box = page, box
         self.update_highlight()
 
+    def set_highlight_enabled(self, enabled):
+        self.highlight_enabled = enabled
+        self.update_highlight()
+
     def update_highlight(self):
-        box = self.highlight_box if self.document and self.highlight_page == self.page else None
+        box = self.highlight_box if (
+            self.highlight_enabled and self.document and self.highlight_page == self.page
+        ) else None
         self.label.set_highlight(box)
 
     def move_camera(self, x, y):
@@ -215,9 +222,10 @@ class ScorePanel(QWidget):
     seek_requested = Signal(int)
     timeline_changed = Signal()
 
-    def __init__(self, paths):
+    def __init__(self, paths, preferences=None):
         super().__init__()
         self.paths = paths
+        self.preferences = preferences
         self.audio = None
         self.source_hash = ""
         self.pdf = None
@@ -278,20 +286,8 @@ class ScorePanel(QWidget):
         self.status.setWordWrap(True)
         self.status.setObjectName("muted")
         self.status_area = status_area(self.status, "악보 분석 상태")
-        layout.addWidget(self.status_area)
         row = QHBoxLayout()
-        self.follow = QCheckBox("자동 넘김 · 스크롤")
-        self.follow.setChecked(True)
-        self.follow.setToolTip(
-            "끄면 페이지와 스크롤을 직접 조절합니다. 현재 마디 표시는 계속 갱신됩니다."
-        )
-        self.follow.toggled.connect(lambda _: self.on_position(self.last_position))
-        row.addWidget(self.follow)
-        self.measure = QLabel("현재 마디 · 회차")
-        self.measure.setWordWrap(True)
-        self.measure_area = status_area(self.measure, "현재 마디와 반복 회차")
-        self.measure.setText("—")
-        row.addWidget(self.measure_area, 1)
+        row.addWidget(self.status_area, 1)
         self.tools_toggle = QPushButton("준비 도구 접기")
         self.tools_toggle.setCheckable(True)
         self.tools_toggle.toggled.connect(tools.setHidden)
@@ -302,7 +298,33 @@ class ScorePanel(QWidget):
         )
         row.addWidget(self.tools_toggle)
         layout.addLayout(row)
+        row = QHBoxLayout()
+        self.follow = QCheckBox("자동 넘김 · 스크롤")
+        self.follow.setChecked(True)
+        self.follow.setToolTip(
+            "끄면 페이지와 스크롤을 직접 조절합니다. 현재 마디 표시는 계속 갱신됩니다."
+        )
+        self.follow.toggled.connect(lambda _: self.on_position(self.last_position))
+        row.addWidget(self.follow)
+        self.highlight = QCheckBox("마디 강조")
+        self.highlight.setObjectName("scoreHighlight")
+        self.highlight.setChecked(
+            preferences.value("score_highlight", True, type=bool)
+            if preferences is not None else True
+        )
+        self.highlight.setToolTip(
+            "현재 마디의 초록색 표시를 켜거나 끕니다. 자동 넘김과 스크롤은 그대로 유지합니다."
+        )
+        row.addWidget(self.highlight)
+        self.measure = QLabel("현재 마디 · 회차")
+        self.measure.setWordWrap(True)
+        self.measure_area = status_area(self.measure, "현재 마디와 반복 회차")
+        self.measure.setText("—")
+        row.addWidget(self.measure_area, 1)
+        layout.addLayout(row)
         self.view = PdfView()
+        self.view.set_highlight_enabled(self.highlight.isChecked())
+        self.highlight.toggled.connect(self.change_highlight)
         self.view.geometry_changed.connect(self.update_view_status)
         self.view.manual_navigation.connect(lambda: self.follow.setChecked(False))
         layout.addWidget(self.view, 1)
@@ -346,6 +368,11 @@ class ScorePanel(QWidget):
         )
         layout.addLayout(row)
         self.set_busy(False)
+
+    def change_highlight(self, enabled):
+        self.view.set_highlight_enabled(enabled)
+        if self.preferences is not None:
+            self.preferences.setValue("score_highlight", enabled)
 
     def bind_track(self, audio, source_hash):
         if self.source_hash != source_hash:

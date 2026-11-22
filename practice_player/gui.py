@@ -379,7 +379,7 @@ class Window(QMainWindow):
         controller.setWidgetResizable(True)
         controller.setWidget(root)
         controller.setMinimumWidth(410)
-        self.score_panel = ScorePanel(self.paths)
+        self.score_panel = ScorePanel(self.paths, preferences=self.preferences)
         self.score_panel.attach_player(self.player)
         self.score_panel.setMinimumWidth(300)
         self.score_panel.analysis_requested.connect(self.analyze_score)
