@@ -102,9 +102,8 @@ def loop_window(tmp_path, tone):
     window.load_result({"instrumental": str(tone), "source_hash": hash_file(tone), "cached": True})
     window.audio_output.setVolume(0)
     window.metronome.mute.setChecked(True)
-    # Exercise native looping at a normal tempo. A 400 BPM / one-beat / 2x
-    # fractional entry lasts only 50 ms and can legitimately cancel on a busy
-    # runner. Stall rejection is covered deterministically in test_count_in.
+    # Keep native transport checks at a normal tempo; fractional handoff and
+    # stall rejection have deterministic clock coverage in test_count_in.
     window.metronome.bpm.setValue(120)
     window.metronome.beats.setValue(4)
     wait_until(app, lambda: window.player.duration() > 0 and window.player.isSeekable())
@@ -152,6 +151,8 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
 ):
     app, window, _ = loop_window
     window.speed.setValue(200)
+    # 100 ms 진입도 첫 박에 맞춰 마지막 카운트가 50 ms 안에 잘리지 않게 한다.
+    window.metronome.origin.setValue(0.1)
     window.region.last.setCurrentIndex(0)
     window.region.count_each.setChecked(count_each)
     # Opposite options prove manual and per-pass count settings are independent.
@@ -209,7 +210,8 @@ def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch
     assert not failures, failures
     if count_each:
         assert window.count_in.active and window.player.position() == 2500
-        wait_until(app, lambda: window.player.isPlaying(), timeout=5)
+        wait_until(app, lambda: window.player.isPlaying() or bool(failures), timeout=5)
+        assert not failures, failures
     assert window.player.position() >= 2500
     assert window.player.isPlaying()
 
