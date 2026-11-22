@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-const CACHE = 'magic-v2-5d22494341cd84e5-verified';
+const CACHE = 'magic-v2-1f73633ad3a8041b-verified';
 async function installPlayer() {
-  const page = await fetch('./index.html?rev=5d22494341cd84e5', {
-    cache: 'reload', integrity: 'sha256-XSJJQ0HNhOX8ZsXiCFyFGqbVlQVCENShLdeJ6lqnCX0='
+  const page = await fetch('./index.html?rev=1f73633ad3a8041b', {
+    cache: 'reload', integrity: 'sha256-H3NjOtOoBBvVgydyvVOfeXaGlw9bZGpAoZyJ2pk6B9M='
   });
   if (!page.ok) throw new Error('The new player is unavailable.');
   const cache = await caches.open(CACHE);
