@@ -12,7 +12,7 @@ In a small window, scroll down the left side to reach the save buttons. Drag the
 
 ## Install and open
 
-Download the latest **Magic-Instrumental-version.zip** from [Releases](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/latest) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [2.4.5 follow-resume installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v2.4.5/Magic-Instrumental-2.4.5-follow-resume-1.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -21,6 +21,12 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 **If Windows freezes or closes while checking for updates:** close the app and error window, double-click the existing `update.bat`, then reopen with `start.bat`. Update to v2.3.1 or later; no in-app button is needed. Keep your audio, scores and processed results. Reinstallation is not required for this fix.
 
 ## Update without moving your songs
+
+**Apply the 2.4.5 follow-resume repair:** fully extract the [repair tool ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v2.4.5/Magic-Instrumental-2.4.5-follow-resume-1-Repair.zip), close the app, then run **`repair.command` on Mac** or **`repair.bat` on Windows**. Select your existing app folder containing the usual `start` file and `targets`. After completion, launch the same `start` file. Earlier versions can use this tool for a full update.
+
+The display version remains **2.4.5**, so an existing 2.4.5 installation will not show a newer-version notice for this repair. Run the repair tool once; it makes no further changes if the same repair is already installed. Your media, scores, processed results and settings stay in place. [Repair steps and supported installations (Korean)](docs/DESKTOP_REPAIR.md)
+
+### Regular version updates
 
 On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
 
@@ -51,6 +57,8 @@ Existing `.magic` files containing WAV remain playable and are never converted a
 
 Automatic page turns and scrolling are controlled separately. The measure number and repeat visit keep updating when highlighting or following is off. An enabled highlight appears only on the current measure's page; opening another page hides it until you return. Pausing keeps it in place; seeking, repeats and coda jumps update it to the new playback position. Zooming or resizing scales it with the page.
 
+On the desktop, scrolling or turning pages manually disables following. Turn **자동 넘김 · 스크롤** back on to return immediately to the current playback measure. Saved measure positions keep following available after zooming, resizing or folding the preparation controls, including when highlighting is off. Older analyses without measure positions retain page following and show a view-only reanalysis notice.
+
 **If highlighting is on but an older analysis has no measure positions:** open score pre-analysis and select **기존 마디 시간표 유지 · 화면 이동 경로만 분석** (keep the existing measure timeline and rebuild only the display path). This adds measure positions while preserving your corrected timings. It does not rerun note recognition or audio alignment, and the original score stays unchanged.
 
 **We recommend Guitar Pro scores in `.gp3`, `.gp4` or `.gp5` format.** The app reads notes and measures directly from these files and lets you choose a part by name.
@@ -63,7 +71,7 @@ When the app falls back to PDF measure/BPM timing, it follows printed order unle
 
 **If repeat/coda behavior changed after an update:** reopen the score. When the latest result is an unreviewed automatic fallback from an older analysis policy, the app reconnects an earlier reviewed timeline for the exact same audio and PDF if one remains available. Otherwise run score pre-analysis again. Previous recognition sources are reused only when their contents match the saved analysis. Existing files, reviewed timing and explicit routes are preserved. Save a new `.magic` after changing the timeline so the tablet receives the correction.
 
-**If analysis completes but scrolling never starts:** update to 2.4.2 or later and run **기존 마디 시간표 유지 · 화면 이동 경로만 분석** at your preferred zoom and window size. Analysis messages no longer resize the score viewport. A later resize or setup-panel fold preserves page following; repeat view-only analysis to restore precise camera movement. To reread repeat/coda signs, clear that checkbox and run full analysis. A combined timing/scroll job switches to the new result only after both stages succeed.
+**If following does not resume when you turn it back on:** apply the 2.4.5 follow-resume repair. When saved measure positions exist, returning to the current measure needs no reanalysis. Use **악보 사전 분석 → 기존 마디 시간표 유지 · 화면 이동 경로만 분석** to rebuild a smooth camera path for a new zoom/window size, or to add missing positions to an older analysis. This preserves reviewed timing without rerunning note recognition or audio alignment. To reread repeat/coda signs, clear that checkbox and run full analysis. A combined timing/scroll job switches to the new result only after both stages succeed.
 
 **Desktop metronome alone:** uncheck ‘음원과 연동’ (link to audio), then press ‘메트로놈 켜기’ (turn metronome on). No song is required. An always-visible hint and status show standalone playback, waiting for audio, linked playback, or other waiting states; mute and zero volume are also indicated.
 

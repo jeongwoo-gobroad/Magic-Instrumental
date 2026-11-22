@@ -244,6 +244,7 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
 
     from practice_player.gui import STYLE, Window
     from tests.test_gui import wait_until
+    from tests.test_score_follow_resume import assert_current_measure_visible
 
     paths, audio, pdf, _, base = score_fixture
     app = QApplication.instance() or QApplication([])
@@ -260,6 +261,7 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
         app.processEvents()
         profile = panel.view.profile()
         path = analyze_scroll(audio, pdf, paths, base, profile)
+        saved = path.read_bytes()
         panel.load_timeline(path)
         app.processEvents()
         assert panel.view_matches(), (profile, panel.view.profile())
@@ -287,9 +289,8 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
         wait_until(app, lambda: not panel.camera_timer.isActive())
         panel.zoom.setCurrentIndex(panel.zoom.findData(3.0))
         assert not panel.view_matches()
-        before = panel.view.verticalScrollBar().value()
         panel.on_position(11000)
-        assert panel.view.verticalScrollBar().value() == before
+        assert_current_measure_visible(panel)
         assert "재분석" in panel.view_status.text()
         panel.zoom.setCurrentIndex(panel.zoom.findData(2.0))
         assert panel.view_matches(), (
@@ -300,6 +301,9 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
         app.processEvents()
         assert not panel.view_matches()
         assert rendered_size([595, 842], profile)[1] > profile["height"]
+        assert path.read_bytes() == saved
+        assert hash_file(audio) == panel.timeline.data["audio_sha256"]
+        assert hash_file(pdf) == panel.timeline.data["pdf_sha256"]
     finally:
         window.close()
         app.processEvents()

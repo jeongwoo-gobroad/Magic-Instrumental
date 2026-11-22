@@ -97,3 +97,12 @@ jobs:
           gh release create "v$VERSION" dist/*.zip dist/SHA256SUMS.txt dist/PUBLIC_FILES.json \
             --target "$GITHUB_SHA" --title "Magic-Instrumental v$VERSION" \
             --notes-file CHANGELOG.md
+      - name: Publish the additive 2.4.5 follow-resume repair
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(python3 -c 'from practice_player import __version__; print(__version__)')
+          if [ "$VERSION" != "2.4.5" ]; then
+            exit 0
+          fi
+          python3 -m tools.build_desktop_repair --publish
