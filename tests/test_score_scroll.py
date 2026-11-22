@@ -126,6 +126,24 @@ def test_scroll_plan_validation_and_changed_source(score_fixture):
         analyze_scroll(changed, pdf, paths, base, view_profile(2, 420, 360))
 
 
+def test_scroll_uses_hash_verified_relocated_xml_without_rewriting_reviewed_base(score_fixture):
+    paths, audio, pdf, xml, base = score_fixture
+    original = base.read_bytes()
+    moved = xml.rename(xml.with_name("reviewed-notation-relocated.musicxml"))
+    different = xml.with_name("different.musicxml")
+    different.write_text("<score-partwise/>")
+    profile = view_profile(2, 420, 360)
+    with pytest.raises(ValueError, match="같은 MusicXML"):
+        analyze_scroll(audio, pdf, paths, base, profile, musicxml=different)
+    path = analyze_scroll(audio, pdf, paths, base, profile, musicxml=moved)
+    result = ScoreTimeline.load(path)
+    assert result.data["musicxml_path"] == str(moved.resolve())
+    assert result.data["xml_sha256"] == hash_file(moved)
+    assert result.data["reviewed"] and result.data["offset"] == 0.125
+    assert result.cues == ScoreTimeline.load(base).cues
+    assert base.read_bytes() == original
+
+
 def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch):
     from PySide6.QtWidgets import QApplication
 

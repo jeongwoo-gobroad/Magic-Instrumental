@@ -34,6 +34,8 @@ from .score import (
 )
 from .score_geometry import LAYOUT_VERSION
 from .score_input import OMR_VERSION, prepare_omr_input
+from .score_sources import MUSICXML_LIMIT, embedded_musicxml, read_musicxml_bytes
+from .score_symbols import PDF_SYMBOL_VERSION
 
 
 class _RecognitionFailure(RuntimeError):
@@ -178,25 +180,9 @@ def run_omr(pdf: Path, output: Path, report) -> Path:
 
 
 def read_musicxml(path: Path) -> bytes:
-    limit = 32 * 1024 * 1024
-    if path.stat().st_size > limit:
+    if path.stat().st_size > MUSICXML_LIMIT:
         raise ValueError("MusicXML이 너무 큽니다 (최대 32 MB).")
-    if zipfile.is_zipfile(path):
-        with zipfile.ZipFile(path) as archive:
-            container_info = archive.getinfo("META-INF/container.xml")
-            if container_info.file_size > 65536:
-                raise ValueError("잘못된 MusicXML 컨테이너입니다.")
-            container = ET.fromstring(archive.read(container_info))
-            rootfile = next(x for x in container.iter() if x.tag.split("}")[-1] == "rootfile")
-            info = archive.getinfo(rootfile.attrib["full-path"])
-            if info.file_size > limit:
-                raise ValueError("압축 해제한 MusicXML이 너무 큽니다.")
-            data = archive.read(info)
-    else:
-        data = path.read_bytes()
-    # Parse before handing anything to music21. No URL loading or archive extraction.
-    ET.fromstring(data)
-    return data
+    return read_musicxml_bytes(path.read_bytes())
 
 
 def validate_omr_systems(xml, bars):
@@ -580,7 +566,7 @@ def align_audio(audio: Path, notation: dict, report) -> tuple[list[float], float
 def _analyze_pdf_timing(
     audio, pdf, folder, audio_hash, pdf_hash, page_count, report,
     *, bpm, lead_in, route_override, meter_beats, meter_unit, force,
-    automatic=None, cache_only=False, validate_source=lambda: None,
+    automatic=None, cache_only=False, validate_source=lambda: None, publish=True,
 ):
     """Use visible bars and an explicit meter, without OMR or note alignment."""
     from .score_geometry import detect_pdf_layout
@@ -612,7 +598,8 @@ def _analyze_pdf_timing(
             if hash_file(audio) != audio_hash or hash_file(pdf) != pdf_hash:
                 raise ValueError("분석 중 원본 파일이 변경되었습니다. 다시 분석하세요.")
             validate_source()
-            atomic_json(folder / "latest.json", {"analysis": key})
+            if publish:
+                atomic_json(folder / "latest.json", {"analysis": key})
             report("저장된 PDF 마디 시간표를 불러왔습니다.", 1.0)
             return cached
     if cache_only:
@@ -679,7 +666,8 @@ def _analyze_pdf_timing(
         destination = folder / key
     destination.mkdir(exist_ok=True)
     plan.save(destination / "timeline.json")
-    atomic_json(folder / "latest.json", {"analysis": key})
+    if publish:
+        atomic_json(folder / "latest.json", {"analysis": key})
     report("PDF 마디 시간표 준비 완료 · 반주와 시간을 확인하세요.", 1.0)
     return destination / "timeline.json"
 
@@ -700,6 +688,7 @@ def analyze_score(
     lead_in=0.0,
     route_override="",
     force=False,
+    publish=True,
 ) -> Path:
     from pypdf import PdfReader
 
@@ -728,29 +717,52 @@ def analyze_score(
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".analysis.lock"), timeout=3600):
         pdf_options = dict(bpm=bpm, lead_in=lead_in, route_override=route_override,
-                           meter_beats=meter_beats, meter_unit=meter_unit, force=force)
+                           meter_beats=meter_beats, meter_unit=meter_unit, force=force,
+                           publish=publish)
         if mode == "pdf":
             return _analyze_pdf_timing(
                 audio, pdf, folder, audio_hash, pdf_hash, len(reader.pages), report, **pdf_options,
             )
         from .guitar_pro import GP_EXTENSIONS
 
-        musicxml = musicxml or matching_musicxml(pdf)
+        selection = "explicit" if musicxml is not None else None
+        if musicxml is None:
+            musicxml = matching_musicxml(pdf)
+            if musicxml is not None:
+                selection = "matching"
+        if musicxml is None:
+            reviewed = folder / "recognition/reviewed.musicxml"
+            if reviewed.is_file():
+                musicxml, selection = reviewed, "reviewed"
         if musicxml is None:
             musicxml = recover_notation_source(pdf, paths, audio_hash)
+            if musicxml is not None:
+                selection = "recovered"
         if musicxml is None:
-            for name in ("reviewed.musicxml", f"v{OMR_VERSION}/score.mxl"):
-                candidate = folder / "recognition" / name
-                if candidate.is_file():
-                    musicxml = candidate
-                    break
+            musicxml = embedded_musicxml(reader, folder)
+            if musicxml is not None:
+                selection = "embedded"
+        if musicxml is None:
+            candidate = folder / f"recognition/v{OMR_VERSION}/score.mxl"
+            if candidate.is_file():
+                musicxml = candidate
+            selection = "omr"
+        allow_fallback = selection == "omr"
+        labels = {
+            "explicit": "선택한 MusicXML/GP 원본", "matching": "같은 이름의 MusicXML/GP 원본",
+            "recovered": "이전 분석과 내용이 일치하는 인식 파일", "reviewed": "보정한 MusicXML",
+            "embedded": "PDF에 내장된 MusicXML", "omr": "PDF 음표 인식",
+        }
+        report(f"악보 입력 · {labels[selection]}", None)
         source_hash = hash_file(musicxml) if musicxml is not None else None
         if mode == "auto" and (gp_display or (
             musicxml is not None and musicxml.suffix.lower() in GP_EXTENSIONS
         )):
             mode = "audio"
-        automatic = {"request": {"version": AUTO_ANALYSIS_VERSION, "notation_sha256": source_hash,
-                                  "omr": OMR_VERSION}} if mode == "auto" else None
+        automatic = None
+        if mode == "auto" and allow_fallback:
+            automatic = {"request": {"version": AUTO_ANALYSIS_VERSION,
+                                      "notation_sha256": source_hash, "omr": OMR_VERSION}}
 
         def unchanged():
             if (hash_file(audio) != audio_hash or hash_file(pdf) != pdf_hash
@@ -780,9 +792,12 @@ def analyze_score(
                 musicxml=musicxml, gp_track=gp_track, gp_display=gp_display, mode=mode,
                 bpm=bpm, lead_in=lead_in, route_override=route_override, force=force,
                 meter_beats=meter_beats, meter_unit=meter_unit, validate_source=unchanged,
-                record_generated=record_generated,
+                record_generated=record_generated, allow_fallback=allow_fallback,
+                selection=selection, publish=publish,
             )
         except _RecognitionFailure as error:
+            if automatic is None:
+                raise
             unchanged()
             report("음표·반복 인식을 마치지 못해 마디선과 BPM으로 시간을 계산합니다.", None)
             automatic["fallback"] = {
@@ -800,15 +815,17 @@ def analyze_score(
 def _analyze_notation(
     audio, pdf, folder, audio_hash, pdf_hash, reader, report, *, musicxml, gp_track,
     gp_display, mode, bpm, lead_in, route_override, force, meter_beats, meter_unit,
-    validate_source, record_generated,
+    validate_source, record_generated, allow_fallback, selection, publish,
 ):
     from .guitar_pro import GP_EXTENSIONS, GP_VERSION, read_gp
 
     omr_folder = folder / "recognition"
+    # 이미 있는 악보 원본은 인식 실패를 이유로 마디선 시간표로 바꾸지 않는다.
+    recognition_mode = mode if allow_fallback else "audio"
     source_path, source_hash, source_info = None, None, {}
     if musicxml is None:
         work = omr_folder / f"v{OMR_VERSION}" / f"work-{time.time_ns()}"
-        generated = _recognize(mode, "omr", run_omr, pdf, work, report)
+        generated = _recognize(recognition_mode, "omr", run_omr, pdf, work, report)
         generated_hash = hash_file(generated)
         if hash_file(pdf) != pdf_hash:
             raise ValueError("인식 중 PDF가 변경되었습니다. 다시 분석하세요.")
@@ -847,6 +864,8 @@ def _analyze_notation(
         "music21": "10.5.2",
         "alignment": "chroma-dtw-v3-full-score",
         "pdf_recognition": LAYOUT_VERSION,
+        "pdf_symbols": PDF_SYMBOL_VERSION,
+        "notation_policy": "omr" if allow_fallback and mode == "auto" else "preserve-source",
         "omr": OMR_VERSION,
         "source_sha256": source_hash,
         "source_import": source_info,
@@ -868,7 +887,8 @@ def _analyze_notation(
             cached = None
         if cached:
             validate_source()
-            atomic_json(folder / "latest.json", {"analysis": key})
+            if publish:
+                atomic_json(folder / "latest.json", {"analysis": key})
             report("저장된 악보 사전 분석을 불러왔습니다.", 1.0)
             return cached
     report("도돌이표·반복 엔딩·D.C./D.S.·코다 연주 순서를 계산 중…", None)
@@ -883,13 +903,15 @@ def _analyze_notation(
 
             _, bars, layout = native_layout(gp_display)
         else:
-            _, bars, layout = _recognize(mode, "layout", analyze_layout, pdf, musicxml, report)
+            _, bars, layout = _recognize(
+                recognition_mode, "layout", analyze_layout, pdf, musicxml, report,
+            )
     except (ValueError, _RecognitionFailure) as failure:
         error = failure.__cause__ if isinstance(failure, _RecognitionFailure) else failure
         if not isinstance(error, ValueError):
             raise
         if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
-            if mode == "auto":
+            if recognition_mode == "auto":
                 raise _RecognitionFailure("layout", error) from error
             raise ValueError(
                 "원본 악보와 PDF의 마디를 정확히 연결하지 못했습니다. "
@@ -899,20 +921,20 @@ def _analyze_notation(
         extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
     else:
         if source_info.get("method") == "standard-staves-from-mixed-pdf":
-            _recognize(mode, "layout", validate_omr_systems, musicxml, bars)
+            _recognize(recognition_mode, "layout", validate_omr_systems, musicxml, bars)
         pages = {i: bar["page"] for i, bar in bars.items()}
         extra_warnings.extend(layout.get("warnings", []))
         # Geometric evidence is required before adding a missing navigation sign.
         if layout["method"] == "pdf-staves-barlines" and not route_override:
             document, additions, notes = _recognize(
-                mode, "navigation", supplement_xml, pdf, musicxml, bars,
+                recognition_mode, "navigation", supplement_xml, pdf, musicxml, bars,
             )
             extra_warnings.extend(notes)
     notation = _recognize(
-        mode, "notation", parse_notation, musicxml, len(reader.pages), route_override,
+        recognition_mode, "notation", parse_notation, musicxml, len(reader.pages), route_override,
         document=document, measure_pages=pages,
     )
-    if layout_error is not None and mode == "auto":
+    if layout_error is not None and recognition_mode == "auto":
         # 화면 배치 실패 때문에 이미 읽은 반복 순서까지 버리면 안 된다.
         if not route_override and not any(cue["marks"] for cue in notation["originals"]):
             raise _RecognitionFailure("layout", layout_error) from layout_error
@@ -989,6 +1011,7 @@ def _analyze_notation(
             "page_count": len(reader.pages),
             "xml_sha256": hash_file(musicxml),
             "musicxml_path": str(musicxml),
+            "notation_selection": selection,
             "notation_source": {
                 "path": str(source_path) if source_path else None,
                 "sha256": source_hash, **source_info,
@@ -1012,6 +1035,7 @@ def _analyze_notation(
         destination = folder / key
     destination.mkdir(exist_ok=True)
     plan.save(destination / "timeline.json")
-    atomic_json(folder / "latest.json", {"analysis": key})
+    if publish:
+        atomic_json(folder / "latest.json", {"analysis": key})
     report("악보 분석 완료 · 시간표와 반복 이동을 확인하세요.", 1.0)
     return destination / "timeline.json"
