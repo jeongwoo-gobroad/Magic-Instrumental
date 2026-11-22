@@ -11,6 +11,8 @@ The integrated source is `landing/index.html` on `main`. Publish a reviewed copy
 
 Prepare versioned links with the release changes, but publish the page only after both immutable release ZIP assets exist and their downloaded bytes match the release checksums. Verify desktop/phone layout, download response, footer links and supported-format wording. Place installation first, followed by score requirements, first-song practice, Session and the remaining material. Recommend Guitar Pro sources (GP3/4/5) and explain how preparing an instrumental separates the vocals from a song recording.
 
+For v2.4.5, keep the desktop version, the landing label and both download URLs aligned with the web player. Explain the iPad file-opening sequence in the first-song section: open the player in Safari or Chrome, then use `.magic 파일 열기`. The picker fix does not require renaming or exporting existing bundles again. Keep native iPad selection claims separate from desktop Chromium/WebKit automation.
+
 ## Score and following descriptions
 
 For v2.4.2, distinguish notation data from PDF display and geometry. A corresponding selected MusicXML file, or a valid MusicXML attachment embedded in the PDF, is preferred for notation analysis. Without it, PDF note recognition can be supplemented by supported printed navigation text and music-font glyphs. An arbitrary XML attachment is not necessarily MusicXML. Do not promise universal recognition of a publisher's scores, every font, or a scan.

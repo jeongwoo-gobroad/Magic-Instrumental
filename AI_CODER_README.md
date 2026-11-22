@@ -6,6 +6,8 @@ v2.4.5 removes `accept=".magic,application/zip"` from the shared browser file in
 
 Desktop Chromium/WebKit checks and programmatic file injection do not reproduce native iPad file selection. Distinguish verified button wiring, archive validation and playback from physical iPad/Chrome testing. Regenerate the built HTML and integrity-bound service worker together, and synchronize both `mobile-player` root copies and their `web_player/` counterparts. Users with an existing cached player may need an online refresh or tab reopen.
 
+Desktop packages, the main README version labels and landing downloads also use 2.4.5. This release includes the web picker fix and updated instructions; version synchronization does not change desktop analysis, playback or the `.magic` format. A source version alone is not a published desktop release: require the main macOS/Windows gates and verified release assets before publishing landing download links.
+
 Session readiness in the banner follows the relay's current participant list. A cancellation stops playback and preserves the other participants' readiness. Send the cancellation only on a true-to-false transition, including when replacing a file. Keep opt-in file sharing and receiving in the song panel, accessible with the roster closed and before either party is ready.
 
 Uploads do not lock the leader's Ready button. Download and Ready share a single in-flight download per member. Track explicit readiness intent separately from readiness reported to the relay. Use the median RTT of the latest three probes by send time within ten seconds. Missing or slow measurements suspend readiness, and healthy measurements restore it without restarting playback. Explicit cancellation, a file change or leaving the session clears the intent.
@@ -205,6 +207,8 @@ Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHu
 Mobile metronome: the always-visible hint explains that standalone use requires clearing the linked checkbox. The header displays off, waiting for playback, standalone, linked playback, first-beat wait or zero-volume state. The default remains linked. Track whether the seek slider is actively being edited, not merely focused, so its thumb follows playback after a seek.
 
 CI uses `tools/run_tests.py` to isolate test modules into separate external-venv Python processes, with a bounded timeout and faulthandler diagnostics. This prevents native multimedia lifetime state from leaking between unrelated test modules and gives a visible failure if a native call stalls.
+
+On macOS, the two browser test modules add Playwright's `pw:browser` debug scope to their child process environment, preserving existing debug scopes. Native browser exits are recorded in CI logs so a `TargetClosedError` has process diagnostics. Assertions, time limits and failure handling remain the same; tests are not retried automatically.
 
 
 ## v2.1 all-part GP and Session mode

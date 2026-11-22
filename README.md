@@ -4,6 +4,8 @@
 
 Mac·Windows에서 보컬을 분리하고, 속도와 반주 키를 바꾸며 연습하는 무료 오픈소스 프로그램입니다. PDF 악보 또는 Guitar Pro의 원하는 파트를 함께 볼 수 있습니다. 준비한 곡은 `.magic` 파일 하나로 가져가 **iPad·Android에서도 재생**할 수 있습니다.
 
+현재 버전: **2.4.5** · Mac / Windows / 웹 재생기
+
 [소개·설치 안내](https://music-helper.duckdns.org/) · [English](README.en.md) · [자세한 사용법](docs/USER_GUIDE.md) · [태블릿 사용법](web_player/README.md) · [업데이트 내역](CHANGELOG.md) · [개발자 문서](CONTRIBUTING.md)
 
 ![반주 목록과 메트로놈, 선택한 GP 파트를 함께 표시하는 실제 프로그램 화면](docs/images/desktop-light.png)

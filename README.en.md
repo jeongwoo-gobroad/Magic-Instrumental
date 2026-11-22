@@ -2,6 +2,8 @@
 
 Make an instrumental on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
 
+Current version: **2.4.5** · Mac / Windows / web player
+
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
 ![Desktop app with a project-authored GP study](docs/images/desktop-light.png)
