@@ -17,7 +17,7 @@ from .config import Paths
 from .score_view import camera_at, validate_scroll
 
 SCORE_VERSION = 1
-AUTO_ANALYSIS_VERSION = 2
+AUTO_ANALYSIS_VERSION = 3
 _RECOVERY_SCAN_LIMIT = 256
 
 
@@ -239,7 +239,7 @@ def _previous_reviewed_timeline(folder, current, source_hash):
 
 
 def load_last_timeline(
-    pdf: Path, paths: Paths, source_hash: str
+    pdf: Path, paths: Paths, source_hash: str, *, repair_pointer=True,
 ) -> tuple[Path, ScoreTimeline] | None:
     try:
         folder = paths.processed / source_hash / "scores" / hash_file(pdf)
@@ -258,12 +258,13 @@ def load_last_timeline(
             if (previous is not None and pointer_path.read_bytes() == pointer_bytes
                     and hash_file(pdf) == folder.name):
                 # 이전 보정본의 내용은 그대로 두고, 잘못된 자동 결과의 연결만 되돌린다.
-                try:
-                    with FileLock(str(folder / ".analysis.lock"), timeout=0):
-                        if pointer_path.read_bytes() == pointer_bytes:
-                            atomic_json(pointer_path, {"analysis": previous[0].parent.name})
-                except (OSError, Timeout):
-                    pass
+                if repair_pointer:
+                    try:
+                        with FileLock(str(folder / ".analysis.lock"), timeout=0):
+                            if pointer_path.read_bytes() == pointer_bytes:
+                                atomic_json(pointer_path, {"analysis": previous[0].parent.name})
+                    except (OSError, Timeout):
+                        pass
                 return previous
         return selected
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
@@ -272,7 +273,7 @@ def load_last_timeline(
 
 def recover_notation_source(pdf: Path, paths: Paths, source_hash: str) -> Path | None:
     """Recover the selected timeline's exact XML, including verified older cache paths."""
-    selected = load_last_timeline(pdf, paths, source_hash)
+    selected = load_last_timeline(pdf, paths, source_hash, repair_pointer=False)
     if selected is None:
         return None
     timeline_path, plan = selected

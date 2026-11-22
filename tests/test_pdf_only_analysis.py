@@ -188,8 +188,9 @@ def test_pdf_gui_defaults_and_worker_arguments(pdf_study, tone, monkeypatch, sav
 
     def accept(dialog):
         mode = dialog.findChild(QComboBox, "scoreAlignmentMode")
-        assert mode is None
-        assert not any("MusicXML" in button.text() for button in dialog.findChildren(QPushButton))
+        expected_mode = saved_mode if saved_mode in {"audio", "tempo"} else "auto"
+        assert mode.currentData() == expected_mode
+        assert any("MusicXML" in button.text() for button in dialog.findChildren(QPushButton))
         for checkbox in dialog.findChildren(QCheckBox):
             if checkbox.text().startswith("기존 마디 시간표"):
                 checkbox.setChecked(False)
@@ -209,7 +210,8 @@ def test_pdf_gui_defaults_and_worker_arguments(pdf_study, tone, monkeypatch, sav
                                 player=SimpleNamespace(pause=lambda: None), start_job=jobs.append)
         Window.analyze_score(owner, options)
         args = parser().parse_args(jobs[0])
-        assert args.mode == "auto" and args.meter_beats == 6 and args.meter_unit == 8
+        expected_mode = saved_mode if saved_mode in {"audio", "tempo"} else "auto"
+        assert args.mode == expected_mode and args.meter_beats == 6 and args.meter_unit == 8
         assert args.musicxml is None
     finally:
         panel.view.clear()
@@ -222,6 +224,14 @@ def test_pdf_gui_defaults_and_worker_arguments(pdf_study, tone, monkeypatch, sav
 def same_score_xml(paths, pdf, count=6):
     xml = xml_file(paths.score_targets, [""] * count)
     return xml.rename(pdf.with_suffix(".musicxml"))
+
+
+def cached_omr(paths, pdf, audio, count=6):
+    folder = paths.processed / hash_file(audio) / "scores" / hash_file(pdf) / "recognition/v2"
+    folder.mkdir(parents=True)
+    xml = same_score_xml(paths, pdf, count).rename(folder / "score.mxl")
+    xml.with_suffix(".json").write_text('{"method":"pdf-original"}', encoding="utf-8")
+    return xml
 
 
 def estimated_alignment(_audio, notation, _report):
@@ -369,7 +379,7 @@ def test_auto_omr_failure_reuses_fallback_until_request_changes(pdf_study, tone,
 
 def test_auto_layout_mismatch_falls_back_to_printed_bars(pdf_study, tone, monkeypatch):
     paths, pdf = pdf_study
-    same_score_xml(paths, pdf, count=2)
+    cached_omr(paths, pdf, tone, count=2)
     monkeypatch.setattr("practice_player.score_analysis.align_audio", forbid_notation)
     plan = ScoreTimeline.load(analyze_score(tone, pdf, paths))
     assert len(plan.cues) == 6
@@ -378,7 +388,7 @@ def test_auto_layout_mismatch_falls_back_to_printed_bars(pdf_study, tone, monkey
 
 def test_auto_malformed_notation_can_still_fall_back_for_plain_score(pdf_study, tone):
     paths, pdf = pdf_study
-    xml = pdf.with_suffix(".musicxml")
+    xml = cached_omr(paths, pdf, tone)
     xml.write_text("<score-partwise><broken>", encoding="utf-8")
     plan = ScoreTimeline.load(analyze_score(tone, pdf, paths))
     assert len(plan.cues) == 6
@@ -389,7 +399,7 @@ def test_auto_malformed_notation_can_still_fall_back_for_plain_score(pdf_study, 
 @pytest.mark.parametrize("stage", ["notation", "navigation"])
 def test_auto_only_note_failure_may_fall_back(pdf_study, tone, monkeypatch, stage):
     paths, pdf = pdf_study
-    same_score_xml(paths, pdf)
+    cached_omr(paths, pdf, tone)
 
     def failed(*_args, **_kwargs):
         raise ValueError("반복 구조 인식 실패")
@@ -484,7 +494,7 @@ def test_auto_checks_notation_source_before_fallback_publication(pdf_study, tone
     from practice_player import score_geometry
 
     paths, pdf = pdf_study
-    xml = same_score_xml(paths, pdf, count=2)
+    xml = cached_omr(paths, pdf, tone, count=2)
     detect = score_geometry.detect_pdf_layout
 
     def changed(*args, **kwargs):

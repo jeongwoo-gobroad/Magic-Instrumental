@@ -1,13 +1,36 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Conservative PDF text/repeat-sign supplements to OMR, before route expansion."""
 
+import ctypes
 import re
 from xml.etree.ElementTree import SubElement
 
 from defusedxml import ElementTree as ET
 
+PDF_SYMBOL_VERSION = 2
 COMMAND = re.compile(r"\bD\s*\.?\s*([CS])\b\s*\.?(?:\s*al\s+(Coda|Fine)\b)?", re.I)
 MARKS = re.compile(r"\bTo\s+Coda\b|\bSegno\b|\bCoda\b|\bFine\b|[\U0001d10b\U0001d10c]", re.I)
+
+
+def _navigation_character(text, index, code):
+    import pypdfium2.raw as raw
+
+    character = chr(code)
+    if code not in {0x25, 0xF025, 0xDE, 0xF0DE}:
+        return character
+    flags = ctypes.c_int()
+    size = raw.FPDFText_GetFontInfo(text, index, None, 0, ctypes.byref(flags))
+    if not 1 < size <= 256:
+        return character
+    name = ctypes.create_string_buffer(size)
+    if raw.FPDFText_GetFontInfo(text, index, name, size, ctypes.byref(flags)) != size:
+        return character
+    family = re.sub(r"^[A-Z]{6}\+", "", name.value.decode("utf-8", errors="replace"))
+    if family != "Maestro":
+        return character
+    # Maestro's published legacy map uses % for Segno and 0xDE for Coda.
+    # Ordinary text fonts and other music-font encodings must stay unchanged.
+    return "\U0001d10b" if code & 0xFF == 0x25 else "\U0001d10c"
 
 
 def word_marks(text):
@@ -59,11 +82,18 @@ def text_marks(pdf, *, include_numbers=False):
                     x0, x1 = sorted((a[0], b[0]))
                     y0, y1 = sorted((a[1], b[1]))
                     if x1 > x0 and y1 > y0:
-                        chars.append((chr(code), x0, x1, (y0 + y1) / 2, y1 - y0))
+                        origin_x, origin_y = ctypes.c_double(), ctypes.c_double()
+                        baseline = (y0 + y1) / 2
+                        if raw.FPDFText_GetCharOrigin(
+                            text, i, ctypes.byref(origin_x), ctypes.byref(origin_y)
+                        ):
+                            baseline = converter.to_bitmap(origin_x.value, origin_y.value)[1]
+                        chars.append((_navigation_character(text, i, code), x0, x1,
+                                      (y0 + y1) / 2, y1 - y0, baseline))
                 lines = []
-                for char in sorted(chars, key=lambda c: (c[3], c[1])):
-                    # Nearby character centers form a baseline; separate distant columns.
-                    if not lines or abs(char[3] - lines[-1][0][3]) > max(2, char[4] * 0.45):
+                for char in sorted(chars, key=lambda c: (c[5], c[1])):
+                    # D.S. punctuation shares a text origin, not the letters' ink centers.
+                    if not lines or abs(char[5] - lines[-1][0][5]) > max(2, char[4] * 0.2):
                         lines.append([])
                     lines[-1].append(char)
                 for line in lines:

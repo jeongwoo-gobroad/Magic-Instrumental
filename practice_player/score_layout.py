@@ -11,7 +11,7 @@ from defusedxml import ElementTree as ET
 from filelock import FileLock
 
 from .cache import hash_file
-from .score import ScoreTimeline, atomic_json, matching_musicxml
+from .score import ScoreTimeline, atomic_json, matching_musicxml, recover_notation_source
 from .score_geometry import LAYOUT_VERSION, detect_pdf_layout
 from .score_view import SCROLL_VERSION, rendered_size, view_profile
 
@@ -256,7 +256,9 @@ def plan_camera(cues, end, page_sizes, bars, profile, *, keep_system=False):
     }
 
 
-def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: None):
+def analyze_scroll(
+    audio, pdf, paths, timeline_path, profile, report=lambda *_: None, *, musicxml=None,
+):
     profile = view_profile(**profile)
     timeline_hash = hash_file(timeline_path)
     base = ScoreTimeline.load(timeline_path)
@@ -267,20 +269,24 @@ def analyze_scroll(audio, pdf, paths, timeline_path, profile, report=lambda *_: 
     pdf_only = base.data.get("notation_source", {}).get("method") == "pdf-geometry"
     xml = None
     if not pdf_only:
-        candidates = [
-            matching_musicxml(pdf),
-            Path(base.data.get("musicxml_path", "")),
-            folder / "recognition/reviewed.musicxml",
-            folder / "recognition/score.mxl",
-        ]
+        def candidates():
+            yield Path(musicxml) if musicxml is not None else None
+            yield matching_musicxml(pdf)
+            yield recover_notation_source(pdf, paths, audio_hash)
+            yield Path(base.data.get("musicxml_path", ""))
+            yield folder / "recognition/reviewed.musicxml"
+            yield folder / "recognition/score.mxl"
+
         xml = next(
-            (p for p in candidates
+            (p for p in candidates()
              if p and p.is_file() and hash_file(p) == base.data.get("xml_sha256")),
             None,
         )
         if xml is None:
             raise ValueError("기존 분석과 같은 MusicXML이 필요합니다. 악보 전체 분석을 실행하세요.")
     data = deepcopy(base.data)
+    if xml is not None:
+        data["musicxml_path"] = str(xml.resolve())
     for name in ("scroll", "view_signature"):
         data.pop(name, None)
     digest = sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

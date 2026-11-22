@@ -193,9 +193,12 @@ def main(argv=None) -> int:
                 lead_in=args.lead_in,
                 route_override=args.route,
                 force=args.force,
+                publish=profile is None,
             )
             if profile:
-                path = analyze_scroll(args.audio, args.pdf, paths, path, profile, progress)
+                path = analyze_scroll(
+                    args.audio, args.pdf, paths, path, profile, progress, musicxml=args.musicxml,
+                )
             if args.gp:
                 from .gp_collection import prepare_collection
 

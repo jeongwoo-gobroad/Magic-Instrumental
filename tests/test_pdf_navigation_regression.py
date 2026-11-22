@@ -204,7 +204,7 @@ def test_full_pdf_reanalysis_retains_verified_source_and_tempo_choice(
         panel.analysis_options()
         options = captured[0]
         assert "base-timeline" not in options
-        assert options["mode"] == ("auto" if source_changed else "tempo")
+        assert options["mode"] == "tempo"
         assert options["musicxml"] == ("" if source_changed else str(xml))
         assert options["bpm"] == 96
         assert previous.read_bytes() == before

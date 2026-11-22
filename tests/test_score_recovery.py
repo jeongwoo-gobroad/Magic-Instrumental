@@ -167,6 +167,16 @@ def test_recovery_does_not_replace_an_active_analysis_pointer(saved_score):
         assert (folder / "latest.json").read_bytes() == before
 
 
+def test_notation_lookup_never_publishes_timeline_recovery(saved_score):
+    paths, pdf, xml, audio_hash, folder, data = saved_score
+    previous = save_plan(folder, "previous", data)
+    fallback = save_plan(folder, "fallback", obsolete_fallback(data), selected=True)
+    before = {path: path.read_bytes() for path in
+              (previous, fallback, folder / "latest.json")}
+    assert recover_notation_source(pdf, paths, audio_hash) == xml.resolve()
+    assert all(path.read_bytes() == content for path, content in before.items())
+
+
 @pytest.mark.parametrize("reviewed", [True, False])
 def test_selected_notation_with_different_name_is_recovered_by_hash(saved_score, reviewed):
     paths, pdf, xml, audio_hash, folder, data = saved_score

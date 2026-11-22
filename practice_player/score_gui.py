@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -41,6 +42,23 @@ from .score import (
     stale_pdf_fallback,
 )
 from .score_view import rendered_size, view_profile
+
+
+def status_area(label, name):
+    """Keep message wrapping from changing the pre-analyzed PDF viewport."""
+    label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    area = QScrollArea()
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setWidgetResizable(True)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setWidget(label)
+    label.ensurePolished()
+    # Korean fallback glyphs can be taller than the base font's line spacing.
+    line_height = max(label.fontMetrics().lineSpacing(), label.heightForWidth(12000))
+    area.setFixedHeight(2 * line_height + 2)
+    area.setAccessibleName(name)
+    area.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+    return area
 
 
 class PdfView(QScrollArea):
@@ -210,7 +228,8 @@ class ScorePanel(QWidget):
         self.status = QLabel("재생 전에 기호 인식과 음원 정렬을 완료하세요.")
         self.status.setWordWrap(True)
         self.status.setObjectName("muted")
-        layout.addWidget(self.status)
+        self.status_area = status_area(self.status, "악보 분석 상태")
+        layout.addWidget(self.status_area)
         row = QHBoxLayout()
         self.follow = QCheckBox("자동 넘김 · 스크롤")
         self.follow.setChecked(True)
@@ -236,7 +255,8 @@ class ScorePanel(QWidget):
         self.view_status = QLabel("배율과 악보 영역을 정한 뒤 사전 분석하세요.")
         self.view_status.setWordWrap(True)
         self.view_status.setObjectName("muted")
-        layout.addWidget(self.view_status)
+        self.view_status_area = status_area(self.view_status, "자동 스크롤 상태")
+        layout.addWidget(self.view_status_area)
         row = QHBoxLayout()
         previous = QPushButton("‹")
         previous.setAccessibleName("이전 악보 페이지")
@@ -403,17 +423,30 @@ class ScorePanel(QWidget):
         state = "보정 저장됨" if plan.data.get("reviewed") else "자동 추정 · 시간표 확인 권장"
         geometry = plan.data.get("pdf_layout", {})
         method = {
-            "pdf-staves-barlines": "PDF 마디선 인식",
+            "pdf-staves-barlines": "PDF 마디 위치",
             "pdf-only-staves-barlines": "PDF 마디선 + 입력 BPM·박자",
             "musicxml-assisted": "MusicXML 보조 배치",
-            "guitar-pro-native": "GP 원본 마디 직접 연결",
+            "guitar-pro-native": "마디 직접 연결",
         }.get(geometry.get("method"), "")
+        source = ""
+        if (plan.data.get("gp_display")
+                or plan.data.get("notation_source", {}).get("method") == "guitar-pro"):
+            source = "GP 원본"
+        elif plan.data.get("xml_sha256"):
+            source = {
+                "explicit": "선택한 MusicXML", "matching": "같은 이름의 MusicXML",
+                "recovered": "이전 분석의 MusicXML", "reviewed": "보정한 MusicXML",
+                "embedded": "PDF 내장 MusicXML", "omr": "PDF 음표·기호 인식",
+            }.get(plan.data.get("notation_selection"), "MusicXML")
+        method = " · ".join(part for part in (source, method) if part)
+        if geometry.get("measure_count") is not None:
+            method = " · ".join(filter(None, (method, f"원본 {geometry['measure_count']}마디")))
         review_lines = len({
             (item["page"], item["system"]) for item in geometry.get("review_required", [])
         })
         self.status.setText(
             f"{len(plan.cues)}개 연주 마디 · {state}"
-            + (f"\n{method} · 원본 {geometry['measure_count']}마디" if method else "")
+            + (f"\n{method}" if method else "")
             + ("\n음표 인식 대신 마디선·BPM으로 계산 · 시간표 확인"
                if plan.data.get("analysis_fallback") else "")
             + (f"\n배치 확인 필요 {review_lines}줄" if review_lines else "")
@@ -429,7 +462,9 @@ class ScorePanel(QWidget):
                 f"{index + 1}쪽: {paper} {orientation}, {width:g} × {height:g} pt, "
                 f"{page['systems']}줄, 기울기 보정 {page['deskew_degrees']:g}°"
             )
-        self.status.setToolTip("\n".join(details + plan.data.get("warnings", [])))
+        self.status.setToolTip("\n".join([
+            self.status.text(), *details, *plan.data.get("warnings", []),
+        ]))
         self.set_busy(self.busy)
         self.update_view_status()
         self.timeline_changed.emit()
@@ -463,8 +498,10 @@ class ScorePanel(QWidget):
             self.view_status.setText("확대 스크롤 준비 완료 · 저장된 이동 경로로 재생합니다.")
         else:
             self.view_status.setText(
-                "배율 또는 악보 영역이 바뀌었습니다. 스크롤 재분석이 필요합니다."
+                "페이지는 자동으로 넘깁니다. 확대 스크롤은 사전 분석에서 "
+                "기존 시간표를 유지하고 재분석하세요."
             )
+        self.view_status.setToolTip(self.view_status.text())
 
     def attach_player(self, player):
         self.player = player
@@ -510,9 +547,6 @@ class ScorePanel(QWidget):
     def follow_position(self, seconds):
         if not self.timeline or not self.follow.isChecked():
             return
-        # A path is valid only for its pre-analyzed zoom and viewport.
-        if self.timeline.data.get("scroll") and not self.view_matches():
-            return
         index = self.timeline.index_at(seconds, self.timeline.data.get("offset", 0))
         if index is None:
             self.measure.setText("악보 시작 전 / 종료")
@@ -522,6 +556,9 @@ class ScorePanel(QWidget):
         self.current_index = index
         self.measure.setText(f"{cue['measure']}마디 · {cue['visit']}회차")
         self.jump_page(cue["page"])
+        # Page/measure timing remains valid when only the saved camera size changed.
+        if not self.view_matches():
+            return
         camera = self.timeline.scroll_at(seconds)
         if camera:
             self.view.move_camera(camera[1], camera[2])
@@ -552,22 +589,53 @@ class ScorePanel(QWidget):
         saved = self.timeline.data.get("signature", {}) if self.timeline else {}
         previous_xml = (recover_notation_source(self.pdf, self.paths, self.source_hash)
                         if not self.gp_source else None)
-        previous_mode = saved.get("mode") if previous_xml is not None else None
-        if previous_mode not in {"audio", "tempo"}:
+        if previous_xml is not None and self.timeline_path is not None:
+            recognition = (self.timeline_path.parent.parent / "recognition").resolve()
+            generated = {recognition / "score.mxl"}
+            version = saved.get("omr")
+            if type(version) is int and 1 <= version <= 100:
+                generated.add(recognition / f"v{version}/score.mxl")
+            if previous_xml in generated and (recognition / "reviewed.musicxml").is_file():
+                # 자동 캐시를 명시적 선택으로 보내면 새 보정본이 가려진다.
+                previous_xml = None
+        previous_mode = saved.get("mode")
+        if previous_mode not in {"auto", "audio", "tempo"}:
             previous_mode = "auto"
         if previous_xml is not None:
             label = ("기존 인식 결과 · 일정 BPM으로 시간 계산" if previous_mode == "tempo"
                      else "기존 인식 결과의 반복·코다 순서 사용")
             form.addRow("이어 쓸 분석", QLabel(label))
-        mode = None
-        if self.gp_source:
-            mode = QComboBox()
-            mode.setObjectName("scoreAlignmentMode")
-            mode.addItem("음표와 음원을 자동 정렬 (추정)", "audio")
-            mode.addItem("일정 BPM으로 마디 시간 계산", "tempo")
-            if self.gp_info and self.gp_info["metadata"]["percussion"]:
-                mode.setCurrentIndex(1)
-            form.addRow("정렬", mode)
+        mode = QComboBox()
+        mode.setObjectName("scoreAlignmentMode")
+        if not self.gp_source:
+            mode.addItem("자동 · MusicXML 우선, 없으면 PDF 인식", "auto")
+        mode.addItem("음표와 음원을 자동 정렬 (추정)", "audio")
+        mode.addItem("일정 BPM으로 마디 시간 계산", "tempo")
+        previous_index = mode.findData(previous_mode)
+        mode.setCurrentIndex(max(0, previous_index))
+        if self.gp_info and self.gp_info["metadata"]["percussion"]:
+            mode.setCurrentIndex(mode.findData("tempo"))
+        form.addRow("정렬", mode)
+        xml = browse = None
+        if not self.gp_source:
+            xml = QLineEdit(str(previous_xml) if previous_xml is not None else "")
+            xml.setObjectName("scoreMusicXML")
+            xml.setPlaceholderText("자동: 같은 이름·이전 인식·PDF 내장 MusicXML 확인")
+            browse = QPushButton("MusicXML 선택")
+
+            def select_xml():
+                path, _ = QFileDialog.getOpenFileName(
+                    dialog, "MusicXML 선택", str(self.paths.score_targets),
+                    "MusicXML (*.mxl *.musicxml *.xml)",
+                )
+                if path:
+                    xml.setText(path)
+
+            browse.clicked.connect(select_xml)
+            source_row = QHBoxLayout()
+            source_row.addWidget(xml, 1)
+            source_row.addWidget(browse)
+            form.addRow("MusicXML (선택)", source_row)
         bpm = QDoubleSpinBox()
         bpm.setRange(20, 400)
         bpm.setValue(saved.get("bpm", self.bpm_provider()))
@@ -608,13 +676,17 @@ class ScorePanel(QWidget):
                 mode.setEnabled(not checked and not (
                     self.gp_info and self.gp_info["metadata"]["percussion"]
                 ))
+            if xml is not None:
+                xml.setEnabled(not checked)
+                browse.setEnabled(not checked)
 
         reuse.toggled.connect(controls_changed)
         controls_changed()
 
         hint = QLabel(
-            ("악보의 음표·반복과 음원을 자동으로 연결합니다.\n"
-             "인식이 어려우면 마디선과 입력한 BPM·박자로 시간을 계산합니다.\n"
+            ("선택한 MusicXML과 기존 인식 결과를 우선 사용합니다.\n"
+             "원본이 없으면 PDF 내장 MusicXML을 확인한 뒤 음표·인쇄 기호를 읽습니다.\n"
+             "자동 모드의 PDF 음표 인식 실패에만 마디선·BPM 추정을 사용합니다.\n"
              "반복·이동 기호가 불완전하면 연주 순서 보정을 요청합니다. "
              "못갖춘마디·박자/템포 변화는 "
              "시간표에서 보정하세요.\n" if not self.gp_source else
@@ -633,13 +705,13 @@ class ScorePanel(QWidget):
             options = {
                 "audio": str(self.audio),
                 "pdf": str(self.pdf),
-                "mode": mode.currentData() if mode is not None else previous_mode,
+                "mode": mode.currentData(),
                 "bpm": bpm.value(),
                 "meter-beats": meter_beats.value(),
                 "meter-unit": meter_unit.currentData(),
                 "lead-in": lead.value(),
                 "route": route.text().strip(),
-                "musicxml": str(previous_xml) if previous_xml is not None else "",
+                "musicxml": xml.text().strip() if xml is not None else "",
                 "gp-track": 1,
                 "force": force.isChecked(),
                 "zoom": profile["zoom"],
