@@ -9,7 +9,7 @@ import pytest
 from aiohttp import web
 
 from relay.server import Relay
-from tests.test_web_player import open_study, study_files, web_url  # noqa: F401
+from tests.test_web_player import choose_file, open_study, study_files, web_url  # noqa: F401
 
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_WEB_TESTS") != "1",
                                 reason="RUN_WEB_TESTS=1 and browser runtimes required")
@@ -83,6 +83,9 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
         assert not leader.evaluate("MagicEnsemble.state().prepared")
         assert "준비가 해제" not in leader.locator("#sessionLive").inner_text()
+        choose_file(member, {"name": "연습곡.magic", "mimeType": "",
+                             "buffer": study_files["gp"].read_bytes()}, "#sessionOpenFile")
+        member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
         member.locator("#partSelect").select_option("1")
         member.wait_for_function("MagicPlayer.archive().activePart.track === 1")
         assert leader.evaluate("MagicPlayer.archive().activePart.track") == 2

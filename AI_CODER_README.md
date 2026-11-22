@@ -1,6 +1,10 @@
 # AI Coder handoff — Magic-Instrumental
 
-Source version: **2.4.4**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+Source version: **2.4.5**. Read `README.md`, `AGENTS.md`, and `CONTRIBUTING.md` before changes. This document intentionally contains no user recordings, score contents, personal paths, or private verification data.
+
+v2.4.5 removes `accept=".magic,application/zip"` from the shared browser file input. Native iPad pickers can exclude the custom extension when combined with a known MIME filter. Keep `accept` absent and validate the actual archive contents through `MagicArchive`; do not add MIME-only checks, OS-specific picker branches or require users to rename/re-export existing bundles. Solo and Session's own-file button share this input; the downloaded Session file path keeps the same reader.
+
+Desktop Chromium/WebKit checks and programmatic file injection do not reproduce native iPad file selection. Distinguish verified button wiring, archive validation and playback from physical iPad/Chrome testing. Regenerate the built HTML and integrity-bound service worker together, and synchronize both `mobile-player` root copies and their `web_player/` counterparts. Users with an existing cached player may need an online refresh or tab reopen.
 
 Session readiness in the banner follows the relay's current participant list. A cancellation stops playback and preserves the other participants' readiness. Send the cancellation only on a true-to-false transition, including when replacing a file. Keep opt-in file sharing and receiving in the song panel, accessible with the roster closed and before either party is ready.
 

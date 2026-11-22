@@ -61,7 +61,11 @@ When the app falls back to PDF measure/BPM timing, it follows printed order unle
 
 **Desktop metronome alone:** uncheck ‘음원과 연동’ (link to audio), then press ‘메트로놈 켜기’ (turn metronome on). No song is required. An always-visible hint and status show standalone playback, waiting for audio, linked playback, or other waiting states; mute and zero volume are also indicated.
 
-For iPad/Android, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari/Chrome and add it to the home screen. After offline preparation, it works without internet; songs remain local. Direct HTML opening on iPad's Files app is not reliable. Keep the player visible during practice; backgrounding pauses playback. Open the player online to receive an update. On your next visit, the footer shows the version in use. [Tablet instructions](web_player/README.md)
+On iPad, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari or Chrome; on Android, use Chrome. Open the web address first, tap **.magic 파일 열기** (open a .magic file), then choose the file saved on your computer. Other file types may also appear in the picker; an invalid file produces an error when opened.
+
+**If a .magic file was greyed out on iPad:** refresh the player online or reopen its tab, then select the file again. This file selection update does not require renaming or exporting your existing files again.
+
+To add the player to your home screen, use Safari's Share menu on iPad or Chrome's menu on Android. After offline preparation, it works without internet; songs remain local. Direct HTML opening on iPad's Files app is not reliable. Keep the player visible during practice; backgrounding pauses playback. Open the player online to receive an update. On your next visit, the footer shows the version in use. [Tablet instructions](web_player/README.md)
 
 **To use the mobile metronome alone, uncheck ‘반주와 함께’ (with accompaniment), then turn it on.** No song file is required. With that box checked, clicks wait until the accompaniment plays; the header shows the waiting state.
 
