@@ -15,6 +15,7 @@ from practice_player.gui import STYLE
 from practice_player.score import ScoreTimeline
 from practice_player.score_gui import PdfView, ScorePanel
 from practice_player.theme import stylesheet
+from tests.test_gui import wait_until
 
 FIRST = {"left": 0.15, "right": 0.55, "top": 0.2, "bottom": 0.35}
 SECOND = {"left": 0.45, "right": 0.8, "top": 0.4, "bottom": 0.6}
@@ -93,7 +94,7 @@ def test_highlight_pixels_scale_without_changing_pdf_pixmap(blank_score, theme):
         view.render()
         before = check_box(label, FIRST)
         view.resize(760, 840)
-        QTest.qWait(120)
+        wait_until(app, lambda: label.highlight_rect().width() > before.width(), timeout=5)
         assert check_box(label, FIRST).width() > before.width()
 
         view.show_page(1)
