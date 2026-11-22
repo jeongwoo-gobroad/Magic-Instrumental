@@ -9,6 +9,13 @@ import pytest
 from aiohttp import web
 
 from relay.server import Relay
+from tests.test_web_audio import (
+    assert_audio_session_order,
+    background_page,
+    hold_resume_completion,
+    install_audio_session_probe,
+    release_resume_after_foreground,
+)
 from tests.test_web_player import (  # noqa: F401
     choose_file,
     hold_audio_resume,
@@ -61,6 +68,7 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
             page.goto(web_url)
             page.locator("#ensemblePanel").evaluate("e => e.open = true")
             page.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
+            install_audio_session_probe(page)
         # A wall-clock error must not affect the monotonic server-clock estimate.
         member.evaluate("Date.now = () => 1234567890000")
         open_study(leader, study_files["gp"])
@@ -107,8 +115,22 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         assert leader.evaluate("MagicPlayer.archive().activePart.track") == 2
         assert member.locator("#highlightEnabled").is_checked()
         assert not leader.locator("#highlightEnabled").is_checked()
+
+        hold_resume_completion(member, "#sessionPrepare")
+        member.locator("#sessionPrepare").click()
+        member.wait_for_function("window.releaseResume !== null")
+        background_page(member)
+        member.wait_for_function("MagicPlayer.context().state === 'suspended'")
+        release_resume_after_foreground(member)
+        assert not member.evaluate("MagicEnsemble.state().prepared")
+        assert member.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
+        for page in (leader, member):
+            page.evaluate("window.audioSessionEvents = []")
         for page in (leader, member):
             page.locator("#sessionPrepare").click()
+        for page in (leader, member):
+            page.wait_for_function("MagicEnsemble.state().prepared")
+            assert_audio_session_order(page)
         for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
             for page in (leader, member):
                 page.get_by_text("모두 준비 완료", exact=False).wait_for()
