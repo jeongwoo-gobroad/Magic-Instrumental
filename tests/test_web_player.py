@@ -122,13 +122,124 @@ def open_study(page, path):
     }""")
 
 
-def choose_file(page, payload, button=".file-button"):
+def choose_file(page, payload, button="#soloFile .file-button"):
     with page.expect_file_chooser() as opened:
         page.locator(button).click()
     chooser = opened.value
     # iPad's native picker must not filter an unregistered extension by MIME type.
     assert not chooser.element.get_attribute("accept")
+    assert chooser.element.is_visible()
     chooser.set_files(payload)
+
+
+def hold_audio_resume(page):
+    # A native picker does not promise an audio-unlocking gesture on return.
+    # Leave the real decoder intact and model resume() waiting for permission.
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      const resume = Audio.prototype.resume;
+      window.audioResumeCalls = 0;
+      window.audioResumeAllowed = false;
+      Audio.prototype.resume = function (...args) {
+        window.audioResumeCalls++;
+        return window.audioResumeAllowed ? resume.apply(this, args) : new Promise(() => {});
+      };
+    }""")
+
+
+def wait_for_file_without_audio(page):
+    page.wait_for_function("MagicPlayer.state().ready || window.audioResumeCalls > 0",
+                           timeout=45000)
+    assert page.evaluate("window.audioResumeCalls") == 0, page.evaluate("""() => ({
+      state: MagicPlayer.state(), disabled: document.getElementById('file').disabled,
+      status: document.getElementById('status').textContent
+    })""")
+    assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+
+
+@pytest.mark.parametrize("kind", ["pdf", "wav_gp"])
+def test_native_selection_loads_without_audio_permission_and_retries(page, study_files, kind):
+    hold_audio_resume(page)
+    page.evaluate("""() => {
+      window.fileSelections = 0;
+      document.getElementById('file').addEventListener('change', () => window.fileSelections++);
+    }""")
+    payload = {"name": "연습곡.magic", "mimeType": "",
+               "buffer": study_files[kind].read_bytes()}
+    choose_file(page, payload)
+    wait_for_file_without_audio(page)
+    assert page.locator("#play").is_enabled()
+    assert page.locator("#file").is_enabled()
+    page.locator("#scoreImage").wait_for(state="visible")
+    assert not page.evaluate("MagicPlayer.state().playing")
+
+    # Cancel keeps the loaded song; repeating the same choice must still load it.
+    choose_file(page, [])
+    assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+    before = page.evaluate("window.fileSelections")
+    choose_file(page, payload)
+    wait_for_file_without_audio(page)
+    assert page.evaluate("window.fileSelections") == before + 1
+    assert page.locator("#file").input_value() == ""
+
+    choose_file(page, {"name": "notes.txt", "mimeType": "text/plain",
+                       "buffer": b"This is a text document, not a Magic practice archive."})
+    page.wait_for_function("!MagicPlayer.state().loading || window.audioResumeCalls > 0")
+    assert page.evaluate("window.audioResumeCalls") == 0
+    assert not page.evaluate("MagicPlayer.state().ready")
+    assert "올바른 .magic 파일이 아닙니다" in page.locator("#status").inner_text()
+    assert page.locator("#file").is_enabled()
+    choose_file(page, payload)
+    wait_for_file_without_audio(page)
+
+    # The explicit Play gesture can now unlock the actual audio implementation.
+    page.evaluate("MagicPlayer.context().suspend()")
+    page.evaluate("window.audioResumeAllowed = true")
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+    assert page.evaluate("window.audioResumeCalls") > 0
+
+
+def test_audio_permission_timeout_preserves_loaded_file_and_allows_play_retry(page, study_files):
+    hold_audio_resume(page)
+    choose_file(page, study_files["pdf"])
+    wait_for_file_without_audio(page)
+    expected_duration = page.evaluate("MagicPlayer.state().duration")
+    page.evaluate("MagicPlayer.context().suspend()")
+    page.locator("#play").click()
+    page.wait_for_function("document.getElementById('status').classList.contains('file-error')",
+                           timeout=10000)
+    assert "재생" in page.locator("#status").inner_text()
+    assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+    assert not page.evaluate("MagicPlayer.state().playing")
+    assert page.evaluate("MagicPlayer.state().duration") == expected_duration
+    assert page.locator("#scoreImage").is_visible()
+    assert page.locator("#file").is_enabled() and page.locator("#play").is_enabled()
+    page.evaluate("window.audioResumeAllowed = true")
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+
+
+def test_suspended_worklet_cleanup_does_not_block_file_replacement(page, study_files):
+    open_study(page, study_files["gp"])
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+    page.locator("#play").click()
+    page.evaluate("""async () => {
+      stretch.dropBuffers = () => new Promise(() => {});
+      await MagicPlayer.context().suspend();
+    }""")
+    hold_audio_resume(page)
+    choose_file(page, study_files["wav_pdf"])
+    wait_for_file_without_audio(page)
+    assert page.locator("#part").inner_text() == "PDF 악보"
+    assert page.locator("#partChoice").is_hidden()
+    assert page.locator("#file").is_enabled()
+    assert page.locator("#scoreImage").is_visible()
+    assert not page.evaluate("MagicPlayer.state().playing")
+    page.evaluate("window.audioResumeAllowed = true")
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
 
 
 @pytest.mark.parametrize("kind,mime_type", [("gp", ""), ("pdf", "application/octet-stream")])
@@ -381,7 +492,7 @@ def test_mp3_decode_failure_or_timing_change_offers_wav_recovery(page, study_fil
 
 def test_phone_file_and_score_navigation(page, study_files):
     page.set_viewport_size({"width": 360, "height": 780})
-    file_button = page.locator(".file-button")
+    file_button = page.locator("#soloFile .file-button")
     score = page.locator("#scoreArea")
     assert file_button.bounding_box()["y"] < score.bounding_box()["y"]
     open_study(page, study_files["gp"])
@@ -495,6 +606,7 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
         testAnalyser.fftSize=16384; testAnalyser.smoothingTimeConstant=0;
         musicGain.connect(testAnalyser); }""")
     page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().playing")
     page.wait_for_timeout(1000)
     actual = frequency(page)
     assert actual["level"] > -60 and actual["frequency"] == pytest.approx(220, abs=4)
@@ -587,8 +699,7 @@ def test_pdf_count_loop_and_offline_reload(page, web_url, study_files):
     page.wait_for_function("typeof MagicPlayer !== 'undefined'")
     open_study(page, study_files["pdf"])
     page.locator("#play").click()
-    page.wait_for_timeout(500)
-    assert page.evaluate("MagicPlayer.state().playing")
+    page.wait_for_function("MagicPlayer.state().position > .2")
 
 
 def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp_path):
