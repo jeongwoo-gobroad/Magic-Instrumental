@@ -1,18 +1,80 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import time
+from collections import deque
 from copy import deepcopy
 
 import pytest
 from pypdf import PdfWriter
-from PySide6.QtCore import QCoreApplication, QEvent, QSettings
+from PySide6.QtCore import QCoreApplication, QEvent, QEventLoop, QSettings, Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from practice_player.cache import hash_file
 from practice_player.config import Paths
+from practice_player.count_in import CountClock
 from practice_player.gui import Window
 from practice_player.region_loop import RegionLoop, timing_signature
 from practice_player.score import ScoreTimeline
-from tests.test_gui import wait_until
 from tests.test_measure_navigation import performed_score
+
+
+def wait_until(_app, condition, timeout=20, *, trace=()):
+    if condition():
+        return
+    loop, poll, deadline = QEventLoop(), QTimer(), QTimer()
+    poll.setTimerType(Qt.TimerType.PreciseTimer)
+    poll.setInterval(5)
+    poll.timeout.connect(lambda: loop.quit() if condition() else None)
+    deadline.setSingleShot(True)
+    deadline.timeout.connect(loop.quit)
+    try:
+        poll.start()
+        deadline.start(round(timeout * 1000))
+        loop.exec()
+    finally:
+        poll.stop()
+        deadline.stop()
+    assert condition(), list(trace)
+
+
+@pytest.fixture
+def count_trace(loop_window, monkeypatch):
+    _, window, _ = loop_window
+    trace, last_ticks = deque(maxlen=48), {}
+    started = time.monotonic()
+    advance = CountClock.advance
+
+    def record(event, now, **details):
+        trace.append({"event": event, "ms": round((now - started) * 1000, 3), **details})
+
+    def observed(clock, now):
+        previous = last_ticks.get(clock, now)
+        last_ticks[clock] = now
+        details = {
+            "elapsed_ms": round((now - clock.started) * 1000, 3),
+            "gap_ms": round((now - previous) * 1000, 3),
+            "handled": clock.handled, "next_beat": clock.handled + 1,
+            "period_ms": round(clock.period * 1000, 3),
+            "duration_ms": round(clock.duration * 1000, 3), "total": clock.total,
+        }
+        try:
+            result = advance(clock, now)
+        except RuntimeError:
+            record("count-failed", now, **details)
+            raise
+        if result[0] is not None or result[1]:
+            record("count-finished" if result[1] else "count-beat", now, **details)
+        return result
+
+    monkeypatch.setattr(CountClock, "advance", observed)
+    window.player.mediaStatusChanged.connect(
+        lambda status: record("media", time.monotonic(), status=status.name,
+                              position=window.player.position())
+    )
+    window.count_in.active_changed.connect(
+        lambda active: record("count-active", time.monotonic(), active=active,
+                              position=window.player.position())
+    )
+    return trace
 
 
 def test_range_includes_whole_last_measure_and_distinguishes_repeat_visits():
@@ -102,9 +164,8 @@ def loop_window(tmp_path, tone):
     window.load_result({"instrumental": str(tone), "source_hash": hash_file(tone), "cached": True})
     window.audio_output.setVolume(0)
     window.metronome.mute.setChecked(True)
-    # Exercise native looping at a normal tempo. A 400 BPM / one-beat / 2x
-    # fractional entry lasts only 50 ms and can legitimately cancel on a busy
-    # runner. Stall rejection is covered deterministically in test_count_in.
+    # Keep native transport checks at a normal tempo; fractional handoff and
+    # stall rejection have deterministic clock coverage in test_count_in.
     window.metronome.bpm.setValue(120)
     window.metronome.beats.setValue(4)
     wait_until(app, lambda: window.player.duration() > 0 and window.player.isSeekable())
@@ -148,10 +209,12 @@ def test_gui_range_clamps_seeks_and_whole_track_loop_is_exclusive(loop_window):
 
 @pytest.mark.parametrize("count_each", [False, True])
 def test_repeated_ranges_optionally_count_independent_of_manual_setting(
-    loop_window, monkeypatch, count_each,
+    loop_window, monkeypatch, count_each, count_trace,
 ):
     app, window, _ = loop_window
     window.speed.setValue(200)
+    # 100 ms 진입도 첫 박에 맞춰 마지막 카운트가 50 ms 안에 잘리지 않게 한다.
+    window.metronome.origin.setValue(0.1)
     window.region.last.setCurrentIndex(0)
     window.region.count_each.setChecked(count_each)
     # Opposite options prove manual and per-pass count settings are independent.
@@ -172,8 +235,8 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
     failures = []
     window.count_in.failed.connect(failures.append)
     window.toggle_play()
-    wait_until(app, lambda: len(restarts) >= 2 or bool(failures), timeout=10)
-    assert not failures, failures
+    wait_until(app, lambda: len(restarts) >= 2 or bool(failures), timeout=10, trace=count_trace)
+    assert not failures, {"failures": failures, "trace": list(count_trace)}
     assert counts == ([100, 100, 100] if count_each else [100])
     assert window.count_in.enabled.isChecked() != count_each
     if window.count_in.active:
@@ -187,7 +250,9 @@ def test_repeated_ranges_optionally_count_independent_of_manual_setting(
 
 
 @pytest.mark.parametrize("count_each", [False, True])
-def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch, count_each):
+def test_last_measure_repeats_after_native_end_of_media(
+    loop_window, monkeypatch, count_each, count_trace,
+):
     app, window, _ = loop_window
     window.speed.setValue(200)
     window.region.first.setCurrentIndex(5)
@@ -205,11 +270,13 @@ def test_last_measure_repeats_after_native_end_of_media(loop_window, monkeypatch
     failures = []
     window.count_in.failed.connect(failures.append)
     window.toggle_play()
-    wait_until(app, lambda: len(restarts) >= 1 or bool(failures), timeout=10)
-    assert not failures, failures
+    wait_until(app, lambda: len(restarts) >= 1 or bool(failures), timeout=10, trace=count_trace)
+    assert not failures, {"failures": failures, "trace": list(count_trace)}
     if count_each:
         assert window.count_in.active and window.player.position() == 2500
-        wait_until(app, lambda: window.player.isPlaying(), timeout=5)
+        wait_until(app, lambda: window.player.isPlaying() or bool(failures), timeout=5,
+                   trace=count_trace)
+        assert not failures, {"failures": failures, "trace": list(count_trace)}
     assert window.player.position() >= 2500
     assert window.player.isPlaying()
 

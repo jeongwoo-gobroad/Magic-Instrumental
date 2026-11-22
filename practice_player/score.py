@@ -10,11 +10,30 @@ from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from pathlib import Path
 
+from filelock import FileLock, Timeout
+
 from .cache import hash_file
 from .config import Paths
 from .score_view import camera_at, validate_scroll
 
 SCORE_VERSION = 1
+AUTO_ANALYSIS_VERSION = 2
+_RECOVERY_SCAN_LIMIT = 256
+
+
+def stale_pdf_fallback(data: dict) -> bool:
+    """Old automatic estimates may have discarded a valid repeated route."""
+    signature = data.get("signature", {})
+    if not isinstance(signature, dict):
+        return False
+    automatic = signature.get("automatic")
+    return bool(
+        data.get("analysis_fallback")
+        and signature.get("mode") == "auto"
+        and not signature.get("route")
+        and (not isinstance(automatic, dict)
+             or automatic.get("version") != AUTO_ANALYSIS_VERSION)
+    )
 
 
 def atomic_json(path: Path, data: dict) -> None:
@@ -179,19 +198,107 @@ class ScoreTimeline:
         return cls(json.loads(path.read_text(encoding="utf-8")))
 
 
+def _paired_timeline(path, source_hash, pdf_hash):
+    """A previous result is eligible only for the identical input bytes."""
+    try:
+        if path.is_symlink():
+            return None
+        plan = ScoreTimeline.load(path)
+        if plan.data["audio_sha256"] != source_hash or plan.data["pdf_sha256"] != pdf_hash:
+            return None
+        return path, plan
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def _previous_reviewed_timeline(folder, current, source_hash):
+    candidates = []
+    try:
+        with os.scandir(folder) as entries:
+            for count, entry in enumerate(entries):
+                if count >= _RECOVERY_SCAN_LIMIT:
+                    return None
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                path = Path(entry.path) / "timeline.json"
+                if path == current or path.is_symlink():
+                    continue
+                try:
+                    candidates.append((path.stat().st_mtime_ns, path))
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    for _, path in sorted(candidates, reverse=True):
+        candidate = _paired_timeline(path, source_hash, folder.name)
+        if candidate is not None:
+            data = candidate[1].data
+            if data.get("reviewed") is True and not data.get("analysis_fallback"):
+                return candidate
+    return None
+
+
 def load_last_timeline(
     pdf: Path, paths: Paths, source_hash: str
 ) -> tuple[Path, ScoreTimeline] | None:
     try:
         folder = paths.processed / source_hash / "scores" / hash_file(pdf)
-        pointer = json.loads((folder / "latest.json").read_text(encoding="utf-8"))
-        name = pointer["analysis"]
-        if Path(name).name != name:
+        pointer_path = folder / "latest.json"
+        pointer_bytes = pointer_path.read_bytes()
+        name = json.loads(pointer_bytes)["analysis"]
+        if Path(name).name != name or name in {"", ".", ".."}:
             return None
         path = folder / name / "timeline.json"
-        plan = ScoreTimeline.load(path)
-        if plan.data["audio_sha256"] != source_hash or plan.data["pdf_sha256"] != folder.name:
+        selected = _paired_timeline(path, source_hash, folder.name)
+        if selected is None:
             return None
-        return path, plan
-    except (OSError, ValueError, TypeError, KeyError):
+        plan = selected[1]
+        if not plan.data.get("reviewed") and stale_pdf_fallback(plan.data):
+            previous = _previous_reviewed_timeline(folder, path, source_hash)
+            if (previous is not None and pointer_path.read_bytes() == pointer_bytes
+                    and hash_file(pdf) == folder.name):
+                # 이전 보정본의 내용은 그대로 두고, 잘못된 자동 결과의 연결만 되돌린다.
+                try:
+                    with FileLock(str(folder / ".analysis.lock"), timeout=0):
+                        if pointer_path.read_bytes() == pointer_bytes:
+                            atomic_json(pointer_path, {"analysis": previous[0].parent.name})
+                except (OSError, Timeout):
+                    pass
+                return previous
+        return selected
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
+
+
+def recover_notation_source(pdf: Path, paths: Paths, source_hash: str) -> Path | None:
+    """Recover the selected timeline's exact XML, including verified older cache paths."""
+    selected = load_last_timeline(pdf, paths, source_hash)
+    if selected is None:
+        return None
+    timeline_path, plan = selected
+    if plan.data.get("analysis_fallback"):
+        return None
+    digest = plan.data.get("xml_sha256")
+    if not isinstance(digest, str) or len(digest) != 64:
+        return None
+    folder = timeline_path.parent.parent
+    candidates = []
+    saved = plan.data.get("musicxml_path")
+    if isinstance(saved, str) and saved:
+        candidates.append(Path(saved))
+    candidates.extend([
+        folder / "recognition/reviewed.musicxml",
+        folder / "recognition/score.mxl",
+    ])
+    signature = plan.data.get("signature", {})
+    version = signature.get("omr") if isinstance(signature, dict) else None
+    if type(version) is int and 1 <= version <= 100:
+        candidates.append(folder / f"recognition/v{version}/score.mxl")
+    for candidate in candidates:
+        try:
+            if (candidate.suffix.lower() in {".musicxml", ".mxl", ".xml"}
+                    and candidate.is_file() and hash_file(candidate) == digest):
+                return candidate.resolve()
+        except OSError:
+            continue
+    return None
