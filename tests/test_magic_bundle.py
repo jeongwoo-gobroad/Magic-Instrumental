@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import io
 import json
 import zipfile
 from copy import deepcopy
@@ -100,12 +101,19 @@ def test_portable_score_keeps_originals_and_safe_metadata(tmp_path, kind):
         manifest = json.loads(archive.read("manifest.json"))
         timing = json.loads(archive.read("timeline.json"))
         assert manifest["score"]["kind"] == kind
+        assert manifest["version"] == 3
         assert len(timing["cues"]) == 8
         assert manifest["audio"]["duration"] == 16
+        assert manifest["audio"]["frames"] == 16 * 44100
+        assert manifest["audio"]["path"] == "audio/instrumental.mp3"
+        assert manifest["audio"]["codec"] == "mp3"
+        assert manifest["audio"]["bitrate_kbps"] == 256
+        decoded, rate = sf.read(io.BytesIO(archive.read(manifest["audio"]["path"])))
+        assert rate == 44100 and decoded.shape == (16 * 44100, 2)
+        assert "audio/instrumental.wav" not in archive.namelist()
         if kind == "gp":
             assert manifest["score"]["part"] == "Lead Guitar"
             assert archive.read("score/source.gp5") == Path(prepared["source"]).read_bytes()
-            assert manifest["version"] == 2
             assert [p["name"] for p in manifest["parts"]] == ["Rhythm Guitar", "Lead Guitar"]
             for part in manifest["parts"]:
                 other = json.loads(archive.read(part["timeline"]))
@@ -120,6 +128,104 @@ def test_portable_score_keeps_originals_and_safe_metadata(tmp_path, kind):
     assert hash_file(Path(request["audio"])) == original
     with pytest.raises(FileExistsError):
         export_magic(request)
+
+
+@pytest.mark.parametrize("kind,version", [("pdf", 1), ("gp", 2)])
+def test_wav_option_keeps_legacy_format_and_same_score_times(tmp_path, kind, version):
+    request, _, _ = portable_study(tmp_path, kind)
+    compressed = export_magic(request)
+    lossless = export_magic({
+        **request, "audio_format": "wav", "output": str(tmp_path / "lossless.magic"),
+    })
+    with zipfile.ZipFile(compressed) as mp3, zipfile.ZipFile(lossless) as wav:
+        current, legacy = (json.loads(z.read("manifest.json")) for z in (mp3, wav))
+        assert legacy["version"] == version
+        assert legacy["audio"]["path"] == "audio/instrumental.wav"
+        assert "codec" not in legacy["audio"] and "bitrate_kbps" not in legacy["audio"]
+        assert current["audio"]["frames"] == legacy["audio"]["frames"]
+        assert current["audio"]["duration"] == legacy["audio"]["duration"]
+        assert current["audio"]["source_sha256"] == legacy["audio"]["source_sha256"]
+        assert current.get("parts") == legacy.get("parts")
+        assert current.get("timing_basis") == legacy.get("timing_basis")
+        for name in wav.namelist():
+            if name not in ("manifest.json", "audio/instrumental.wav"):
+                assert mp3.read(name) == wav.read(name)
+        mp3_bytes = mp3.getinfo(current["audio"]["path"]).file_size
+        wav_bytes = wav.getinfo(legacy["audio"]["path"]).file_size
+        assert mp3_bytes < wav_bytes * 0.19
+        original, rate = sf.read(request["instrumental"])
+        restored, wav_rate = sf.read(io.BytesIO(wav.read(legacy["audio"]["path"])))
+        assert rate == wav_rate == 44100
+        np.testing.assert_array_equal(restored, original)
+    assert compressed.stat().st_size < lossless.stat().st_size
+
+
+def test_mp3_choices_preserve_markers_without_encoder_padding(tmp_path):
+    request, _, _ = portable_study(tmp_path, "pdf")
+    original, rate = sf.read(request["audio"])
+    samples = np.zeros_like(original)
+    markers = (1000, rate, 4 * rate + 137, len(samples) - 2000)
+    for start in markers:
+        samples[start:start + 100, 0] = np.hanning(100) * 0.6
+        samples[start:start + 100, 1] = np.hanning(100) * 0.4
+    instrumental = tmp_path / "marker-instrumental.wav"
+    sf.write(instrumental, samples, rate, subtype="PCM_16")
+    request["instrumental"] = str(instrumental)
+    source_hash = hash_file(instrumental)
+    for bitrate in (128, 192, 256, 320):
+        output = export_magic({
+            **request, "mp3_bitrate_kbps": bitrate,
+            "output": str(tmp_path / f"markers-{bitrate}.magic"),
+        })
+        with zipfile.ZipFile(output) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            encoded = archive.read(manifest["audio"]["path"])
+            decoded, mp3_rate = sf.read(io.BytesIO(encoded))
+            assert manifest["audio"]["bitrate_kbps"] == bitrate
+            assert mp3_rate == rate and decoded.shape == samples.shape
+            assert sf.info(io.BytesIO(encoded)).format == "MP3"
+            assert len(encoded) * 8 / (len(samples) / rate) == pytest.approx(
+                bitrate * 1000, rel=0.02,
+            )
+            for start in markers:
+                peak = np.argmax(np.abs(decoded[start - 200:start + 300, 0])) + start - 200
+                assert abs(peak - (start + 49.5)) <= 2
+    assert hash_file(instrumental) == source_hash
+
+
+@pytest.mark.parametrize("settings", [
+    {"audio_format": "aac"}, {"audio_format": None},
+    {"mp3_bitrate_kbps": 64}, {"mp3_bitrate_kbps": "256"},
+    {"mp3_bitrate_kbps": 256.0}, {"mp3_bitrate_kbps": True},
+])
+def test_invalid_audio_settings_fail_before_preparation(tmp_path, settings):
+    output = tmp_path / "invalid.magic"
+    with pytest.raises(ValueError, match="MP3"):
+        export_magic({**settings, "output": str(output)})
+    assert not output.exists()
+
+
+def test_mp3_encoder_failure_preserves_existing_export_and_sources(tmp_path, monkeypatch):
+    import practice_player.magic_bundle as bundle
+
+    request, _, _ = portable_study(tmp_path)
+    originals = {Path(request[k]): hash_file(Path(request[k]))
+                 for k in ("audio", "instrumental", "pdf", "timeline")}
+    output = Path(request["output"])
+    output.write_bytes(b"previous practice export")
+    convert = bundle.run_ffmpeg
+
+    def fail_encoder(args):
+        if "libmp3lame" in args:
+            raise RuntimeError("MP3 encoder failed")
+        convert(args)
+
+    monkeypatch.setattr(bundle, "run_ffmpeg", fail_encoder)
+    with pytest.raises(RuntimeError, match="MP3 encoder failed"):
+        export_magic({**request, "overwrite": True})
+    assert output.read_bytes() == b"previous practice export"
+    assert all(hash_file(path) == digest for path, digest in originals.items())
+    assert not list(tmp_path.glob(".magic-*"))
 
 
 def test_gp_native_parts_and_geometry_without_omr(tmp_path, monkeypatch):

@@ -4,6 +4,7 @@
 Opt in: RUN_WEB_TESTS=1, install playwright's chromium and webkit browsers first.
 """
 
+import hashlib
 import json
 import os
 import threading
@@ -12,7 +13,9 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 
 from practice_player.magic_bundle import export_magic
 from tests.test_magic_bundle import portable_study
@@ -29,9 +32,29 @@ def study_files(tmp_path_factory):
     for kind in ("gp", "pdf"):
         request, _, _ = portable_study(root / kind, kind, count=32 if kind == "gp" else 8)
         files[kind] = export_magic(request)
+        files[f"wav_{kind}"] = export_magic({
+            **request, "audio_format": "wav", "output": str(root / f"wav-{kind}.magic"),
+        })
+        if kind == "pdf":
+            marker_request = request
+    rate = 44100
+    markers = np.zeros(16 * rate + 137, dtype=np.float32)
+    pulse = 0.6 * np.hanning(100)
+    for start in (1000, 4 * rate + 6000, 16 * rate - 2000):
+        markers[start:start + len(pulse)] = pulse
+    marker_wav = root / "marker-instrumental.wav"
+    sf.write(marker_wav, np.column_stack([markers, markers]), rate, subtype="PCM_16")
+    for bitrate in (128, 192, 256, 320):
+        files[f"markers_{bitrate}"] = export_magic({
+            **marker_request, "instrumental": str(marker_wav), "mp3_bitrate_kbps": bitrate,
+            "output": str(root / f"markers-{bitrate}.magic"),
+        })
     # A genuine v1 layout containing only the selected part must remain readable.
     files["legacy"] = root / "legacy.magic"
-    with zipfile.ZipFile(files["gp"]) as source, zipfile.ZipFile(files["legacy"], "w") as target:
+    with (
+        zipfile.ZipFile(files["wav_gp"]) as source,
+        zipfile.ZipFile(files["legacy"], "w") as target,
+    ):
         manifest = json.loads(source.read("manifest.json"))
         manifest["version"] = 1
         manifest["practice"]["origin"] = -0.25
@@ -90,7 +113,13 @@ def page(request, web_url):
 
 def open_study(page, path):
     page.locator("#file").set_input_files(path)
-    page.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+    page.wait_for_function("!MagicPlayer.state().loading", timeout=45000)
+    assert page.evaluate("MagicPlayer.state().ready"), page.evaluate("""() => {
+      const b = window.decodedForTest;
+      return {status: document.getElementById('status').textContent,
+              nativeError: window.nativeDecodeError,
+              decoded: b && {frames: b.length, rate: b.sampleRate, channels: b.numberOfChannels}};
+    }""")
 
 
 def choose_file(page, payload, button=".file-button"):
@@ -141,6 +170,213 @@ def test_legacy_single_part_archive_still_plays(page, study_files):
     assert page.locator("#partChoice").is_hidden()
     page.locator("#play").click()
     page.wait_for_function("MagicPlayer.state().position > .2")
+
+
+@pytest.mark.parametrize("kind,version", [("gp", 2), ("pdf", 1)])
+def test_wav_archives_still_play(page, study_files, kind, version):
+    open_study(page, study_files[f"wav_{kind}"])
+    assert page.evaluate("MagicPlayer.archive().manifest.version") == version
+    assert page.evaluate("MagicPlayer.archive().manifest.audio.path") == "audio/instrumental.wav"
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .2")
+    page.evaluate("MagicPlayer.seek(4, false)")
+    assert page.evaluate("MagicPlayer.state().cue") == 2
+
+
+@pytest.mark.parametrize("bitrate", [128, 192, 256, 320])
+def test_mp3_gapless_markers_and_paused_seek(page, study_files, bitrate):
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      const decode = Audio.prototype.decodeAudioData;
+      Audio.prototype.decodeAudioData = async function (...args) {
+        try {
+          const buffer = await decode.apply(this, args);
+          window.decodedForTest = buffer;
+          return buffer;
+        } catch (error) { window.nativeDecodeError = String(error); throw error; }
+      };
+    }""")
+    open_study(page, study_files[f"markers_{bitrate}"])
+    actual = page.evaluate("""() => {
+      const buffer = window.decodedForTest, samples = buffer.getChannelData(0);
+      const rate = buffer.sampleRate;
+      const peaks = [1000, 4 * rate + 6000, 16 * rate - 2000].map(start => {
+        let peak = start - 200;
+        for (let i = start - 199; i < start + 300; i++) {
+          if (Math.abs(samples[i]) > Math.abs(samples[peak])) peak = i;
+        }
+        return peak;
+      });
+      return {frames: buffer.length, rate, channels: buffer.numberOfChannels,
+              duration: MagicPlayer.state().duration, peaks,
+              version: MagicPlayer.archive().manifest.version,
+              bitrate: MagicPlayer.archive().manifest.audio.bitrate_kbps};
+    }""")
+    assert actual["version"] == 3 and actual["bitrate"] == bitrate
+    assert actual["frames"] == 16 * 44100 + 137 and actual["rate"] == 44100
+    assert actual["channels"] == 2 and actual["duration"] == (16 * 44100 + 137) / 44100
+    assert actual["peaks"] == pytest.approx([1049.5, 4 * 44100 + 6049.5,
+                                           16 * 44100 - 1950.5], abs=2)
+    for seconds, cue in [(0, 0), (4, 2), (15.99, 7)]:
+        page.evaluate("seconds => MagicPlayer.seek(seconds, false)", seconds)
+        assert page.evaluate("MagicPlayer.state().cue") == cue
+        assert page.evaluate("MagicPlayer.state().position") == seconds
+
+
+def test_mp3_marker_stays_at_cue_through_count_and_loop(page, study_files):
+    open_study(page, study_files["markers_256"])
+    page.locator(".metronome summary").click()
+    page.locator("#bpm").fill("240")
+    page.locator("#bpm").dispatch_event("change")
+    page.locator(".metronome summary").click()
+    page.locator("#loopStart").select_option("2")
+    page.locator("#loopEnd").select_option("2")
+    page.locator("#loop").check()
+    page.locator("#count").check()
+    page.locator("#loopCount").check()
+    page.evaluate("""async () => {
+      const source = `class MarkerProbe extends AudioWorkletProcessor {
+        constructor() { super(); this.last = -Infinity; }
+        process(inputs) {
+          const data = inputs[0]?.[0];
+          if (data) for (let i = 0; i < data.length; i++) {
+            const time = currentTime + i / sampleRate;
+            if (Math.abs(data[i]) > .03 && time - this.last > .5) {
+              this.port.postMessage(time); this.last = time;
+            }
+          }
+          return true;
+        }
+      }; registerProcessor('marker-probe', MarkerProbe);`;
+      const url = URL.createObjectURL(new Blob([source], {type: 'text/javascript'}));
+      try { await ctx.audioWorklet.addModule(url); } finally { URL.revokeObjectURL(url); }
+      window.markerVisits = [];
+      window.markerNode = new AudioWorkletNode(ctx, 'marker-probe');
+      markerNode.port.onmessage = event => {
+        const position = nowPosition(event.data);
+        markerVisits.push({position, cue: cueAt(position), audioTime: event.data});
+      };
+      musicGain.connect(markerNode); markerNode.connect(ctx.destination);
+    }""")
+    page.locator("#play").click()
+    page.wait_for_function("window.markerVisits.length >= 2", timeout=10000)
+    visits = page.evaluate("window.markerVisits.slice(0, 2)")
+    page.evaluate("""() => {
+      MagicPlayer.pause(); musicGain.disconnect(markerNode);
+      markerNode.disconnect(); markerNode.port.close();
+    }""")
+    assert [visit["cue"] for visit in visits] == [2, 2]
+    assert [visit["position"] for visit in visits] == pytest.approx([4.137, 4.137], abs=.1)
+    assert visits[1]["audioTime"] - visits[0]["audioTime"] >= 2.8
+
+
+def test_mp3_metadata_limits_reject_before_decode(page, study_files, tmp_path):
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      window.decodeCalls = 0;
+      Audio.prototype.decodeAudioData = async () => {
+        window.decodeCalls++; throw Error('Unexpected decode');
+      };
+    }""")
+    changes = [
+        {"codec": "wav"}, {"path": "audio/instrumental.wav"}, {"bitrate_kbps": 224},
+        {"frames": True}, {"frames": -1}, {"frames": 134217729, "duration": 134217729 / 44100},
+        {"frames": 44100, "duration": 16}, {"sample_rate": 48000},
+    ]
+    for index, change in enumerate(changes):
+        broken = tmp_path / f"bad-mp3-metadata-{index}.magic"
+        with zipfile.ZipFile(study_files["pdf"]) as source, zipfile.ZipFile(broken, "w") as target:
+            manifest = json.loads(source.read("manifest.json"))
+            manifest["audio"].update(change)
+            for name in source.namelist():
+                target.writestr(name, json.dumps(manifest) if name == "manifest.json"
+                                else source.read(name))
+        page.locator("#file").set_input_files(broken)
+        page.wait_for_function("!MagicPlayer.state().loading")
+        assert not page.evaluate("MagicPlayer.state().ready")
+        assert page.evaluate("window.decodeCalls") == 0
+        assert page.locator("#play").is_disabled()
+
+
+def test_mp3_payload_must_match_declared_codec_frames_and_bitrate(page, study_files, tmp_path):
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      window.decodeCalls = 0;
+      Audio.prototype.decodeAudioData = async () => {
+        window.decodeCalls++; throw Error('Unexpected decode');
+      };
+    }""")
+    with zipfile.ZipFile(study_files["pdf"]) as source:
+        original = {name: source.read(name) for name in source.namelist()}
+    manifest = json.loads(original["manifest.json"])
+    audio_path = manifest["audio"]["path"]
+    mp3 = original[audio_path]
+    with zipfile.ZipFile(study_files["wav_pdf"]) as source:
+        wav = source.read("audio/instrumental.wav")
+    offsets, at = [], 0
+    while at < len(mp3):
+        offsets.append(at)
+        header = int.from_bytes(mp3[at:at + 4], "big")
+        at += 144000 * 256 // 44100 + ((header >> 9) & 1)
+    middle = bytearray(mp3)
+    middle[offsets[len(offsets) // 2]] = 0
+    no_gapless = bytearray(mp3)
+    no_gapless[156:160] = b"xxxx"
+    cases = [
+        ("wav-disguised-as-mp3", wav, {}),
+        ("false-short-duration", mp3, {"frames": 44100, "duration": 1}),
+        ("false-low-bitrate", mp3, {"bitrate_kbps": 128}),
+        ("broken-middle-header", middle, {}),
+        ("truncated", mp3[:-1], {}),
+        ("extra-bytes", mp3 + b"\0", {}),
+        ("missing-gapless-metadata", no_gapless, {}),
+    ]
+    for name, payload, change in cases:
+        changed = json.loads(original["manifest.json"])
+        changed["audio"].update(change)
+        changed["entries"][audio_path] = {
+            "bytes": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        broken = tmp_path / f"{name}.magic"
+        with zipfile.ZipFile(broken, "w") as target:
+            for entry, data in original.items():
+                if entry == "manifest.json":
+                    data = json.dumps(changed)
+                elif entry == audio_path:
+                    data = payload
+                target.writestr(entry, data)
+        page.locator("#file").set_input_files(broken)
+        page.wait_for_function("!MagicPlayer.state().loading")
+        assert not page.evaluate("MagicPlayer.state().ready"), name
+        assert page.evaluate("window.decodeCalls") == 0, name
+        assert "MP3 반주 정보" in page.locator("#status").inner_text(), name
+
+
+def test_mp3_decode_failure_or_timing_change_offers_wav_recovery(page, study_files):
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      window.originalDecode = Audio.prototype.decodeAudioData;
+    }""")
+    for mode in ("failure", "frames", "rate", "channels"):
+        page.evaluate("""mode => {
+          const Audio = window.AudioContext || window.webkitAudioContext;
+          Audio.prototype.decodeAudioData = async function () {
+            if (mode === 'failure') throw Error('Unsupported native decoder');
+            return this.createBuffer(mode === 'channels' ? 1 : 2,
+              16 * 44100 + (mode === 'frames' ? 1 : 0), mode === 'rate' ? 48000 : 44100);
+          };
+        }""", mode)
+        page.locator("#file").set_input_files(study_files["pdf"])
+        page.wait_for_function("!MagicPlayer.state().loading")
+        assert not page.evaluate("MagicPlayer.state().ready")
+        assert "WAV로 저장" in page.locator("#status").inner_text()
+        assert page.locator("#play").is_disabled()
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      Audio.prototype.decodeAudioData = window.originalDecode;
+    }""")
+    open_study(page, study_files["wav_pdf"])
+    assert page.locator("#play").is_enabled()
 
 
 def test_phone_file_and_score_navigation(page, study_files):
@@ -360,7 +596,7 @@ def test_corrupt_packages_rejected_without_executing_text(page, study_files, tmp
     open_study(page, source)
     corrupted = bytearray(source.read_bytes())
     with zipfile.ZipFile(source) as z:
-        entry = z.getinfo("audio/instrumental.wav")
+        entry = z.getinfo(json.loads(z.read("manifest.json"))["audio"]["path"])
         at = entry.header_offset + 30 + len(entry.filename.encode()) + len(entry.extra)
     corrupted[at + 100] ^= 1
     broken = tmp_path / "broken.magic"

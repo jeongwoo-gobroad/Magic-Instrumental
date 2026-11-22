@@ -84,8 +84,13 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         assert not leader.evaluate("MagicEnsemble.state().prepared")
         assert "준비가 해제" not in leader.locator("#sessionLive").inner_text()
         choose_file(member, {"name": "연습곡.magic", "mimeType": "",
-                             "buffer": study_files["gp"].read_bytes()}, "#sessionOpenFile")
+                             "buffer": study_files["wav_gp"].read_bytes()}, "#sessionOpenFile")
         member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+        assert leader.evaluate("MagicPlayer.archive().manifest.version") == 3
+        assert member.evaluate("MagicPlayer.archive().manifest.version") == 2
+        assert leader.evaluate("ensemble.media().source") == member.evaluate(
+            "ensemble.media().source"
+        )
         member.locator("#partSelect").select_option("1")
         member.wait_for_function("MagicPlayer.archive().activePart.track === 1")
         assert leader.evaluate("MagicPlayer.archive().activePart.track") == 2

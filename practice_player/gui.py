@@ -16,7 +16,10 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -780,6 +783,9 @@ class Window(QMainWindow):
     def export_magic(self):
         if self.worker or not self.score_panel.timeline_path or not self.output_path:
             return
+        quality = self.magic_audio_options()
+        if quality is None:
+            return
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "태블릿용 연습 파일 저장",
@@ -799,6 +805,10 @@ class Window(QMainWindow):
                 return
         from .score import atomic_json
 
+        audio_format, _, bitrate = quality.partition(":")
+        audio_options = {"audio_format": audio_format}
+        if bitrate:
+            audio_options["mp3_bitrate_kbps"] = int(bitrate)
         self.player.pause()
         request = self.paths.processed / "magic-export-request.json"
         atomic_json(
@@ -811,6 +821,7 @@ class Window(QMainWindow):
                 "timeline": str(self.score_panel.timeline_path),
                 "output": str(target),
                 "overwrite": overwrite,
+                **audio_options,
                 "title": self.source_path.stem,
                 "pitch_semitones": self.pitch_semitones,
                 "practice": {
@@ -821,7 +832,41 @@ class Window(QMainWindow):
                 },
             },
         )
+        self.preferences.setValue("magic_export/audio_quality", quality)
         self.start_job(["magic-export", "--request", str(request), "--events"])
+
+    def magic_audio_options(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("연습 파일 반주 음질")
+        form = QFormLayout(dialog)
+        description = QLabel(
+            "MP3는 용량을 줄여 옮기기 편합니다. 높은 kbps를 고르면 음질과 파일 크기가 올라갑니다.\n"
+            "WAV는 압축 손실 없이 저장하지만 파일이 큽니다."
+        )
+        description.setWordWrap(True)
+        form.addRow(description)
+        quality = QComboBox()
+        quality.setObjectName("magicAudioQuality")
+        quality.setAccessibleName("반주 음질")
+        for bitrate in (128, 192, 256, 320):
+            label = f"MP3 {bitrate} kbps" + (" · 권장" if bitrate == 256 else "")
+            quality.addItem(label, f"mp3:{bitrate}")
+        quality.addItem("WAV · 무손실", "wav")
+        saved = str(self.preferences.value("magic_export/audio_quality", "mp3:256"))
+        index = quality.findData(saved)
+        quality.setCurrentIndex(index if index >= 0 else quality.findData("mp3:256"))
+        form.addRow("반주 음질", quality)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("저장 위치 선택…")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        selected = quality.currentData() if dialog.exec() == QDialog.DialogCode.Accepted else None
+        dialog.deleteLater()
+        return selected
 
     def open_ensemble(self):
         self.count_in.cancel()

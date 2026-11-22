@@ -16,6 +16,7 @@ from practice_player.gui import Window
 from practice_player.pipeline import process
 from tests.test_gui import wait_until
 from tests.test_guitar_pro import gp_song
+from tests.test_magic_export_gui import schedule_magic_quality
 
 
 def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, monkeypatch):
@@ -106,11 +107,18 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         bundle = tmp_path / "연습 세트.magic"
         window.metronome.origin.setValue(-0.25)
         monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_: (str(bundle), "Magic"))
+        quality = schedule_magic_quality(app)
         click(window.magic_button)
+        assert not quality["errors"] and quality["initial"] == "mp3:256"
         assert not window.magic_button.isEnabled()
         finish()
         with zipfile.ZipFile(bundle) as archive:
             manifest = json.loads(archive.read("manifest.json"))
+            assert manifest["version"] == 3
+            assert manifest["audio"]["path"] == "audio/instrumental.mp3"
+            assert manifest["audio"]["codec"] == "mp3"
+            assert manifest["audio"]["bitrate_kbps"] == 256
+            assert archive.read(manifest["audio"]["path"])
             assert manifest["audio"]["pitch_semitones"] == 2
             assert manifest["practice"]["origin"] == -0.25
             assert abs(manifest["audio"]["duration"] - 3) < 0.01
