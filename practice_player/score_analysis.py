@@ -24,7 +24,14 @@ from .cache import hash_file
 from .config import Paths
 from .omr_runtime import executable as managed_executable
 from .omr_runtime import managed_ready, managed_root, omr_environment
-from .score import SCORE_VERSION, ScoreTimeline, atomic_json, matching_musicxml
+from .score import (
+    AUTO_ANALYSIS_VERSION,
+    SCORE_VERSION,
+    ScoreTimeline,
+    atomic_json,
+    matching_musicxml,
+    recover_notation_source,
+)
 from .score_geometry import LAYOUT_VERSION
 from .score_input import OMR_VERSION, prepare_omr_input
 
@@ -39,12 +46,17 @@ class _RouteError(ValueError):
     pass
 
 
+class _NavigationError(ValueError):
+    pass
+
+
 def _recognize(mode, stage, operation, *args, **kwargs):
     """Only recognition failures may select the geometry fallback."""
     try:
         return operation(*args, **kwargs)
     except Exception as error:
-        if mode != "auto" or isinstance(error, (OSError, _RouteError)):
+        if (mode != "auto" or stage == "navigation"
+                or isinstance(error, (OSError, _RouteError, _NavigationError))):
             raise
         if isinstance(error, (ValueError, RuntimeError, ET.ParseError, DefusedXmlException,
                               zipfile.BadZipFile, KeyError, StopIteration)) or (
@@ -437,7 +449,7 @@ def parse_notation(
         try:
             route = expand_navigation(measures, xml_measures)
         except Exception as error:
-            raise ValueError(
+            raise _NavigationError(
                 "반복/코다 구조가 불완전합니다. MusicXML을 수정하거나 "
                 "연주 순서를 직접 입력하세요. " + str(error)
             ) from error
@@ -608,6 +620,16 @@ def _analyze_pdf_timing(
     _, bars, layout = detect_pdf_layout(pdf, None, report)
     if not bars or set(bars) != set(range(len(bars))) or len(bars) > 2000:
         raise ValueError("PDF에서 순서대로 연결할 수 있는 1~2,000마디가 필요합니다.")
+    if automatic is not None and not route_override:
+        from .score_symbols import locate_mark, text_marks
+
+        if any(locate_mark(mark, bars) is not None for mark in text_marks(pdf)) or any(
+            bar.get("repeat_start") or bar.get("repeat_end") for bar in bars.values()
+        ):
+            raise _NavigationError(
+                "PDF에 반복·이동 기호가 있어 인쇄 순서로 대체할 수 없습니다. "
+                "인식 결과를 보정한 MusicXML을 사용하거나 연주 순서를 직접 입력하세요."
+            )
     route = (parse_route_override(route_override, len(bars))
              if route_override else list(range(len(bars))))
     # BPM은 4분음표 기준이므로 6/8 한 마디는 3박으로 계산한다.
@@ -715,6 +737,8 @@ def analyze_score(
 
         musicxml = musicxml or matching_musicxml(pdf)
         if musicxml is None:
+            musicxml = recover_notation_source(pdf, paths, audio_hash)
+        if musicxml is None:
             for name in ("reviewed.musicxml", f"v{OMR_VERSION}/score.mxl"):
                 candidate = folder / "recognition" / name
                 if candidate.is_file():
@@ -725,7 +749,7 @@ def analyze_score(
             musicxml is not None and musicxml.suffix.lower() in GP_EXTENSIONS
         )):
             mode = "audio"
-        automatic = {"request": {"version": 1, "notation_sha256": source_hash,
+        automatic = {"request": {"version": AUTO_ANALYSIS_VERSION, "notation_sha256": source_hash,
                                   "omr": OMR_VERSION}} if mode == "auto" else None
 
         def unchanged():
@@ -829,7 +853,8 @@ def _analyze_notation(
         "gp_display": gp_display["signature"] if gp_display else None,
     }
     if mode == "auto":
-        signature.update(meter_beats=meter_beats, meter_unit=meter_unit, automatic=1)
+        signature.update(meter_beats=meter_beats, meter_unit=meter_unit,
+                         automatic=AUTO_ANALYSIS_VERSION)
     key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()[:20]
     destination = folder / key
     if not force and (destination / "timeline.json").exists():
@@ -851,6 +876,7 @@ def _analyze_notation(
     from .score_symbols import printed_measure_numbers, supplement_xml
 
     layout, pages, document, additions, extra_warnings = {}, None, None, [], []
+    layout_error = None
     try:
         if gp_display:
             from .gp_render import native_layout
@@ -858,12 +884,18 @@ def _analyze_notation(
             _, bars, layout = native_layout(gp_display)
         else:
             _, bars, layout = _recognize(mode, "layout", analyze_layout, pdf, musicxml, report)
-    except ValueError as error:
+    except (ValueError, _RecognitionFailure) as failure:
+        error = failure.__cause__ if isinstance(failure, _RecognitionFailure) else failure
+        if not isinstance(error, ValueError):
+            raise
         if source_info.get("method") in {"guitar-pro", "standard-staves-from-mixed-pdf"}:
+            if mode == "auto":
+                raise _RecognitionFailure("layout", error) from error
             raise ValueError(
                 "원본 악보와 PDF의 마디를 정확히 연결하지 못했습니다. "
                 "같은 판본·트랙인지 확인하세요. " + str(error)
             ) from error
+        layout_error = error
         extra_warnings.append("PDF 배치를 자동 연결하지 못했습니다: " + str(error))
     else:
         if source_info.get("method") == "standard-staves-from-mixed-pdf":
@@ -880,6 +912,13 @@ def _analyze_notation(
         mode, "notation", parse_notation, musicxml, len(reader.pages), route_override,
         document=document, measure_pages=pages,
     )
+    if layout_error is not None and mode == "auto":
+        # 화면 배치 실패 때문에 이미 읽은 반복 순서까지 버리면 안 된다.
+        if not route_override and not any(cue["marks"] for cue in notation["originals"]):
+            raise _RecognitionFailure("layout", layout_error) from layout_error
+        extra_warnings.append(
+            "화면 배치는 연결하지 못했지만 인식한 연주 순서와 MusicXML 페이지를 유지합니다."
+        )
     notation["warnings"].extend(extra_warnings)
     notation["warnings"].extend(source_info.get("warnings", []))
     if source_info and layout.get("method") == "pdf-staves-barlines":
@@ -913,18 +952,14 @@ def _analyze_notation(
             "PDF에는 D.S.가 있지만 인식 결과에 없습니다. Audiveris/MusicXML에서 "
             "세뇨·코다를 보정하거나 연주 순서를 직접 입력하세요."
         )
-        if mode == "auto":
-            raise _RecognitionFailure("navigation", message)
-        raise ValueError(message)
+        raise _NavigationError(message)
     if (
         not route_override
         and re.search(r"D\s*\.\s*C", text, re.I)
         and not any(mark.startswith("DaCapo") for mark in marks)
     ):
         message = "PDF의 D.C.를 인식하지 못했습니다. MusicXML 또는 연주 순서를 보정하세요."
-        if mode == "auto":
-            raise _RecognitionFailure("navigation", message)
-        raise ValueError(message)
+        raise _NavigationError(message)
     if mode in {"auto", "audio"}:
         starts, end, alignment = align_audio(audio, notation, report)
     else:

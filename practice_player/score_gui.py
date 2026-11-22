@@ -32,7 +32,14 @@ from PySide6.QtWidgets import (
 )
 
 from .cache import hash_file
-from .score import ScoreTimeline, associate_score, load_last_timeline, matching_score
+from .score import (
+    ScoreTimeline,
+    associate_score,
+    load_last_timeline,
+    matching_score,
+    recover_notation_source,
+    stale_pdf_fallback,
+)
 from .score_view import rendered_size, view_profile
 
 
@@ -410,6 +417,8 @@ class ScorePanel(QWidget):
             + ("\n음표 인식 대신 마디선·BPM으로 계산 · 시간표 확인"
                if plan.data.get("analysis_fallback") else "")
             + (f"\n배치 확인 필요 {review_lines}줄" if review_lines else "")
+            + ("\n이전 버전의 반복·코다 누락 가능성 · 악보 사전 분석을 다시 실행하세요."
+               if stale_pdf_fallback(plan.data) else "")
         )
         details = []
         for index, page in enumerate(geometry.get("pages", [])):
@@ -527,10 +536,29 @@ class ScorePanel(QWidget):
             QLabel(f"{self.zoom.currentText()} · {profile['width']} × {profile['height']} px"),
         )
         reuse = QCheckBox("기존 마디 시간표 유지 · 화면 이동 경로만 분석")
-        reuse.setChecked(self.timeline is not None)
+        stale_fallback = self.timeline is not None and stale_pdf_fallback(self.timeline.data)
+        reuse.setChecked(self.timeline is not None and (
+            not stale_fallback or self.timeline.data.get("reviewed")
+        ))
         reuse.setEnabled(self.timeline is not None)
         form.addRow(reuse)
+        if stale_fallback:
+            notice = QLabel(
+                "이전 자동 대체 분석에서 반복·코다가 빠졌을 수 있습니다. "
+                "직접 보정하지 않은 결과는 전체 분석을 다시 하며, 기존 파일은 보존합니다."
+            )
+            notice.setWordWrap(True)
+            form.addRow(notice)
         saved = self.timeline.data.get("signature", {}) if self.timeline else {}
+        previous_xml = (recover_notation_source(self.pdf, self.paths, self.source_hash)
+                        if not self.gp_source else None)
+        previous_mode = saved.get("mode") if previous_xml is not None else None
+        if previous_mode not in {"audio", "tempo"}:
+            previous_mode = "auto"
+        if previous_xml is not None:
+            label = ("기존 인식 결과 · 일정 BPM으로 시간 계산" if previous_mode == "tempo"
+                     else "기존 인식 결과의 반복·코다 순서 사용")
+            form.addRow("이어 쓸 분석", QLabel(label))
         mode = None
         if self.gp_source:
             mode = QComboBox()
@@ -587,7 +615,8 @@ class ScorePanel(QWidget):
         hint = QLabel(
             ("악보의 음표·반복과 음원을 자동으로 연결합니다.\n"
              "인식이 어려우면 마디선과 입력한 BPM·박자로 시간을 계산합니다.\n"
-             "이때 반복은 직접 연주 순서를 입력하고, 못갖춘마디·박자/템포 변화는 "
+             "반복·이동 기호가 불완전하면 연주 순서 보정을 요청합니다. "
+             "못갖춘마디·박자/템포 변화는 "
              "시간표에서 보정하세요.\n" if not self.gp_source else
              "GP의 음표·박자·반복을 직접 읽어 반주와 연결합니다.\n")
             + "분석 후 마디 수·연주 순서·시간을 확인하고 자동 스크롤을 켜세요."
@@ -604,13 +633,13 @@ class ScorePanel(QWidget):
             options = {
                 "audio": str(self.audio),
                 "pdf": str(self.pdf),
-                "mode": mode.currentData() if mode is not None else "auto",
+                "mode": mode.currentData() if mode is not None else previous_mode,
                 "bpm": bpm.value(),
                 "meter-beats": meter_beats.value(),
                 "meter-unit": meter_unit.currentData(),
                 "lead-in": lead.value(),
                 "route": route.text().strip(),
-                "musicxml": "",
+                "musicxml": str(previous_xml) if previous_xml is not None else "",
                 "gp-track": 1,
                 "force": force.isChecked(),
                 "zoom": profile["zoom"],

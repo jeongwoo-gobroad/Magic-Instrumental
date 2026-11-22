@@ -376,8 +376,18 @@ def test_auto_layout_mismatch_falls_back_to_printed_bars(pdf_study, tone, monkey
     assert plan.data["analysis_fallback"]["stage"] == "layout"
 
 
+def test_auto_malformed_notation_can_still_fall_back_for_plain_score(pdf_study, tone):
+    paths, pdf = pdf_study
+    xml = pdf.with_suffix(".musicxml")
+    xml.write_text("<score-partwise><broken>", encoding="utf-8")
+    plan = ScoreTimeline.load(analyze_score(tone, pdf, paths))
+    assert len(plan.cues) == 6
+    assert plan.data["analysis_fallback"]["stage"] == "layout"
+    assert xml.read_text(encoding="utf-8") == "<score-partwise><broken>"
+
+
 @pytest.mark.parametrize("stage", ["notation", "navigation"])
-def test_auto_note_and_navigation_failures_fall_back(pdf_study, tone, monkeypatch, stage):
+def test_auto_only_note_failure_may_fall_back(pdf_study, tone, monkeypatch, stage):
     paths, pdf = pdf_study
     same_score_xml(paths, pdf)
 
@@ -387,6 +397,11 @@ def test_auto_note_and_navigation_failures_fall_back(pdf_study, tone, monkeypatc
     target = ("practice_player.score_analysis.parse_notation" if stage == "notation" else
               "practice_player.score_symbols.supplement_xml")
     monkeypatch.setattr(target, failed)
+    if stage == "navigation":
+        with pytest.raises(ValueError, match="반복 구조"):
+            analyze_score(tone, pdf, paths)
+        assert not list(paths.processed.rglob("timeline.json"))
+        return
     plan = ScoreTimeline.load(analyze_score(tone, pdf, paths))
     assert plan.data["analysis_fallback"]["stage"] == stage
 
