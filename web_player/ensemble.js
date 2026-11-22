@@ -31,7 +31,6 @@ class Ensemble {
     $('exitSession').onclick = () => this.leave();
     $('sessionPrepare').onclick = () => this.prepare().catch(e => this.error(e));
     $('sessionRoom').onclick = () => document.body.classList.toggle('room-open');
-    $('sessionOpenFile').onclick = () => $('file').click();
     $('sessionVolume').oninput = () => { $('volume').value = $('sessionVolume').value; $('volume').oninput(); };
     this.bindTransport(); this.update();
   }
@@ -141,9 +140,12 @@ class Ensemble {
       if (this.downloadTask || (!ready && this.role === 'member' && this.shared)) await this.download();
       if (generation !== this.generation || document.hidden) return;
       requireMagic(ready && !loading, '연습 파일을 연 뒤 준비를 눌러 주세요.');
+      if (!await preparePlayback() || generation !== this.generation || document.hidden) return;
+      requireMagic(ctx.state === 'running', '소리가 일시정지되었습니다. 합주 준비를 다시 눌러 주세요.');
       const media = this.media();
       requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
       this.wantsReady = true;
+      setStatus(archive.timing.reviewed ? '반주 준비 완료 · 합주를 기다립니다.' : '반주 준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
       document.body.classList.remove('room-open'); window.scrollTo(0,0); $('linked').checked = true;
       this.status(''); this.syncReady();
     } finally {
@@ -274,7 +276,7 @@ class Ensemble {
     }
   }
   async openShared(generation) {
-    this.status('리더의 연습 파일을 받고 있습니다…'); await audioReady();
+    this.status('리더의 연습 파일을 받고 있습니다…');
     if (generation !== this.generation) return;
     const response = await this.api(`/api/rooms/${this.code}/file`);
     const length = Number(response.headers.get('Content-Length'));
@@ -316,7 +318,8 @@ class Ensemble {
     }
     $('sessionTitle').textContent = archive?.manifest.title || '연습 파일을 선택해 주세요';
     $('sessionClock').textContent = `${clockText(nowPosition())} / ${clockText(duration)}`;
-    $('sessionOpenFile').hidden = !member; $('sessionOpenFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
+    $('sessionOpenFile').hidden = !member;
+    $('sessionFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
     $('sessionVolumeLabel').hidden = !member;
     if (active) $('ensemblePanel').open = true;
     $('leaderMode').textContent = leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기';
