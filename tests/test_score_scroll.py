@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import json
+from hashlib import sha256
 
 import numpy as np
 import pytest
@@ -79,6 +80,14 @@ def test_pdf_geometry_and_scroll_follow_repeat_without_realigning(score_fixture,
     plan = ScoreTimeline.load(path)
     assert plan.data["reviewed"] and plan.data["offset"] == 0.125
     assert plan.cues == ScoreTimeline.load(base).cues
+    frames = plan.data["scroll"]["frames"]
+    for cue, frame in zip(plan.cues, frames):
+        assert frame["box"] == {
+            key: bars[cue["source_index"]][key] for key in ("left", "top", "right", "bottom")
+        }
+    assert frames[0]["box"] == frames[6]["box"]
+    assert plan.index_at(12.124, plan.data["offset"]) == 5
+    assert plan.index_at(12.125, plan.data["offset"]) == 6
     assert plan.scroll_at(0.1) is None
     early, middle, bottom, back = [plan.scroll_at(t) for t in (1, 5, 11, 13)]
     assert early[2] < middle[2] < bottom[2]
@@ -91,7 +100,93 @@ def test_pdf_geometry_and_scroll_follow_repeat_without_realigning(score_fixture,
     resized = analyze_scroll(audio, pdf, paths, path, view_profile(2, 620, 360))
     assert len({path, enlarged, resized}) == 3
     assert ScoreTimeline.load(enlarged).cues == plan.cues
+    for changed in (enlarged, resized):
+        assert [frame["box"] for frame in ScoreTimeline.load(changed).data["scroll"]["frames"]] == [
+            frame["box"] for frame in frames
+        ]
     assert base.exists()
+
+
+def test_legacy_scroll_reanalysis_adds_boxes_without_replacing_reviewed_timing(
+    score_fixture, monkeypatch,
+):
+    paths, audio, pdf, _, base = score_fixture
+    profile = view_profile(2, 420, 360)
+    current = analyze_scroll(audio, pdf, paths, base, profile)
+    data = json.loads(current.read_bytes())
+    data["view_signature"].pop("measure_boxes", None)
+    for frame in data["scroll"]["frames"]:
+        frame.pop("box", None)
+    key = sha256(json.dumps(data["view_signature"], sort_keys=True).encode()).hexdigest()[:20]
+    legacy = current.parent.parent / f"view-{key}" / "timeline.json"
+    ScoreTimeline(data).save(legacy)
+    if current != legacy:
+        current.unlink()
+    old = ScoreTimeline.load(legacy)
+    assert old.data["scroll"]["version"] == 1
+    assert old.scroll_at(13) is not None
+    before = {path: path.read_bytes() for path in (base, legacy)}
+    monkeypatch.setattr(
+        "practice_player.score_analysis.align_audio",
+        lambda *_: pytest.fail("Adding display boxes must preserve the reviewed media timeline"),
+    )
+    updated = analyze_scroll(audio, pdf, paths, legacy, profile)
+    plan = ScoreTimeline.load(updated)
+    assert updated != legacy
+    assert plan.data["view_signature"]["measure_boxes"] == 1
+    assert all("box" in frame for frame in plan.data["scroll"]["frames"])
+    assert plan.cues == old.cues
+    assert plan.data["reviewed"] and plan.data["offset"] == old.data["offset"]
+    assert plan.scroll_at(13) == old.scroll_at(13)
+    assert all(path.read_bytes() == content for path, content in before.items())
+    assert analyze_scroll(audio, pdf, paths, updated, profile) == updated
+
+
+def boxed_scroll_data():
+    return {
+        "version": 1, "page_count": 1, "end": 2,
+        "cues": [{"start": 0, "page": 0, "source_index": 0}],
+        "scroll": {
+            "version": 1, "profile": view_profile("page", 640, 420),
+            "page_sizes": [[600, 800]],
+            "frames": [{
+                "page": 0, "source_index": 0, "x0": 0, "x1": 0, "y0": 0, "y1": 0,
+                "intro_y": 0, "settle": 0,
+                "box": {"left": 0.1, "top": 0.2, "right": 0.8, "bottom": 0.4},
+            }],
+        },
+    }
+
+
+@pytest.mark.parametrize("box", [None, [], "0,0,1,1", {}, {"left": 0.1, "top": 0.2, "right": 0.8}])
+def test_scroll_rejects_malformed_measure_box(box):
+    data = boxed_scroll_data()
+    data["scroll"]["frames"][0]["box"] = box
+    with pytest.raises(ValueError):
+        ScoreTimeline(data)
+
+
+@pytest.mark.parametrize("field,value", [
+    ("left", float("nan")), ("top", float("inf")), ("bottom", float("-inf")),
+    ("left", -0.1), ("right", 1.1), ("top", -0.1), ("bottom", 1.1),
+    ("left", 0.8), ("right", 0.05), ("top", 0.4), ("bottom", 0.1),
+    ("left", "0.1"), ("top", False), ("bottom", None),
+])
+def test_scroll_rejects_nonfinite_or_invalid_box_coordinates(field, value):
+    data = boxed_scroll_data()
+    data["scroll"]["frames"][0]["box"][field] = value
+    with pytest.raises(ValueError):
+        ScoreTimeline(data)
+
+
+def test_normalized_page_edges_and_absent_legacy_box_are_valid():
+    data = boxed_scroll_data()
+    data["scroll"]["frames"][0]["box"] = {"left": 0, "top": 0, "right": 1, "bottom": 1}
+    plan = ScoreTimeline(data)
+    assert plan.scroll_at(1) == (0, 0, 0)
+    del data["scroll"]["frames"][0]["box"]
+    legacy = ScoreTimeline(data)
+    assert legacy.scroll_at(1) == (0, 0, 0)
 
 
 def test_staff_detection_rejects_missing_or_wrong_lines():

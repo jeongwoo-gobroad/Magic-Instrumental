@@ -7,8 +7,8 @@ from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QImage, QPixmap
+from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -61,6 +61,43 @@ def status_area(label, name):
     return area
 
 
+class ScorePageLabel(QLabel):
+    """Paint the current measure over the page without changing the cached image."""
+
+    def __init__(self, text):
+        super().__init__(text)
+        self.highlight_box = None
+
+    def set_highlight(self, box):
+        if self.highlight_box != box:
+            self.highlight_box = box
+            self.update()
+
+    def highlight_rect(self):
+        pixmap = self.pixmap()
+        if self.highlight_box is None or pixmap is None or pixmap.isNull():
+            return QRectF()
+        box, page = self.highlight_box, self.contentsRect()
+        return QRectF(
+            page.left() + box["left"] * page.width(),
+            page.top() + box["top"] * page.height(),
+            (box["right"] - box["left"]) * page.width(),
+            (box["bottom"] - box["top"]) * page.height(),
+        )
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        rect = self.highlight_rect()
+        if rect.isEmpty():
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor("#169873"), 2))
+        painter.setBrush(QColor(80, 218, 169, 28))
+        painter.drawRoundedRect(rect.adjusted(1, 1, -1, -1), 4, 4)
+        painter.end()
+
+
 class PdfView(QScrollArea):
     geometry_changed = Signal()
     manual_navigation = Signal()
@@ -71,12 +108,14 @@ class PdfView(QScrollArea):
         self.page = 0
         self.zoom = "page"
         self.cache = OrderedDict()
+        self.highlight_page = None
+        self.highlight_box = None
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         for bar in (self.horizontalScrollBar(), self.verticalScrollBar()):
             bar.sliderPressed.connect(self.manual_navigation)
             bar.actionTriggered.connect(lambda _: self.manual_navigation.emit())
-        self.label = QLabel("score_targets에 음원과 같은 이름의 PDF를 넣으세요.")
+        self.label = ScorePageLabel("score_targets에 음원과 같은 이름의 PDF를 넣으세요.")
         self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setWidget(self.label)
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -100,6 +139,7 @@ class PdfView(QScrollArea):
     def clear(self):
         self.timer.stop()
         self.cache.clear()
+        self.set_highlight(None, None)
         self.label.clear()
         if self.document:
             self.document.close()
@@ -150,6 +190,15 @@ class PdfView(QScrollArea):
         )
         self.label.setPixmap(scaled)
         self.label.resize(scaled.size())
+        self.update_highlight()
+
+    def set_highlight(self, page, box):
+        self.highlight_page, self.highlight_box = page, box
+        self.update_highlight()
+
+    def update_highlight(self):
+        box = self.highlight_box if self.document and self.highlight_page == self.page else None
+        self.label.set_highlight(box)
 
     def move_camera(self, x, y):
         self.horizontalScrollBar().setValue(x)
@@ -233,11 +282,16 @@ class ScorePanel(QWidget):
         row = QHBoxLayout()
         self.follow = QCheckBox("자동 넘김 · 스크롤")
         self.follow.setChecked(True)
+        self.follow.setToolTip(
+            "끄면 페이지와 스크롤을 직접 조절합니다. 현재 마디 표시는 계속 갱신됩니다."
+        )
         self.follow.toggled.connect(lambda _: self.on_position(self.last_position))
         row.addWidget(self.follow)
-        self.measure = QLabel("—")
+        self.measure = QLabel("현재 마디 · 회차")
         self.measure.setWordWrap(True)
-        row.addWidget(self.measure, 1)
+        self.measure_area = status_area(self.measure, "현재 마디와 반복 회차")
+        self.measure.setText("—")
+        row.addWidget(self.measure_area, 1)
         self.tools_toggle = QPushButton("준비 도구 접기")
         self.tools_toggle.setCheckable(True)
         self.tools_toggle.toggled.connect(tools.setHidden)
@@ -467,6 +521,7 @@ class ScorePanel(QWidget):
         ]))
         self.set_busy(self.busy)
         self.update_view_status()
+        self.on_position(self.player.position() if self.player else self.last_position)
         self.timeline_changed.emit()
 
     def set_busy(self, busy):
@@ -493,13 +548,19 @@ class ScorePanel(QWidget):
 
     def update_view_status(self):
         if not self.timeline or not self.timeline.data.get("scroll"):
-            self.view_status.setText("확대 스크롤: 배율·악보 영역을 정한 뒤 사전 분석하세요.")
+            self.view_status.setText("현재 마디 표시·확대 스크롤: 배율을 정한 뒤 사전 분석하세요.")
         elif self.view_matches():
             self.view_status.setText("확대 스크롤 준비 완료 · 저장된 이동 경로로 재생합니다.")
         else:
             self.view_status.setText(
                 "페이지는 자동으로 넘깁니다. 확대 스크롤은 사전 분석에서 "
                 "기존 시간표를 유지하고 재분석하세요."
+            )
+        frames = (self.timeline.data.get("scroll") or {}).get("frames", []) if self.timeline else []
+        if self.timeline and (not frames or not all(frame.get("box") for frame in frames)):
+            self.view_status.setText(
+                self.view_status.text()
+                + "\n현재 마디 강조: 기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
             )
         self.view_status.setToolTip(self.view_status.text())
 
@@ -545,19 +606,24 @@ class ScorePanel(QWidget):
         self.follow_position(milliseconds / 1000)
 
     def follow_position(self, seconds):
-        if not self.timeline or not self.follow.isChecked():
+        if not self.timeline:
+            self.view.set_highlight(None, None)
             return
         index = self.timeline.index_at(seconds, self.timeline.data.get("offset", 0))
         if index is None:
             self.measure.setText("악보 시작 전 / 종료")
             self.current_index = None
+            self.view.set_highlight(None, None)
             return
         cue = self.timeline.cues[index]
         self.current_index = index
         self.measure.setText(f"{cue['measure']}마디 · {cue['visit']}회차")
-        self.jump_page(cue["page"])
+        if self.follow.isChecked():
+            self.jump_page(cue["page"])
+        frames = (self.timeline.data.get("scroll") or {}).get("frames", [])
+        self.view.set_highlight(cue["page"], frames[index].get("box") if frames else None)
         # Page/measure timing remains valid when only the saved camera size changed.
-        if not self.view_matches():
+        if not self.follow.isChecked() or not self.view_matches():
             return
         camera = self.timeline.scroll_at(seconds)
         if camera:
