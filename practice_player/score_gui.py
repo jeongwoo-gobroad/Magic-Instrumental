@@ -2,6 +2,7 @@
 """PDF display and review UI; playback only reads an already computed schedule."""
 
 import json
+import math
 import time
 from collections import OrderedDict
 from copy import deepcopy
@@ -211,6 +212,22 @@ class PdfView(QScrollArea):
         self.horizontalScrollBar().setValue(x)
         self.verticalScrollBar().setValue(y)
 
+    def reveal_box(self, box):
+        """Show saved page coordinates using the currently rendered page size."""
+        page, viewport = self.label.contentsRect(), self.viewport()
+        for bar, origin, size, extent, first, last in (
+            (self.horizontalScrollBar(), page.x(), page.width(), viewport.width(),
+             "left", "right"),
+            (self.verticalScrollBar(), page.y(), page.height(), viewport.height(),
+             "top", "bottom"),
+        ):
+            start, end = origin + box[first] * size, origin + box[last] * size
+            if end - start > extent or start < bar.value():
+                # A measure larger than the viewport starts at its leading edge.
+                bar.setValue(math.floor(start))
+            elif end > bar.value() + extent:
+                bar.setValue(math.ceil(end - extent))
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.timer.start(80)
@@ -235,6 +252,7 @@ class ScorePanel(QWidget):
         self.timeline_path = None
         self.busy = False
         self.current_index = None
+        self._follow_box_key = None
         self.last_position = 0
         self.anchor_time = time.monotonic()
         self.player = None
@@ -304,7 +322,7 @@ class ScorePanel(QWidget):
         self.follow.setToolTip(
             "끄면 페이지와 스크롤을 직접 조절합니다. 현재 마디 표시는 계속 갱신됩니다."
         )
-        self.follow.toggled.connect(lambda _: self.on_position(self.last_position))
+        self.follow.toggled.connect(self.change_follow)
         row.addWidget(self.follow)
         self.highlight = QCheckBox("마디 강조")
         self.highlight.setObjectName("scoreHighlight")
@@ -325,7 +343,7 @@ class ScorePanel(QWidget):
         self.view = PdfView()
         self.view.set_highlight_enabled(self.highlight.isChecked())
         self.highlight.toggled.connect(self.change_highlight)
-        self.view.geometry_changed.connect(self.update_view_status)
+        self.view.geometry_changed.connect(self.view_changed)
         self.view.manual_navigation.connect(lambda: self.follow.setChecked(False))
         layout.addWidget(self.view, 1)
         self.view_status = QLabel("배율과 악보 영역을 정한 뒤 사전 분석하세요.")
@@ -374,6 +392,10 @@ class ScorePanel(QWidget):
         if self.preferences is not None:
             self.preferences.setValue("score_highlight", enabled)
 
+    def change_follow(self, _enabled):
+        self._follow_box_key = None
+        self.on_position(self.player.position() if self.player else self.last_position)
+
     def bind_track(self, audio, source_hash):
         if self.source_hash != source_hash:
             self.clear_score()
@@ -382,6 +404,7 @@ class ScorePanel(QWidget):
 
     def clear_score(self):
         self.pdf = self.timeline = self.timeline_path = self.current_index = None
+        self._follow_box_key = None
         self.gp_source = self.gp_info = None
         self.parts.setVisible(False)
         self.view.clear()
@@ -431,6 +454,7 @@ class ScorePanel(QWidget):
             self.view.load(pdf)
             self.pdf = pdf
             self.timeline = self.timeline_path = self.current_index = None
+            self._follow_box_key = None
             self.gp_source = Path(prepared["source"]) if prepared else None
             self.gp_info = prepared
             self.parts.blockSignals(True)
@@ -490,6 +514,7 @@ class ScorePanel(QWidget):
             raise ValueError("현재 곡·PDF와 분석 결과가 일치하지 않습니다.")
         self.timeline_path, self.timeline = Path(path), plan
         self.current_index = None
+        self._follow_box_key = None
         if plan.data.get("scroll"):
             index = self.zoom.findData(plan.data["scroll"]["profile"]["zoom"])
             if index < 0:
@@ -564,7 +589,12 @@ class ScorePanel(QWidget):
     def change_zoom(self):
         self.view.zoom = self.zoom.currentData()
         self.view.render()
+        self.view_changed()
+
+    def view_changed(self):
+        self._follow_box_key = None
         self.update_view_status()
+        self.on_position(self.player.position() if self.player else self.last_position)
 
     def view_matches(self):
         return bool(
@@ -574,20 +604,26 @@ class ScorePanel(QWidget):
         )
 
     def update_view_status(self):
+        frames = (self.timeline.data.get("scroll") or {}).get("frames", []) if self.timeline else []
         if not self.timeline or not self.timeline.data.get("scroll"):
             self.view_status.setText("현재 마디 표시·확대 스크롤: 배율을 정한 뒤 사전 분석하세요.")
         elif self.view_matches():
             self.view_status.setText("확대 스크롤 준비 완료 · 저장된 이동 경로로 재생합니다.")
+        elif any(frame.get("box") for frame in frames):
+            self.view_status.setText(
+                "현재 마디 위치를 따라갑니다. 부드러운 스크롤은 사전 분석에서 "
+                "기존 시간표를 유지하고 재분석하세요."
+            )
         else:
             self.view_status.setText(
                 "페이지는 자동으로 넘깁니다. 확대 스크롤은 사전 분석에서 "
                 "기존 시간표를 유지하고 재분석하세요."
             )
-        frames = (self.timeline.data.get("scroll") or {}).get("frames", []) if self.timeline else []
         if self.timeline and (not frames or not all(frame.get("box") for frame in frames)):
             self.view_status.setText(
                 self.view_status.text()
-                + "\n현재 마디 강조: 기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
+                + "\n마디 위치가 없으면 페이지 이동만 가능합니다. "
+                "기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
             )
         self.view_status.setToolTip(self.view_status.text())
 
@@ -640,6 +676,7 @@ class ScorePanel(QWidget):
         if index is None:
             self.measure.setText("악보 시작 전 / 종료")
             self.current_index = None
+            self._follow_box_key = None
             self.view.set_highlight(None, None)
             return
         cue = self.timeline.cues[index]
@@ -648,13 +685,21 @@ class ScorePanel(QWidget):
         if self.follow.isChecked():
             self.jump_page(cue["page"])
         frames = (self.timeline.data.get("scroll") or {}).get("frames", [])
-        self.view.set_highlight(cue["page"], frames[index].get("box") if frames else None)
-        # Page/measure timing remains valid when only the saved camera size changed.
-        if not self.follow.isChecked() or not self.view_matches():
+        box = frames[index].get("box") if frames else None
+        self.view.set_highlight(cue["page"], box)
+        if not self.follow.isChecked():
             return
-        camera = self.timeline.scroll_at(seconds)
-        if camera:
-            self.view.move_camera(camera[1], camera[2])
+        if self.view_matches():
+            self._follow_box_key = None
+            camera = self.timeline.scroll_at(seconds)
+            if camera:
+                self.view.move_camera(camera[1], camera[2])
+        elif box:
+            # Page-relative boxes remain valid after zooming or folding the tools.
+            key = (index, self.view.label.contentsRect(), self.view.viewport().size())
+            if key != self._follow_box_key:
+                self.view.reveal_box(box)
+                self._follow_box_key = key
 
     def analysis_options(self):
         dialog = QDialog(self)

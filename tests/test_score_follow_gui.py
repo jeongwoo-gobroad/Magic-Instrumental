@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Verify the first analysis result reaches the visible, playing PDF view."""
 
+from copy import deepcopy
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -14,6 +16,7 @@ from practice_player.gui import STYLE, Window
 from tests.test_gui import wait_until
 from tests.test_pdf_navigation_regression import direction
 from tests.test_score import xml_file
+from tests.test_score_follow_resume import assert_current_measure_visible, wheel_score
 from tests.test_score_geometry import vector_pdf
 
 
@@ -35,6 +38,7 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         '<print new-page="yes"/>' + direction('dalsegno="s"'),
         direction('coda="c"'), "",
     ]).rename(pdf.with_suffix(".musicxml"))
+    source_hashes = {path: hash_file(path) for path in (audio, pdf, pdf.with_suffix(".musicxml"))}
     app = QApplication.instance() or QApplication([])
     app.setStyleSheet(STYLE)
     window = Window(paths)
@@ -101,6 +105,9 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         assert panel.view_matches(), (profile, panel.view.profile(), panel.status.text())
         assert "같은 이름의 MusicXML" in panel.status.text()
         assert [cue["source_index"] for cue in panel.timeline.cues] == [0, 1, 2, 3, 1, 2, 4, 5]
+        timing = deepcopy(panel.timeline.data)
+        caches = {path: path.read_bytes()
+                  for path in panel.timeline_path.parent.parent.rglob("*.json")}
 
         def no_analysis(*_args, **_kwargs):
             pytest.fail("Playback and viewport changes must not analyze the PDF")
@@ -117,6 +124,11 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         assert panel.view.label.highlight_box == panel.timeline.data["scroll"]["frames"][2]["box"]
         assert panel.view_matches() and panel.view.profile() == profile
         assert panel.view.label.highlight_box != first_box
+        wheel_score(panel)
+        QTest.mouseClick(panel.follow, Qt.MouseButton.LeftButton)
+        assert (
+            panel.view.horizontalScrollBar().value(), panel.view.verticalScrollBar().value(),
+        ) == panel.timeline.scroll_at(window.player.position() / 1000)[1:]
         play_at(6.25, 3, 1)
         returned = play_at(8.25, 4, 0)
         assert returned < bottom and "2회차" in panel.measure.text()
@@ -126,9 +138,22 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         panel.tools_toggle.click()
         QTest.qWait(150)
         assert not panel.view_matches() and panel.follow.isChecked()
-        before = panel.view.verticalScrollBar().value()
-        assert play_at(14.25, 7, 1) == before
+        panel.highlight.click()
+        play_at(14.25, 7, 1)
+        assert_current_measure_visible(panel)
         assert "6마디" in panel.measure.text() and "재분석" in panel.view_status.text()
+        position = window.player.position()
+        window.player.play()
+        wait_until(app, lambda: window.player.position() >= position + 80)
+        wheel_score(panel)
+        manual = panel.view.verticalScrollBar().value()
+        QTest.mouseClick(panel.follow, Qt.MouseButton.LeftButton)
+        assert panel.view.verticalScrollBar().value() != manual
+        assert_current_measure_visible(panel)
+        assert panel.current_index == 7 and panel.view.label.highlight_box is None
+        assert window.player.isPlaying() and panel.camera_timer.isActive()
+        window.player.pause()
+        panel.highlight.click()
         play_at(0.25, 0, 0)
         assert "1마디" in panel.measure.text()
 
@@ -153,6 +178,9 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         assert panel.view.label.highlight_box is None
         panel.manual_page(1)
         assert panel.view.label.highlight_box == first_box
+        assert panel.timeline.data == timing
+        assert all(path.read_bytes() == contents for path, contents in caches.items())
+        assert all(hash_file(path) == digest for path, digest in source_hashes.items())
     finally:
         if window.worker:
             window.cancel_job()
