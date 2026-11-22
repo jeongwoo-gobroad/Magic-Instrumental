@@ -297,8 +297,14 @@ async function openFile(file) {
       const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(n => n.toString(16).padStart(2, '0')).join('');
       requireMagic(digest === next.manifest.entries[next.manifest.audio.path].sha256, '반주 검증에 실패했습니다. 파일을 다시 가져와 주세요.');
     }
-    const decoded = await ctx.decodeAudioData(data);
-    requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
+    const mp3 = next.manifest.version === 3;
+    const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
+    if (mp3) validateMp3(data, next.manifest.audio);
+    let decoded;
+    try { decoded = await ctx.decodeAudioData(data); }
+    catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
+    if (mp3) requireMagic(decoded.sampleRate === next.manifest.audio.sample_rate && decoded.length === next.manifest.audio.frames && decoded.numberOfChannels === 2, mp3Error);
+    else requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
     stretch = await SignalsmithStretch(ctx, {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]});
     stretch.connect(musicGain); latency = await stretch.latency();
     const channels = [decoded.getChannelData(0).slice(), decoded.getChannelData(1).slice()];

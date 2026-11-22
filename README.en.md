@@ -39,9 +39,13 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 3. Open a PDF or GP3/GP4/GP5 score. For GP, choose the instrument **by name**; no companion PDF is required.
 4. Choose score zoom and panel width, run score pre-analysis, then review the timing.
 5. Play at 0.25–2× speed, change the instrumental key by ±12 semitones, jump by measures or repeat a selected range. Optional drum counts and the independently adjustable metronome follow the original-media clock.
-6. Save a `.magic` practice file and open it in the tablet player. New GP-derived files include every part's rendered pages and a shared timing reference, so mobile playback requires no score recognition or GP software.
+6. Press **태블릿으로 가져가기 · .magic 저장**, choose the accompaniment quality, then press **저장 위치 선택…** (choose save location). Open the saved `.magic` in the tablet player. GP-derived files include every part's rendered pages and a shared timing reference, so mobile playback requires no score recognition or GP software.
 
 Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
+
+**New exports use MP3 at 256 kbps by default.** The **연습 파일 반주 음질** dialog also offers MP3 at 128, 192 or 320 kbps, and **WAV · 무손실** (lossless WAV). The desktop remembers your confirmed choice for the next export. MP3 reduces the embedded accompaniment size; the reduction in the whole `.magic` depends on the score pages and other contents. Playback still decodes the audio, so a smaller file does not guarantee lower memory use.
+
+Existing `.magic` files containing WAV remain playable and are never converted automatically. Open new MP3 bundles in the **latest MP3-capable web player 2.4.5**. Refresh the player online or reopen its tab before choosing the file again, including if the footer already shows 2.4.5: earlier builds with that label did not include MP3 support.
 
 **Measure highlighting is on by default.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. Use **마디 강조** (measure highlight) on the desktop or web player to hide it immediately or show the current measure again without reanalysis. The desktop app and each web browser remember their own choice across songs and parts, including Session use.
 

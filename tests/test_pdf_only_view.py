@@ -120,7 +120,8 @@ def test_pdf_only_bundle_keeps_original_score_and_reviewed_timing(pdf_only_study
         manifest = json.loads(archive.read("manifest.json"))
         timing = json.loads(archive.read("timeline.json"))
         assert archive.read("score/source.pdf") == pdf.read_bytes()
-        assert manifest["version"] == 1 and manifest["score"]["kind"] == "pdf"
+        assert manifest["version"] == 3 and manifest["score"]["kind"] == "pdf"
+        assert manifest["audio"]["codec"] == "mp3"
         assert "parts" not in manifest
         assert timing["camera_mode"] == "system"
         assert [c["start"] for c in timing["cues"]] == plan.starts

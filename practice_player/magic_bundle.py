@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Portable, stored ZIP: original score, rendered pages, PCM audio and reviewed timing."""
+"""Portable, stored ZIP: original score, rendered pages, audio and reviewed timing."""
 
 import io
 import json
@@ -14,7 +14,7 @@ from .config import ROOT, Paths
 from .gp_collection import portable_timing, prepare_collection
 from .score import ScoreTimeline
 
-MAGIC_VERSION = 2
+MAGIC_VERSION = 3
 MAX_AUDIO_BYTES = 512 * 1024 * 1024
 MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
 
@@ -24,6 +24,13 @@ def json_bytes(data):
 
 
 def export_magic(request, report=lambda *_: None):
+    audio_format = request.get("audio_format", "mp3")
+    bitrate = request.get("mp3_bitrate_kbps", 256)
+    if audio_format not in ("mp3", "wav"):
+        raise ValueError("연습 파일 반주는 MP3 또는 WAV로 저장하세요.")
+    if type(bitrate) is not int or bitrate not in (128, 192, 256, 320):
+        raise ValueError("MP3 음질은 128, 192, 256, 320 kbps 중에서 선택하세요.")
+
     import pypdfium2 as pdfium
 
     audio, instrumental, pdf, timeline_path = (
@@ -120,6 +127,22 @@ def export_magic(request, report=lambda *_: None):
         audio_info = inspect_audio(wav, scan=True)
         if wav.stat().st_size > MAX_AUDIO_BYTES:
             raise ValueError("태블릿용 반주는 최대 512 MB입니다. 곡을 짧게 나누어 준비하세요.")
+        encoded = wav
+        if audio_format == "mp3":
+            report(f"반주를 {bitrate} kbps MP3로 압축합니다…", None)
+            encoded = scratch / "instrumental.mp3"
+            run_ffmpeg(
+                [
+                    "-i", str(wav), "-map", "0:a:0", "-vn", "-ac", "2", "-ar", "44100",
+                    "-map_metadata", "-1", "-c:a", "libmp3lame", "-b:a", f"{bitrate}k",
+                    # Keep encoder delay/padding so decoding restores the original clock.
+                    "-write_xing", "1", "-id3v2_version", "0", "-write_id3v1", "0",
+                    str(encoded),
+                ]
+            )
+            if inspect_audio(encoded) != audio_info:
+                raise ValueError("MP3 변환 후 반주 길이가 달라졌습니다. WAV로 저장해 주세요.")
+        audio_name = f"audio/instrumental.{audio_format}"
         entries, parts = {}, []
         bundle = scratch / "export.magic"
         with zipfile.ZipFile(
@@ -167,7 +190,7 @@ def export_magic(request, report=lambda *_: None):
                     document.close()
                 return pages
 
-            put("audio/instrumental.wav", wav)
+            put(audio_name, encoded)
             source_name = "score/source" + source.suffix.lower()
             put(source_name, source)
             put("timeline.json", json_bytes(portable))
@@ -190,10 +213,10 @@ def export_magic(request, report=lambda *_: None):
                 })
             manifest = {
                 "format": "Magic-Instrumental",
-                "version": MAGIC_VERSION if gp else 1,
+                "version": MAGIC_VERSION if audio_format == "mp3" else (2 if gp else 1),
                 "title": str(request.get("title") or audio.stem)[:200],
                 "audio": {
-                    "path": "audio/instrumental.wav", **audio_info, "pitch_semitones": pitch,
+                    "path": audio_name, **audio_info, "pitch_semitones": pitch,
                     "source_sha256": plan.data["audio_sha256"],
                 },
                 "score": {
@@ -209,6 +232,8 @@ def export_magic(request, report=lambda *_: None):
                 "practice": practice,
                 "entries": entries,
             }
+            if audio_format == "mp3":
+                manifest["audio"].update(codec="mp3", bitrate_kbps=bitrate)
             if gp:
                 manifest["parts"] = parts
                 manifest["timing_basis"] = {"track": gp["signature"]["track"], "shared": True}

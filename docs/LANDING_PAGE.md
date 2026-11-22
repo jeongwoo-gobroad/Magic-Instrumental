@@ -13,6 +13,8 @@ Prepare versioned links with the release changes, but publish the page only afte
 
 For v2.4.5, keep the desktop version, the landing label and both download URLs aligned with the web player. Explain the iPad file-opening sequence in the first-song section: open the player in Safari or Chrome, then use `.magic 파일 열기`. The picker fix does not require renaming or exporting existing bundles again. Keep native iPad selection claims separate from desktop Chromium/WebKit automation.
 
+The same release adds accompaniment quality to `.magic` export. The desktop `연습 파일 반주 음질` dialog defaults to `MP3 256 kbps · 권장`; it also offers 128, 192 and 320 kbps MP3 and `WAV · 무손실`, then `저장 위치 선택…`. Keep the landing explanation short. Existing WAV bundles keep working and are not converted automatically; new MP3 bundles require the updated web player. The earlier picker-only deployment also displayed 2.4.5, so an existing tab needs an online refresh and the visible version alone is not proof of MP3 support. Describe a smaller embedded audio file, with total savings depending on score assets. Do not promise a fixed reduction ratio or lower playback memory: the player decodes audio before playback. Keep codec/schema details in `MAGIC_FORMAT.md`.
+
 ## Score and following descriptions
 
 For v2.4.2, distinguish notation data from PDF display and geometry. A corresponding selected MusicXML file, or a valid MusicXML attachment embedded in the PDF, is preferred for notation analysis. Without it, PDF note recognition can be supplemented by supported printed navigation text and music-font glyphs. An arbitrary XML attachment is not necessarily MusicXML. Do not promise universal recognition of a publisher's scores, every font, or a scan.
