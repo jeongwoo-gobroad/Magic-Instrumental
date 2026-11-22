@@ -20,6 +20,8 @@ For native GP, `score.kind` is `gp`, with selected `track` and `part`. In v1 all
 
 ## Reader limits and trust
 
+The shared local-file input deliberately omits `accept`. iPad file pickers can exclude the custom `.magic` extension when it is mixed with the known `application/zip` MIME filter. Solo and Session's own-file button use this same input. Do not filter by `File.type` or require an extension rename: browsers may supply an empty or generic MIME type, and the archive reader validates the bytes. Existing bundles require no format migration or re-export. Session's downloaded-file path continues to use the same reader without the local picker.
+
 The browser accepts at most 1 GiB total, 512 MiB per audio entry, 200 pages per part, 64 parts, 1,000 total pages, 20,000 unfolded cues and 1,100 archive members. It checks central/local header agreement, offsets, non-overlap, CRC, uncompressed sizes, a fixed ASCII path allowlist, duplicates and exact member inventory. Manifest/timeline JSON have separate 1 MB/8 MB bounds. Only the active part timeline is retained; v2 page and timing paths are an exact inventory. It checks cue ordering/pages/geometry, PCM duration/channel metadata, audio SHA-256, PNG signatures and image dimensions. All labels use `textContent`, images are PNG Blob URLs, and no package-supplied code runs. It never extracts files to disk. Memory-limited devices can fail below these limits; an AudioBuffer needs more memory than the WAV.
 
 Source files are preserved in the package for portability but are not executed or parsed by mobile. They have ZIP CRC and manifest SHA-256 metadata; only assets actually opened by the reader undergo content verification at playback load. A checksum detects corruption, not an authenticated publisher.
@@ -47,6 +49,8 @@ PDF-only measure/BPM exports remain format 1, require no XML source, and retain 
 ## Development
 
 Use the external venv. Run `python tools/build_web.py` after changing HTML/CSS/JS/vendor pins. Run `python -m playwright install chromium webkit` and `RUN_WEB_TESTS=1 python -m pytest -q tests/test_web_player.py` for real browser/audio/GP/PDF/offline/corruption checks. `tools/capture_v2_screenshots.py` uses only authored synthetic fixtures. Never put private test bundles into the public allowlist.
+
+Desktop Chromium/WebKit automation can check the picker buttons and load files with an empty MIME type, but injected files bypass the native iPad file chooser's filtering. Report physical iPad selection separately from browser parsing and playback checks. Regenerate `index.html` and `sw.js` together, then synchronize the deployment branch's static-root copies and their `web_player/` counterparts. The worker revision and integrity must match the new HTML; an already open page may need an online refresh or tab reopen to show it.
 
 The `main` branch maintains all sources. `mobile-player` exposes the static app at the branch root, its beginner README, GPL license, upstream notices/vendor source and the builder under their original paths where needed. Publish only files selected by the release allowlist. GitHub Pages can serve the branch root; enabling it requires repository administration, which the connected code-writing app does not provide.
 
