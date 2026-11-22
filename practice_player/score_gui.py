@@ -622,7 +622,7 @@ class ScorePanel(QWidget):
         if self.timeline and (not frames or not all(frame.get("box") for frame in frames)):
             self.view_status.setText(
                 self.view_status.text()
-                + "\n마디 위치가 없으면 페이지 이동만 가능합니다. "
+                + "\n마디 위치가 없으면 화면 크기·배율 변경 후에는 페이지 이동만 가능합니다. "
                 "기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
             )
         self.view_status.setToolTip(self.view_status.text())
