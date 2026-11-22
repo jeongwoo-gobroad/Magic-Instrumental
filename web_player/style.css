@@ -45,3 +45,7 @@ aside, .card, .score-area, select { min-width: 0; }
   .score-toolbar .page-controls { margin-left: auto; }
   #viewport { min-height: min(280px, 55dvh); }
 }
+
+.file-button:has(input:disabled) { opacity: .45; cursor: default; }
+.file-button input:disabled { cursor: default; }
+.session-actions .file-button { margin-top: 0; }

@@ -7,6 +7,7 @@ const number = (id, lo, hi, fallback) => {
 };
 const clockText = t => `${String(Math.floor(Math.max(0, t) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, t)) % 60).padStart(2, '0')}`;
 let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = null;
+let decodedAudio = null, audioTask = null;
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
@@ -24,7 +25,13 @@ function phaseAt(input) {
   const beat = (input - number('origin', -30, 1800, 0)) / step;
   return {step, beat, whole: Math.floor(beat + 1e-7), phase: ((beat % 1) + 1) % 1};
 }
-async function audioReady() {
+function deadline(promise, milliseconds, message) {
+  let timeout;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), milliseconds);
+  })]).finally(() => clearTimeout(timeout));
+}
+function audioContext() {
   if (!ctx) {
     const Audio = window.AudioContext || window.webkitAudioContext;
     requireMagic(Audio && window.isSecureContext, 'Safari·Chrome의 웹주소에서 열어 주세요. 이 브라우저에서는 소리를 준비할 수 없습니다.');
@@ -32,14 +39,61 @@ async function audioReady() {
     musicGain = ctx.createGain(); musicGain.connect(ctx.destination);
     clickGain = ctx.createGain(); clickGain.connect(ctx.destination);
     ctx.onstatechange = () => {
-      if (ctx.state !== 'running' && (playing || metro)) {
+      if (ctx.state !== 'running' && (playing || metro || ensemble?.prepared)) {
         ensemble?.unready(); pause(); metro = false; updateMetro(); setStatus('소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
       }
     };
   }
-  await ctx.resume();
   musicGain.gain.value = number('volume', 0, 100, 75) / 100;
   clickGain.gain.value = number('metroVolume', 0, 100, 55) / 100;
+  return ctx;
+}
+async function audioReady() {
+  const context = audioContext();
+  // File selection is not an audio-start gesture. Resume only for explicit audio actions.
+  if (context.state !== 'running') await deadline(context.resume(), 4000,
+    '소리를 시작하지 못했습니다. 화면을 켠 상태에서 재생 또는 합주 준비를 다시 눌러 주세요.');
+  requireMagic(context.state === 'running', '소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
+}
+function discardNode(node) {
+  if (!node) return;
+  node.disconnect();
+  // A suspended worklet may not reply. Cleanup must never hold the file picker closed.
+  const timeout = setTimeout(() => node.port.close(), 1000);
+  try {
+    node.dropBuffers().catch(() => {}).finally(() => { clearTimeout(timeout); node.port.close(); });
+  } catch (_) { clearTimeout(timeout); node.port.close(); }
+}
+async function preparePlayback() {
+  const selected = archive;
+  await audioReady();
+  if (!ready || loading || archive !== selected) return false;
+  if (stretch) return true;
+  if (!audioTask) {
+    const decoded = decodedAudio, task = {cancelled: false, node: null, promise: null};
+    requireMagic(decoded, '반주를 다시 열어 주세요.');
+    audioTask = task;
+    const prepare = async () => {
+      const node = await SignalsmithStretch(ctx, {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]});
+      if (task.cancelled) { discardNode(node); return false; }
+      task.node = node; node.connect(musicGain);
+      const nextLatency = await node.latency();
+      if (task.cancelled) return false;
+      const channels = [decoded.getChannelData(0).slice(), decoded.getChannelData(1).slice()];
+      await node.addBuffers(channels, channels.map(c => c.buffer));
+      if (task.cancelled) return false;
+      requireMagic(ctx.state === 'running', '소리가 일시정지되었습니다. 재생 또는 합주 준비를 다시 눌러 주세요.');
+      stretch = node; task.node = null; latency = nextLatency; decodedAudio = null;
+      return true;
+    };
+    task.promise = deadline(prepare(), 15000,
+      '반주 재생을 준비하지 못했습니다. 재생 또는 합주 준비를 다시 눌러 주세요.').catch(error => {
+      task.cancelled = true; discardNode(task.node); task.node = null;
+      if (archive === selected) throw error;
+      return false;
+    }).finally(() => { if (audioTask === task) audioTask = null; });
+  }
+  return audioTask.promise;
 }
 function silenceClicks() {
   for (const source of sources) { try { source.stop(); } catch (_) {} }
@@ -101,13 +155,23 @@ function pause() {
 async function play(count = $('count').checked || ($('loop').checked && $('loopCount').checked)) {
   if (!ready || loading) return;
   const generation = ++token;
-  await audioReady();
+  $('play').textContent = '소리 준비 중…';
+  try {
+    if (!await preparePlayback()) return;
+  } catch (error) {
+    if (generation === token) throw error;
+    return;
+  } finally {
+    if (generation === token) $('play').textContent = '▶ 재생';
+  }
   if (generation !== token) return;
+  requireMagic(ctx.state === 'running', '소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
   const [lo, hi] = loopBounds();
   if (position < lo || position >= hi - .001) position = lo;
   silenceClicks();
   segment = createSegment(position, ctx.currentTime + Math.max(.12, latency + .03), count);
   upcoming = null; playing = true; $('play').textContent = 'Ⅱ 일시정지';
+  setStatus(archive.timing.reviewed ? '재생 중입니다.' : '재생 중 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
   if (navigator.wakeLock) navigator.wakeLock.request('screen').then(lock => {
     if (playing) wakeLock = lock; else lock.release();
   }).catch(() => {});
@@ -263,6 +327,7 @@ function showPosition() {
 function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
+  for (const id of ['file', 'sessionFile']) $(id).disabled = loading;
   ensemble?.update();
 }
 function clearScorePage() {
@@ -272,27 +337,27 @@ function clearScorePage() {
   for (const url of urls.values()) URL.revokeObjectURL(url);
   urls.clear();
 }
-async function releaseAudio() {
-  const node = stretch;
-  if (!node) return;
-  stretch = null;
-  try { await node.dropBuffers(); }
-  finally { node.disconnect(); node.port.close(); }
+function releaseAudio() {
+  if (audioTask) {
+    audioTask.cancelled = true; discardNode(audioTask.node); audioTask.node = null; audioTask = null;
+  }
+  const node = stretch; stretch = null; decodedAudio = null;
+  discardNode(node);
 }
 async function openFile(file) {
   if (!file || loading) return;
   ensemble?.unready();
-  loading = true; pause(); ready = false; setAvailable(false); $('file').disabled = true;
+  loading = true; pause(); ready = false; setAvailable(false);
+  setStatus('연습 파일을 확인하고 있습니다…');
   clearScorePage();
   archive = null;
   try {
-    await releaseAudio();
-    await audioReady();
-    setStatus('연습 파일을 확인하고 있습니다…');
-    const next = await new MagicArchive(file).open();
+    releaseAudio();
+    const fileError = '파일을 읽지 못했습니다. 파일 앱에서 기기에 다운로드한 뒤 다시 선택해 주세요.';
+    const next = await deadline(new MagicArchive(file).open(), 60000, fileError);
     setStatus('반주를 준비하고 있습니다…');
-    const blob = await next.blob(next.manifest.audio.path);
-    const data = await blob.arrayBuffer();
+    const blob = await deadline(next.blob(next.manifest.audio.path), 60000, fileError);
+    const data = await deadline(blob.arrayBuffer(), 60000, fileError);
     if (crypto.subtle) {
       const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(n => n.toString(16).padStart(2, '0')).join('');
       requireMagic(digest === next.manifest.entries[next.manifest.audio.path].sha256, '반주 검증에 실패했습니다. 파일을 다시 가져와 주세요.');
@@ -301,14 +366,11 @@ async function openFile(file) {
     const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
     if (mp3) validateMp3(data, next.manifest.audio);
     let decoded;
-    try { decoded = await ctx.decodeAudioData(data); }
+    try { decoded = await deadline(audioContext().decodeAudioData(data), 60000, '반주를 읽지 못했습니다. 파일을 다시 선택해 주세요.'); }
     catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
     if (mp3) requireMagic(decoded.sampleRate === next.manifest.audio.sample_rate && decoded.length === next.manifest.audio.frames && decoded.numberOfChannels === 2, mp3Error);
     else requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
-    stretch = await SignalsmithStretch(ctx, {numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2]});
-    stretch.connect(musicGain); latency = await stretch.latency();
-    const channels = [decoded.getChannelData(0).slice(), decoded.getChannelData(1).slice()];
-    await stretch.addBuffers(channels, channels.map(c => c.buffer));
+    decodedAudio = decoded;
     archive = next; duration = decoded.duration; position = 0; segment = upcoming = null;
     $('title').textContent = next.manifest.title;
     $('part').textContent = next.manifest.score.kind === 'gp' ? `GP 파트 · ${next.manifest.score.part}` : 'PDF 악보';
@@ -333,7 +395,8 @@ async function openFile(file) {
     });
     requireMagic($('loopStart').options.length > 0, '악보의 마디 시간이 반주 범위 밖입니다. 컴퓨터에서 시간표를 보정해 주세요.');
     $('loopEnd').selectedIndex = $('loopEnd').options.length - 1;
-    await showPage(0); ready = true; setAvailable(true); updateMetro(); updateKey();
+    await deadline(showPage(0), 60000, '악보를 읽지 못했습니다. 파일을 다시 선택해 주세요.');
+    ready = true; setAvailable(true); updateMetro(); updateKey();
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
   } catch (error) {
     archive = null; ready = false; seeking = false; position = duration = 0;
@@ -349,9 +412,11 @@ async function openFile(file) {
     $('key').value = '0'; $('seek').max = 1;
     showPosition(); updateKey();
     fail(error);
-    await releaseAudio();
+    releaseAudio();
   } finally {
-    loading = false; $('file').value = ''; setAvailable(ready);
+    loading = false;
+    for (const id of ['file', 'sessionFile']) $(id).value = '';
+    setAvailable(ready);
   }
 }
 function updateKey() {
@@ -366,7 +431,7 @@ async function retime() {
 }
 for (let n = -12; n <= 12; n++) { const option = document.createElement('option'); option.value = n; option.textContent = n ? `${n > 0 ? '+' : ''}${n}반음` : '추가 0'; $('key').append(option); }
 $('key').value = 0;
-$('file').onchange = event => openFile(event.target.files[0]);
+for (const id of ['file', 'sessionFile']) $(id).onchange = event => openFile(event.target.files[0]);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
 $('seek').oninput = () => { seeking = true; };

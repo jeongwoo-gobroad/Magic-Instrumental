@@ -9,7 +9,14 @@ import pytest
 from aiohttp import web
 
 from relay.server import Relay
-from tests.test_web_player import choose_file, open_study, study_files, web_url  # noqa: F401
+from tests.test_web_player import (  # noqa: F401
+    choose_file,
+    hold_audio_resume,
+    open_study,
+    study_files,
+    wait_for_file_without_audio,
+    web_url,
+)
 
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_WEB_TESTS") != "1",
                                 reason="RUN_WEB_TESTS=1 and browser runtimes required")
@@ -79,13 +86,17 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
             assert member.locator("#sessionPrepare").is_disabled()
             leader.locator("#shareFile").click()
         member.wait_for_function("!document.getElementById('getShared').disabled")
+        hold_audio_resume(member)
         member.locator("#getShared").click()
-        member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+        wait_for_file_without_audio(member)
         assert not leader.evaluate("MagicEnsemble.state().prepared")
         assert "준비가 해제" not in leader.locator("#sessionLive").inner_text()
+        member.evaluate("MagicPlayer.context().suspend()")
         choose_file(member, {"name": "연습곡.magic", "mimeType": "",
                              "buffer": study_files["wav_gp"].read_bytes()}, "#sessionOpenFile")
-        member.wait_for_function("MagicPlayer.state().ready", timeout=45000)
+        wait_for_file_without_audio(member)
+        assert member.locator("#sessionFile").is_enabled()
+        member.evaluate("window.audioResumeAllowed = true")
         assert leader.evaluate("MagicPlayer.archive().manifest.version") == 3
         assert member.evaluate("MagicPlayer.archive().manifest.version") == 2
         assert leader.evaluate("ensemble.media().source") == member.evaluate(
