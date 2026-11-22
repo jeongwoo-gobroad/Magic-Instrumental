@@ -87,7 +87,10 @@ def edition(tmp_path, monkeypatch):
 @pytest.mark.parametrize("current,mixed", [("2.4.5", False), ("2.4.5", True), ("2.4.4", False)])
 def test_repair_preserves_private_files_and_updates_in_place(edition, current, mixed):
     root, profile, _, downloads, fixed = edition
-    (root / "practice_player/__init__.py").write_text(f'__version__ = "{current}"\n')
+    # Official Python files use LF; fixture hashes must stay identical on Windows.
+    (root / "practice_player/__init__.py").write_bytes(
+        f'__version__ = "{current}"\n'.encode("utf-8")
+    )
     if mixed:
         (root / "practice_player/score_gui.py").write_bytes(fixed["practice_player/score_gui.py"])
     before = snapshot(root)
@@ -125,7 +128,7 @@ def test_already_applied_is_an_offline_noop(edition):
 def test_future_or_unknown_managed_code_is_preserved(edition, change):
     root, profile, _, downloads, _ = edition
     if change == "future-version":
-        (root / "practice_player/__init__.py").write_text('__version__ = "2.4.6"\n')
+        (root / "practice_player/__init__.py").write_bytes(b'__version__ = "2.4.6"\n')
     elif change == "later-same-version":
         (root / "practice_player/score_gui.py").write_bytes(b"later edition or a user edit")
     else:
@@ -187,12 +190,12 @@ def test_manual_change_during_download_is_not_overwritten(edition, monkeypatch):
 def test_older_install_replaced_during_download_is_not_downgraded(edition, monkeypatch):
     root, profile, _, _, _ = edition
     version_file = root / "practice_player/__init__.py"
-    version_file.write_text('__version__ = "2.4.4"\n')
+    version_file.write_bytes(b'__version__ = "2.4.4"\n')
     original_download = update.download
 
     def download(*args):
         data = original_download(*args)
-        version_file.write_text('__version__ = "2.4.6"\n')
+        version_file.write_bytes(b'__version__ = "2.4.6"\n')
         return data
 
     monkeypatch.setattr(update, "download", download)
@@ -223,8 +226,8 @@ def test_packaged_helper_is_reproducible_and_compatible_with_existing_updater(tm
         path = root / source.relative_to(build_release.ROOT)
         path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, path)
-    (root / "practice_player/__init__.py").write_text(
-        '# SPDX-License-Identifier: GPL-3.0-only\n__version__ = "2.4.5"\n'
+    (root / "practice_player/__init__.py").write_bytes(
+        b'# SPDX-License-Identifier: GPL-3.0-only\n__version__ = "2.4.5"\n'
     )
     build_release.build(root)
     baseline = (root / "dist/PUBLIC_FILES.json").read_bytes()
