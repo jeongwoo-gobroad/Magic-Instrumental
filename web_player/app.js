@@ -7,7 +7,7 @@ const number = (id, lo, hi, fallback) => {
 };
 const clockText = t => `${String(Math.floor(Math.max(0, t) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, t)) % 60).padStart(2, '0')}`;
 let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = null;
-let decodedAudio = null, audioTask = null;
+let decodedAudio = null, audioTask = null, audioGeneration = 0;
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
@@ -49,11 +49,36 @@ function audioContext() {
   return ctx;
 }
 async function audioReady() {
+  if (document.hidden) return false;
+  const generation = audioGeneration;
+  // Web Audio defaults to ambient sound on iPad, which can obey the silent switch.
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_) {}
   const context = audioContext();
-  // File selection is not an audio-start gesture. Resume only for explicit audio actions.
-  if (context.state !== 'running') await deadline(context.resume(), 4000,
-    '소리를 시작하지 못했습니다. 화면을 켠 상태에서 재생 또는 합주 준비를 다시 눌러 주세요.');
-  requireMagic(context.state === 'running', '소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
+  const current = () => generation === audioGeneration && !document.hidden;
+  try {
+    // Even a running context needs the explicit start request after an interruption.
+    await deadline(context.resume(), 4000,
+      '소리를 시작하지 못했습니다. 화면을 켠 상태에서 재생 또는 합주 준비를 다시 눌러 주세요.');
+    if (!current()) return false;
+    const start = context.currentTime, until = performance.now() + 1000;
+    const advanced = () => Number.isFinite(context.currentTime) && context.currentTime > start;
+    while (context.state === 'running' && !advanced() && performance.now() < until) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!current()) return false;
+    }
+    requireMagic(context.state === 'running', '소리가 일시정지되었습니다. 재생 또는 합주 준비를 다시 눌러 주세요.');
+    if (!advanced()) {
+      const message = '소리 출력이 멈췄습니다. 재생 또는 합주 준비를 다시 눌러 주세요.';
+      // Release a stalled output so the next user action can resume it; keep the song.
+      await deadline(context.suspend(), 1000, message).catch(() => {});
+      if (!current()) return false;
+      throw new Error(message);
+    }
+    return true;
+  } catch (error) {
+    if (!current()) return false;
+    throw error;
+  }
 }
 function discardNode(node) {
   if (!node) return;
@@ -65,8 +90,8 @@ function discardNode(node) {
   } catch (_) { clearTimeout(timeout); node.port.close(); }
 }
 async function preparePlayback() {
-  const selected = archive;
-  await audioReady();
+  const selected = archive, generation = audioGeneration;
+  if (!await audioReady() || generation !== audioGeneration) return false;
   if (!ready || loading || archive !== selected) return false;
   if (stretch) return true;
   if (!audioTask) {
@@ -93,7 +118,13 @@ async function preparePlayback() {
       return false;
     }).finally(() => { if (audioTask === task) audioTask = null; });
   }
-  return audioTask.promise;
+  try {
+    const prepared = await audioTask.promise;
+    return prepared && generation === audioGeneration && !document.hidden;
+  } catch (error) {
+    if (generation !== audioGeneration || document.hidden) return false;
+    throw error;
+  }
 }
 function silenceClicks() {
   for (const source of sources) { try { source.stop(); } catch (_) {} }
@@ -448,7 +479,10 @@ $('speedReset').onclick = () => { $('speed').value = 100; retime().catch(fail); 
 $('volume').oninput = () => { if (musicGain) musicGain.gain.value = number('volume',0,100,75) / 100; };
 $('metroVolume').oninput = () => { if (clickGain) clickGain.gain.value = number('metroVolume',0,100,55) / 100; };
 $('metro').onclick = async () => {
-  try { await audioReady(); metro = !metro; independentOrigin = ctx.currentTime + .1; silenceClicks(); updateMetro(); } catch (e) { fail(e); }
+  try {
+    if (!metro && !await audioReady()) return;
+    metro = !metro; independentOrigin = ctx.currentTime + .1; silenceClicks(); updateMetro();
+  } catch (e) { fail(e); }
 };
 for (const id of ['bpm','beats','unit','origin','linked','countBars','loopCount']) $(id).onchange = () => {
   silenceClicks(); if (ctx) independentOrigin = ctx.currentTime + .1; retime().catch(fail);
@@ -484,8 +518,17 @@ $('highlightEnabled').onchange = () => {
 function theme(mode) { document.documentElement.dataset.theme = mode; try { localStorage.setItem('magic-theme',mode); } catch (_) {} }
 try { theme(localStorage.getItem('magic-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')); } catch (_) { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-document.addEventListener('visibilitychange', () => { if (document.hidden) { ensemble?.unready(); pause(); metro = false; updateMetro(); if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.'); } });
-window.addEventListener('pagehide', () => { ensemble?.leave(); pause(); metro = false; });
+function suspendAudio() {
+  audioGeneration++; ensemble?.unready(); pause(); metro = false; updateMetro();
+  if (ctx && ctx.state !== 'closed') ctx.suspend().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    suspendAudio();
+    if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.');
+  }
+});
+window.addEventListener('pagehide', () => { ensemble?.leave(); suspendAudio(); });
 updateMetro(); timer = setInterval(() => { try { tick(); } catch (error) { fail(error); } },25); requestAnimationFrame(frame);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {

@@ -12,7 +12,7 @@ A `.magic` file is a seekable **ZIP_STORED** archive: no ZIP-level compression, 
 | `2` | All-part GP | `audio/instrumental.wav` |
 | `3` | PDF or all-part GP | `audio/instrumental.mp3` |
 
-Choosing WAV continues to write version 1 for PDF and version 2 for all-part GP. Existing WAV archives remain readable and are not migrated automatically. MP3 support first shipped in an updated v2.4.5 player build; use v2.4.6 or later for the audio-activation-independent loading path. Earlier different builds all displayed 2.4.5, so that label alone does not establish format 3 support. Refresh online or fully close/reopen the player to receive the updated assets. Do not promise a particular update error from an already deployed reader: its path allowlist can reject the MP3 entry before checking the manifest version.
+Choosing WAV continues to write version 1 for PDF and version 2 for all-part GP. Existing WAV archives remain readable and are not migrated automatically. MP3 support first shipped in an updated v2.4.5 player build. Use v2.4.7 or later for explicit playback-session setup and the audio-activation-independent loading introduced in v2.4.6. Earlier different builds all displayed 2.4.5, so that label alone does not establish format 3 support. Refresh online or fully close/reopen the player to receive the updated assets. Do not promise a particular update error from an already deployed reader: its path allowlist can reject the MP3 entry before checking the manifest version.
 
 | Entry | Meaning |
 |---|---|
@@ -65,6 +65,10 @@ The browser accepts at most 1 GiB total, 512 MiB per stored audio entry, 200 pag
 Source files are preserved in the package for portability but are not executed or parsed by mobile. They have ZIP CRC and manifest SHA-256 metadata; only assets actually opened by the reader undergo content verification at playback load. A checksum detects corruption, not an authenticated publisher.
 
 ## Original time, audio scheduling and count-in
+
+v2.4.7 requests the optional `navigator.audioSession.type = 'playback'` from explicit Play, metronome-on and Session Ready actions before their first asynchronous wait. Feature-detect and guard both access and assignment; absent or unsupported API behavior must not prevent the normal Web Audio path. File reading still does not activate audio. The app previously omitted this declaration. [WebKit describes](https://bugs.webkit.org/show_bug.cgi?id=252746#c2) its ambient Web Audio policy and device mute behavior; the [Audio Session draft](https://www.w3.org/TR/audio-session/) defines `playback` for media audio. This makes the intended category explicit, but browser graph output does not establish sound at an iPad speaker or prove a particular user's mute/output-route state. Keep device verification distinct and preserve the foreground-only pause policy.
+
+Audio preparation always requests `resume()` with a four-second bound, including an already `running` context. It also waits up to one second for finite `currentTime` to advance. If that clock remains stopped, attempt `suspend()` for at most one second, report the failure and let the next direct Play/Ready action retry. Preserve the archive, part, original-media position and practice settings. Advancing clock time proves only clock progress, not audible physical output. Background/pagehide pauses the transport, cancels readiness and suspends the context. The `audioGeneration` guard invalidates audio/Session requests that finish after that transition, including after a quick return to the page. Foregrounding alone does not play the song or restore readiness.
 
 `practice.origin` accepts −30 through 1800 seconds in the archive, the browser and Session transport. A negative value places the first beat before the recording starts. Preserve its value so the beat phase is the same on the desktop and the tablet.
 

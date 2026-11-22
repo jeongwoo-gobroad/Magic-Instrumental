@@ -74,7 +74,7 @@ aside, .card, .score-area, select { min-width: 0; }
 <p id="ensembleRules" class="small" hidden>재생·일시정지·마디 이동은 리더만 조작합니다. 속도·키·반복 설정은 리더가 일시정지한 뒤 바꿉니다. 각자 파트·화면·음량·메트로놈 켜기는 자유롭게 고릅니다.</p>
 <p class="small">공유 버튼을 누른 파일만 중계 서버로 전송합니다. 방 종료 시 삭제됩니다. 각자 파일을 열면 전송하지 않습니다. 합주 중에는 화면을 켜 두세요.</p></details>
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>컴퓨터에서 준비할 악보로는 Guitar Pro 원본(.gp3, .gp4, .gp5)을 권장합니다. 음표와 마디를 직접 읽고 연습할 파트를 고를 수 있습니다. 이 웹 재생기에서는 컴퓨터에서 저장한 .magic 파일을 여세요.</p><p>iPad의 Safari·Chrome 또는 Android의 Chrome에서 이 웹주소를 열고 ‘.magic 파일 열기’를 누르세요. 파일 이름을 바꾸거나 압축을 풀 필요가 없습니다.</p><p>홈 화면에 추가하려면 iPad에서는 Safari의 공유 버튼, Android에서는 Chrome 메뉴를 사용하세요. 아래에 ‘오프라인 준비 완료’가 표시된 후에는 인터넷 없이도 열립니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
-<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.4.6</p>
+<p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a> · v2.4.7</p>
 </aside><section class="score-area" id="scoreArea"><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label><input id="highlightEnabled" type="checkbox" checked> 마디 강조</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
 <footer class="support-footer">버그 및 개선 사항 제보: <a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a></footer>
 <script>
@@ -709,7 +709,7 @@ const number = (id, lo, hi, fallback) => {
 };
 const clockText = t => `${String(Math.floor(Math.max(0, t) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, t)) % 60).padStart(2, '0')}`;
 let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = null;
-let decodedAudio = null, audioTask = null;
+let decodedAudio = null, audioTask = null, audioGeneration = 0;
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
@@ -751,11 +751,36 @@ function audioContext() {
   return ctx;
 }
 async function audioReady() {
+  if (document.hidden) return false;
+  const generation = audioGeneration;
+  // Web Audio defaults to ambient sound on iPad, which can obey the silent switch.
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_) {}
   const context = audioContext();
-  // File selection is not an audio-start gesture. Resume only for explicit audio actions.
-  if (context.state !== 'running') await deadline(context.resume(), 4000,
-    '소리를 시작하지 못했습니다. 화면을 켠 상태에서 재생 또는 합주 준비를 다시 눌러 주세요.');
-  requireMagic(context.state === 'running', '소리가 일시정지되었습니다. 재생을 다시 눌러 주세요.');
+  const current = () => generation === audioGeneration && !document.hidden;
+  try {
+    // Even a running context needs the explicit start request after an interruption.
+    await deadline(context.resume(), 4000,
+      '소리를 시작하지 못했습니다. 화면을 켠 상태에서 재생 또는 합주 준비를 다시 눌러 주세요.');
+    if (!current()) return false;
+    const start = context.currentTime, until = performance.now() + 1000;
+    const advanced = () => Number.isFinite(context.currentTime) && context.currentTime > start;
+    while (context.state === 'running' && !advanced() && performance.now() < until) {
+      await new Promise(resolve => setTimeout(resolve, 50));
+      if (!current()) return false;
+    }
+    requireMagic(context.state === 'running', '소리가 일시정지되었습니다. 재생 또는 합주 준비를 다시 눌러 주세요.');
+    if (!advanced()) {
+      const message = '소리 출력이 멈췄습니다. 재생 또는 합주 준비를 다시 눌러 주세요.';
+      // Release a stalled output so the next user action can resume it; keep the song.
+      await deadline(context.suspend(), 1000, message).catch(() => {});
+      if (!current()) return false;
+      throw new Error(message);
+    }
+    return true;
+  } catch (error) {
+    if (!current()) return false;
+    throw error;
+  }
 }
 function discardNode(node) {
   if (!node) return;
@@ -767,8 +792,8 @@ function discardNode(node) {
   } catch (_) { clearTimeout(timeout); node.port.close(); }
 }
 async function preparePlayback() {
-  const selected = archive;
-  await audioReady();
+  const selected = archive, generation = audioGeneration;
+  if (!await audioReady() || generation !== audioGeneration) return false;
   if (!ready || loading || archive !== selected) return false;
   if (stretch) return true;
   if (!audioTask) {
@@ -795,7 +820,13 @@ async function preparePlayback() {
       return false;
     }).finally(() => { if (audioTask === task) audioTask = null; });
   }
-  return audioTask.promise;
+  try {
+    const prepared = await audioTask.promise;
+    return prepared && generation === audioGeneration && !document.hidden;
+  } catch (error) {
+    if (generation !== audioGeneration || document.hidden) return false;
+    throw error;
+  }
 }
 function silenceClicks() {
   for (const source of sources) { try { source.stop(); } catch (_) {} }
@@ -1150,7 +1181,10 @@ $('speedReset').onclick = () => { $('speed').value = 100; retime().catch(fail); 
 $('volume').oninput = () => { if (musicGain) musicGain.gain.value = number('volume',0,100,75) / 100; };
 $('metroVolume').oninput = () => { if (clickGain) clickGain.gain.value = number('metroVolume',0,100,55) / 100; };
 $('metro').onclick = async () => {
-  try { await audioReady(); metro = !metro; independentOrigin = ctx.currentTime + .1; silenceClicks(); updateMetro(); } catch (e) { fail(e); }
+  try {
+    if (!metro && !await audioReady()) return;
+    metro = !metro; independentOrigin = ctx.currentTime + .1; silenceClicks(); updateMetro();
+  } catch (e) { fail(e); }
 };
 for (const id of ['bpm','beats','unit','origin','linked','countBars','loopCount']) $(id).onchange = () => {
   silenceClicks(); if (ctx) independentOrigin = ctx.currentTime + .1; retime().catch(fail);
@@ -1186,8 +1220,17 @@ $('highlightEnabled').onchange = () => {
 function theme(mode) { document.documentElement.dataset.theme = mode; try { localStorage.setItem('magic-theme',mode); } catch (_) {} }
 try { theme(localStorage.getItem('magic-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')); } catch (_) { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
-document.addEventListener('visibilitychange', () => { if (document.hidden) { ensemble?.unready(); pause(); metro = false; updateMetro(); if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.'); } });
-window.addEventListener('pagehide', () => { ensemble?.leave(); pause(); metro = false; });
+function suspendAudio() {
+  audioGeneration++; ensemble?.unready(); pause(); metro = false; updateMetro();
+  if (ctx && ctx.state !== 'closed') ctx.suspend().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    suspendAudio();
+    if (ready) setStatus('화면을 벗어나 일시정지했습니다. 재생을 눌러 이어서 연습하세요.');
+  }
+});
+window.addEventListener('pagehide', () => { ensemble?.leave(); suspendAudio(); });
 updateMetro(); timer = setInterval(() => { try { tick(); } catch (error) { fail(error); } },25); requestAnimationFrame(frame);
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {
@@ -1330,15 +1373,14 @@ class Ensemble {
   async prepare() {
     if (this.wantsReady) { this.unready(); return; }
     if (!this.role || this.preparing) return;
-    const generation = this.generation;
+    const generation = this.generation, outputGeneration = audioGeneration;
     this.preparing = true; this.update();
     try {
-      await audioReady();
-      if (generation !== this.generation) return;
+      if (!await audioReady() || generation !== this.generation || outputGeneration !== audioGeneration) return;
       if (this.downloadTask || (!ready && this.role === 'member' && this.shared)) await this.download();
-      if (generation !== this.generation || document.hidden) return;
+      if (generation !== this.generation || outputGeneration !== audioGeneration || document.hidden) return;
       requireMagic(ready && !loading, '연습 파일을 연 뒤 준비를 눌러 주세요.');
-      if (!await preparePlayback() || generation !== this.generation || document.hidden) return;
+      if (!await preparePlayback() || generation !== this.generation || outputGeneration !== audioGeneration || document.hidden) return;
       requireMagic(ctx.state === 'running', '소리가 일시정지되었습니다. 합주 준비를 다시 눌러 주세요.');
       const media = this.media();
       requireMagic(media.source === this.expectedMedia.source && Math.abs(media.duration - this.expectedMedia.duration) < .05, '리더와 같은 원곡 음원으로 만든 .magic 파일을 열어 주세요. 악보·파트는 달라도 됩니다.');
