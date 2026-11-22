@@ -14,6 +14,7 @@ def main():
         child_env = None
         if sys.platform == "darwin" and module.name in {
             "test_session_player.py", "test_web_audio.py", "test_web_player.py",
+            "test_web_update.py",
         }:
             # Preserve native browser exit diagnostics without changing test behavior.
             child_env = os.environ.copy()

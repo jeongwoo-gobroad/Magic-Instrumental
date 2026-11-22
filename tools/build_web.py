@@ -4,6 +4,7 @@
 import base64
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +33,10 @@ def build():
         before, "while (this.timeMap.length > 1 && this.timeMap[1].output <= currentTime) {", 1
     )
     template = (WEB / "template.html").read_text(encoding='utf-8')
+    versions = re.findall(r'<meta name="magic-version" content="(\d+\.\d+\.\d+)">', template)
+    if len(versions) != 1 or template.count('/*BUILD*/') != 1:
+        raise ValueError("The player template must declare one version and build identity.")
+    version = versions[0]
     for key, content in {
         "STYLE": (WEB / "style.css").read_text(encoding='utf-8'),
         "VENDOR": vendor,
@@ -40,12 +45,19 @@ def build():
         "ENSEMBLE": (WEB / "ensemble.js").read_text(encoding='utf-8'),
     }.items():
         template = template.replace(f"/*{key}*/", content)
+    template = template.replace('/*VERSION*/', version)
+    # Hash before inserting the identity so HTML and worker can compare one build.
+    build_id = hashlib.sha256(template.encode()).hexdigest()
+    template = template.replace('/*BUILD*/', build_id)
     (WEB / "index.html").write_text(template, encoding='utf-8', newline='\n')
     digest = hashlib.sha256(template.encode()).digest()
     revision = digest.hex()[:16]
     integrity = base64.b64encode(digest).decode("ascii")
     worker = f"""/* SPDX-License-Identifier: GPL-3.0-only */
-const CACHE = 'magic-v2-{revision}-verified';
+const VERSION = '{version}';
+const BUILD = '{build_id}';
+const CACHE_PREFIX = 'magic-player:' + encodeURIComponent(self.registration.scope) + ':';
+const CACHE = CACHE_PREFIX + '{revision}-verified';
 async function installPlayer() {{
   const page = await fetch('./index.html?rev={revision}', {{
     cache: 'reload', integrity: 'sha256-{integrity}'
@@ -59,8 +71,12 @@ async function installPlayer() {{
 }}
 self.addEventListener('install', event => event.waitUntil(installPlayer()));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys =>
-  Promise.all(keys.filter(k => k.startsWith('magic-v2-') && k !== CACHE)
+  Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE)
     .map(k => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('message', event => {{
+  if (event.data?.type === 'MAGIC_PLAYER_VERSION' && event.ports?.[0])
+    event.ports[0].postMessage({{version: VERSION, build: BUILD}});
+}});
 self.addEventListener('fetch', event => {{
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
