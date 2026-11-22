@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import json
 import shutil
 import sys
 import time
+from collections import deque
 
+from PySide6.QtCore import QEventLoop, Qt, QTimer
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtWidgets import QApplication
 
@@ -163,14 +166,57 @@ def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_p
     app = QApplication.instance() or QApplication([])
     paths = Paths(tmp_path)
     window = Window(paths)
+    count, failures, events = window.count_in, [], deque(maxlen=16)
+    started = time.monotonic()
+
+    def record(event):
+        events.append({
+            "event": event, "ms": round((time.monotonic() - started) * 1000, 3),
+            "count_active": count.active, "player": window.player.playbackState().name,
+            "media": window.player.mediaStatus().name, "position_ms": window.player.position(),
+        })
+
+    count.failed.connect(failures.append)
+    count.failed.connect(lambda _: record("count_failed"))
+    count.active_changed.connect(lambda _: record("count_active"))
+    count.finished.connect(lambda: record("count_finished"))
+    window.player.playbackStateChanged.connect(lambda _: record("playback"))
+    window.player.mediaStatusChanged.connect(lambda _: record("media"))
+
+    def wait_native(condition, timeout=5):
+        def done():
+            return bool(failures) or condition()
+
+        if not done():
+            loop, poll, deadline = QEventLoop(), QTimer(), QTimer()
+            poll.setTimerType(Qt.TimerType.PreciseTimer)
+            poll.setInterval(5)
+            poll.timeout.connect(lambda: loop.quit() if done() else None)
+            deadline.setSingleShot(True)
+            deadline.timeout.connect(loop.quit)
+            try:
+                poll.start()
+                deadline.start(round(timeout * 1000))
+                loop.exec()
+            finally:
+                poll.stop()
+                deadline.stop()
+        assert not failures and condition(), json.dumps({
+            "failures": failures, "count_active": count.active, "count_label": count.label.text(),
+            "play_button": window.play_button.text(), "status": window.status.text(),
+            "player": window.player.playbackState().name, "media": window.player.mediaStatus().name,
+            "position_ms": window.player.position(), "duration_ms": window.player.duration(),
+            "player_error": window.player.errorString(), "events": list(events),
+        }, ensure_ascii=False)
+
     try:
         window.load_result({"instrumental": str(tone), "cached": True})
-        wait_until(app, lambda: window.player.duration() > 0)
+        wait_native(lambda: window.player.duration() > 0, timeout=20)
         window.audio_output.setVolume(0)
         window.metronome.mute.setChecked(True)
         window.metronome.beats.setValue(1)
-        window.metronome.bpm.setValue(400)
-        count = window.count_in
+        # Test native transport at practice tempo; test_count_in covers the fast clock boundary.
+        window.metronome.bpm.setValue(120)
         assert not count.enabled.isChecked()
         count.enabled.setChecked(True)
         window.toggle_play()
@@ -178,9 +224,9 @@ def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_p
         assert window.metronome.state_label.text() == "드럼 카운트 중 · 무음"
         assert window.play_button.text() == "카운트 취소"
         assert window.player.playbackState() != QMediaPlayer.PlaybackState.PlayingState
-        wait_until(app, lambda: window.player.isPlaying())
+        wait_native(window.player.isPlaying)
         assert not count.active and window.play_button.text() == "일시정지"
-        wait_until(app, lambda: window.player.position() > 20)
+        wait_native(lambda: window.player.position() > 20)
         window.toggle_play()
         assert window.player.playbackState() == QMediaPlayer.PlaybackState.PausedState
         window.toggle_play()
@@ -193,7 +239,7 @@ def test_real_player_count_in_delays_play_cancels_and_remembers_mode(tone, tmp_p
         assert not count.active and not window.player.isPlaying()
         count.enabled.setChecked(False)
         window.toggle_play()
-        wait_until(app, lambda: window.player.isPlaying())
+        wait_native(window.player.isPlaying)
         window.player.pause()
         count.enabled.setChecked(True)
         count.bars.setValue(2)

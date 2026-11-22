@@ -57,8 +57,10 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         # A wall-clock error must not affect the monotonic server-clock estimate.
         member.evaluate("Date.now = () => 1234567890000")
         open_study(leader, study_files["gp"])
+        leader.locator("#highlightEnabled").uncheck()
         leader.locator("#leaderMode").click()
         leader.wait_for_function("MagicEnsemble.state().role === 'leader'")
+        assert not leader.locator("#highlightEnabled").is_checked()
         if engine == "chromium":
             leader.locator("#shareFile").click()
             expect(leader.locator("#sessionLive")).to_contain_text("공유 완료", timeout=45000)
@@ -84,6 +86,8 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.locator("#partSelect").select_option("1")
         member.wait_for_function("MagicPlayer.archive().activePart.track === 1")
         assert leader.evaluate("MagicPlayer.archive().activePart.track") == 2
+        assert member.locator("#highlightEnabled").is_checked()
+        assert not leader.locator("#highlightEnabled").is_checked()
         for page in (leader, member):
             page.locator("#sessionPrepare").click()
         for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
@@ -108,6 +112,11 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         left = leader.evaluate("MagicPlayer.state().position")
         right = member.evaluate("MagicPlayer.state().position")
         assert abs(left - right) < .13
+        member.locator("#highlightEnabled").uncheck()
+        leader.locator("#highlightEnabled").check()
+        assert member.locator("#highlight").is_hidden()
+        assert leader.locator("#highlight").is_visible()
+        assert member.evaluate("MagicPlayer.state().playing && MagicEnsemble.state().prepared")
         leader.locator("#step").fill("5")
         leader.locator("#forward").click()
         member.wait_for_function("MagicPlayer.state().position >= 10", timeout=7000)
@@ -147,6 +156,8 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         leader.locator("#exitSession").click()
         member.wait_for_function("MagicEnsemble.state().role === ''")
         assert member.locator("#playerControls").is_visible()
+        assert not member.locator("#highlightEnabled").is_checked()
+        assert leader.locator("#highlightEnabled").is_checked()
         for page in (leader, member):
             assert page.locator("#members li").count() == 0
             assert page.locator("#inviteCode").input_value() == ""

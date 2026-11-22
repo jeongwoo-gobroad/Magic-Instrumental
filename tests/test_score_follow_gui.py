@@ -70,8 +70,11 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         assert panel.camera_timer.isActive()
         assert not matching_view or panel.view_matches()
         box = panel.timeline.data["scroll"]["frames"][index]["box"]
-        assert panel.view.label.highlight_box == box
-        assert not panel.view.label.highlight_rect().isEmpty()
+        if panel.highlight.isChecked():
+            assert panel.view.label.highlight_box == box
+            assert not panel.view.label.highlight_rect().isEmpty()
+        else:
+            assert panel.view.label.highlight_box is None
         window.player.pause()
         assert not panel.camera_timer.isActive()
         return panel.view.verticalScrollBar().value()
@@ -106,8 +109,13 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         monkeypatch.setattr("practice_player.score_geometry.detect_pdf_layout", no_analysis)
         top = play_at(0.25, 0, 0)
         first_box = panel.view.label.highlight_box
+        panel.highlight.click()
+        assert panel.view.label.highlight_box is None
         bottom = play_at(4.25, 2, 0)
         assert bottom > top
+        panel.highlight.click()
+        assert panel.view.label.highlight_box == panel.timeline.data["scroll"]["frames"][2]["box"]
+        assert panel.view_matches() and panel.view.profile() == profile
         assert panel.view.label.highlight_box != first_box
         play_at(6.25, 3, 1)
         returned = play_at(8.25, 4, 0)

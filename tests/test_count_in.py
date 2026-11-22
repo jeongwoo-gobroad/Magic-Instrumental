@@ -52,6 +52,20 @@ def test_count_stall_cannot_burst_beats_or_start_music_without_count():
         clock.advance(102)
 
 
+@pytest.mark.parametrize("lateness,rejected", [(0, False), (0.052, False), (0.053, True)])
+def test_fast_single_beat_count_preserves_handoff_lateness_guard(lateness, rejected):
+    clock = count_clock(bpm=400, beats=1)
+    assert clock.duration == pytest.approx(0.15)
+    assert clock.advance(100) == (-1, False)
+    handoff = 100 + 0.15 + lateness
+    if rejected:
+        with pytest.raises(RuntimeError, match="지연"):
+            clock.advance(handoff)
+        assert not clock.finished
+    else:
+        assert clock.advance(handoff) == (None, True)
+
+
 def test_synthetic_drums_are_bounded_and_accent_has_audible_low_end(tmp_path):
     energies = []
     for accent in (False, True):

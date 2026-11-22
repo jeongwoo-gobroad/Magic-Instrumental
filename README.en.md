@@ -41,9 +41,11 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 
 Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
 
-**See the current measure on the desktop.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. The measure number and repeat visit update with playback even when **자동 넘김 · 스크롤** (automatic page turns and scrolling) is off. That checkbox controls automatic page and camera movement. If you manually open another page, the highlight stays hidden until you return to the current measure's page. Pausing keeps the highlight in place; seeking, repeats and coda jumps update it to the new playback position. Zooming or resizing scales the highlight with the page.
+**Measure highlighting is on by default.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. Use **마디 강조** (measure highlight) on the desktop or web player to hide it immediately or show the current measure again without reanalysis. The desktop app and each web browser remember their own choice across songs and parts, including Session use.
 
-**If an older analysis has no highlight:** open score pre-analysis and select **기존 마디 시간표 유지 · 화면 이동 경로만 분석** (keep the existing measure timeline and rebuild only the display path). This adds measure positions while preserving your corrected timings. It does not rerun note recognition or audio alignment, and the original score stays unchanged.
+Automatic page turns and scrolling are controlled separately. The measure number and repeat visit keep updating when highlighting or following is off. An enabled highlight appears only on the current measure's page; opening another page hides it until you return. Pausing keeps it in place; seeking, repeats and coda jumps update it to the new playback position. Zooming or resizing scales it with the page.
+
+**If highlighting is on but an older analysis has no measure positions:** open score pre-analysis and select **기존 마디 시간표 유지 · 화면 이동 경로만 분석** (keep the existing measure timeline and rebuild only the display path). This adds measure positions while preserving your corrected timings. It does not rerun note recognition or audio alignment, and the original score stays unchanged.
 
 **We recommend Guitar Pro scores in `.gp3`, `.gp4` or `.gp5` format.** The app reads notes and measures directly from these files and lets you choose a part by name.
 
