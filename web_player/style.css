@@ -49,3 +49,15 @@ aside, .card, .score-area, select { min-width: 0; }
 .file-button:has(input:disabled) { opacity: .45; cursor: default; }
 .file-button input:disabled { cursor: default; }
 .session-actions .file-button { margin-top: 0; }
+
+.app-update { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 24px 18px; padding: 16px 20px; border: 1px solid var(--accent); border-radius: 14px; background: var(--soft); }
+.app-update > div { min-width: 0; }
+.app-update p { margin: 5px 0 0; font-size: 13px; }
+.app-update button { flex-shrink: 0; }
+#updateActionStatus:empty { display: none; }
+.app-version { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 16px; margin: 0 24px 18px; font-size: 13px; color: var(--muted); }
+#updateStatus { flex-basis: 100%; text-align: center; }
+@media (max-width: 700px) {
+  .app-update { margin: 0 16px 14px; padding: 14px; flex-wrap: wrap; }
+  .app-version { margin: 0 16px 14px; }
+}

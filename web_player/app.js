@@ -7,7 +7,7 @@ const number = (id, lo, hi, fallback) => {
 };
 const clockText = t => `${String(Math.floor(Math.max(0, t) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, t)) % 60).padStart(2, '0')}`;
 let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = null;
-let decodedAudio = null, audioTask = null, audioGeneration = 0;
+let decodedAudio = null, audioTask = null, audioGeneration = 0, audioPending = 0;
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
@@ -55,6 +55,7 @@ async function audioReady() {
   try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (_) {}
   const context = audioContext();
   const current = () => generation === audioGeneration && !document.hidden;
+  audioPending++;
   try {
     // Even a running context needs the explicit start request after an interruption.
     await deadline(context.resume(), 4000,
@@ -78,6 +79,8 @@ async function audioReady() {
   } catch (error) {
     if (!current()) return false;
     throw error;
+  } finally {
+    audioPending--;
   }
 }
 function discardNode(node) {
@@ -530,10 +533,173 @@ document.addEventListener('visibilitychange', () => {
 });
 window.addEventListener('pagehide', () => { ensemble?.leave(); suspendAudio(); });
 updateMetro(); timer = setInterval(() => { try { tick(); } catch (error) { fail(error); } },25); requestAnimationFrame(frame);
-if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  navigator.serviceWorker.register('./sw.js').then(() => navigator.serviceWorker.ready).then(() => {
-    $('offline').textContent = '오프라인 준비 완료 · 홈 화면에 추가해 두세요.';
-  }).catch(() => { $('offline').textContent = '오프라인 저장을 준비하지 못했습니다. 인터넷 연결을 확인하고 다시 열어 주세요.'; });
-} else $('offline').textContent = '단일 파일 재생기 · iPad·Android에서는 웹주소로 열고 홈 화면에 추가하세요.';
+(() => {
+  const version = document.querySelector('meta[name="magic-version"]').content;
+  const build = document.querySelector('meta[name="magic-build"]').content;
+  const status = message => { $('updateStatus').textContent = message; };
+  if (!('serviceWorker' in navigator) || !window.isSecureContext || location.protocol === 'file:') {
+    $('offline').textContent = '단일 파일 재생기 · iPad·Android에서는 웹주소로 열고 홈 화면에 추가하세요.';
+    status('이 환경에서는 자동 업데이트를 확인할 수 없습니다. 웹주소에서 열어 주세요.');
+    $('checkUpdate').disabled = true;
+    return;
+  }
+  const service = navigator.serviceWorker, watched = new WeakSet();
+  let registration = null, registrationTask = null, checkTask = null, lastCheck = 0;
+  let available = null, installFailed = false;
+  const prepared = () => { $('offline').textContent = '오프라인 준비 완료 · 홈 화면에 추가해 두세요.'; };
+  const availableMessage = () => `v${available.version} 업데이트 준비 완료 · 위 안내에서 적용해 주세요.`;
+  const storedStatus = info => available ? availableMessage() : info.build === build ?
+    `최신 버전입니다 · v${version}` : '현재 화면보다 이전 버전이 저장되어 있습니다. 온라인에서 다시 확인해 주세요.';
+  function olderVersion(other) {
+    const stored = other.split('.').map(Number), current = version.split('.').map(Number);
+    for (let index = 0; index < 3; index++) {
+      if (stored[index] !== current[index]) return stored[index] < current[index];
+    }
+    return false;
+  }
+
+  function workerVersion(worker) {
+    return new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+      const finish = (error, value) => {
+        clearTimeout(timeout); channel.port1.close(); channel.port2.close();
+        if (error) reject(error); else resolve(value);
+      };
+      const timeout = setTimeout(() => finish(new Error('저장된 버전을 확인하지 못했습니다. 다시 확인해 주세요.')), 3000);
+      channel.port1.onmessage = event => {
+        const info = event.data;
+        if (!info || !/^\d+\.\d+\.\d+$/.test(info.version) || !/^[a-f0-9]{64}$/.test(info.build)) {
+          finish(new Error('저장된 버전 정보가 올바르지 않습니다. 다시 확인해 주세요.'));
+        } else finish(null, info);
+      };
+      try { worker.postMessage({type: 'MAGIC_PLAYER_VERSION'}, [channel.port2]); }
+      catch (error) { finish(error); }
+    });
+  }
+
+  async function inspectController() {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const worker = service.controller;
+      if (!worker) return null;
+      let info;
+      try { info = await workerVersion(worker); }
+      catch (error) { if (worker !== service.controller) continue; throw error; }
+      // A late reply from a replaced worker must not overwrite the new version.
+      if (worker !== service.controller) continue;
+      const older = olderVersion(info.version);
+      available = older || info.build === build ? null : {...info, worker};
+      $('appUpdate').hidden = !available;
+      if (available) $('updateTitle').textContent = `v${info.version} 업데이트가 준비되었습니다.`;
+      if (older) $('offline').textContent = `오프라인에는 v${info.version}이 저장되어 있습니다. 온라인에서 다시 확인해 주세요.`;
+      else prepared();
+      return info;
+    }
+    throw new Error('업데이트가 전환 중입니다. 잠시 뒤 다시 확인해 주세요.');
+  }
+
+  function watchInstall(worker) {
+    if (!worker || watched.has(worker)) return;
+    watched.add(worker); installFailed = false;
+    const changed = () => {
+      if (worker.state === 'redundant') {
+        installFailed = true;
+        status('새 버전을 받지 못했습니다. 현재 화면은 계속 쓸 수 있습니다. 인터넷 연결을 확인하고 다시 시도해 주세요.');
+      } else if (worker.state === 'activated') {
+        inspectController().then(info => {
+          if (info) status(storedStatus(info));
+        }).catch(error => status(error.message));
+      } else {
+        status('새 버전을 받아 확인하고 있습니다. 연습은 계속할 수 있습니다.');
+      }
+      if (['activated', 'redundant'].includes(worker.state)) worker.removeEventListener('statechange', changed);
+    };
+    worker.addEventListener('statechange', changed); changed();
+  }
+
+  function register() {
+    if (registration) return Promise.resolve(registration);
+    if (!registrationTask) registrationTask = deadline(
+      service.register('./sw.js', {updateViaCache: 'none'}), 12000,
+      '업데이트 확인이 지연되고 있습니다. 다시 확인해 주세요.'
+    ).then(reg => {
+      registration = reg;
+      reg.addEventListener('updatefound', () => watchInstall(reg.installing));
+      watchInstall(reg.installing || reg.waiting);
+      return reg;
+    }).catch(error => { registrationTask = null; throw error; });
+    return registrationTask;
+  }
+
+  function installed(worker) {
+    return new Promise((resolve, reject) => {
+      const finish = error => {
+        clearTimeout(timeout); worker.removeEventListener('statechange', changed);
+        if (error) reject(error); else resolve();
+      };
+      const changed = () => {
+        if (worker.state === 'activated') finish();
+        else if (worker.state === 'redundant') finish(new Error('새 버전을 받지 못했습니다. 다시 확인해 주세요.'));
+      };
+      const timeout = setTimeout(() => finish(new Error('업데이트 다운로드가 지연되고 있습니다. 잠시 뒤 다시 확인해 주세요.')), 20000);
+      worker.addEventListener('statechange', changed); changed();
+    });
+  }
+
+  function check(force = false) {
+    if (checkTask) return checkTask;
+    if (!force && (document.hidden || Date.now() - lastCheck < 60000)) return;
+    lastCheck = Date.now(); installFailed = false; $('checkUpdate').disabled = true;
+    status('새 버전을 확인하고 있습니다…');
+    checkTask = (async () => {
+      // A previously downloaded update remains available even without a network.
+      await inspectController().catch(() => null);
+      const reg = await register();
+      await deadline(reg.update(), 12000, '업데이트 확인이 지연되고 있습니다. 다시 확인해 주세요.');
+      const worker = reg.installing || reg.waiting;
+      if (worker) await installed(worker);
+      if (installFailed) throw new Error('새 버전을 받지 못했습니다.');
+      const info = await inspectController();
+      if (!info) throw new Error('오프라인 저장을 아직 준비하지 못했습니다.');
+      status(storedStatus(info));
+    })().catch(() => {
+      status(available ? `${availableMessage()} 최신 공개 버전은 연결 후 다시 확인해 주세요.` :
+        '업데이트를 확인하지 못했습니다. 현재 화면은 계속 쓸 수 있습니다. 인터넷 연결을 확인한 뒤 다시 눌러 주세요.');
+      if (!service.controller) $('offline').textContent = '오프라인 저장을 준비하지 못했습니다. 인터넷 연결을 확인하고 다시 열어 주세요.';
+    }).finally(() => { checkTask = null; $('checkUpdate').disabled = false; });
+    return checkTask;
+  }
+
+  function applyBlocked() {
+    if (ensemble?.role || ensemble?.busy) return 'Session을 종료한 뒤 업데이트를 적용해 주세요.';
+    if (loading || audioPending || audioTask || ensemble?.preparing || ensemble?.uploading || ensemble?.downloadTask)
+      return '파일과 소리 준비가 끝난 뒤 업데이트를 적용해 주세요.';
+    if (playing || metro) return '재생을 멈추고 메트로놈을 끈 뒤 업데이트를 적용해 주세요.';
+    return '';
+  }
+
+  $('applyUpdate').onclick = async () => {
+    const blocked = applyBlocked();
+    if (blocked) { $('updateActionStatus').textContent = blocked; return; }
+    $('applyUpdate').disabled = true;
+    try {
+      await inspectController();
+      if (!available || available.worker !== service.controller) throw new Error('적용할 버전을 다시 확인해 주세요.');
+      // Playback or Session may have started while the worker replied.
+      const blockedNow = applyBlocked();
+      if (blockedNow) throw new Error(blockedNow);
+      location.reload();
+    } catch (error) { $('updateActionStatus').textContent = error.message; }
+    finally { $('applyUpdate').disabled = false; }
+  };
+  $('checkUpdate').onclick = () => check(true);
+  service.addEventListener('controllerchange', () => {
+    inspectController().then(info => {
+      if (info && available) status(availableMessage());
+    }).catch(error => status(error.message));
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+  window.addEventListener('online', () => check(true));
+  check(true);
+})();
 // Stable inspection surface for automated tests; no file contents or uploads.
 window.MagicPlayer = {openFile, archive: () => archive, state: () => ({ready,loading,playing,position:nowPosition(),duration,page:shownPage,cue:currentCue,metro,latency}), pause, play, seek, context: () => ctx};
