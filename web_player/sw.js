@@ -1,8 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-const CACHE = 'magic-v2-db262805416171b6-verified';
+const VERSION = '2.4.8';
+const BUILD = '589e94c62f0c0917d0b22cb05fd7bb2c3594953e4c44b32d45de77b7f6c94008';
+const CACHE_PREFIX = 'magic-player:' + encodeURIComponent(self.registration.scope) + ':';
+const CACHE = CACHE_PREFIX + '4f3d881223249e4d-verified';
 async function installPlayer() {
-  const page = await fetch('./index.html?rev=db262805416171b6', {
-    cache: 'reload', integrity: 'sha256-2yYoBUFhcba9CFG2lbsVeEneTtOsMymNk1pQHSoRnik='
+  const page = await fetch('./index.html?rev=4f3d881223249e4d', {
+    cache: 'reload', integrity: 'sha256-Tz2IEiMknk02mJrcXCC4W6fqoHswgtbpgRQrSNhj3DA='
   });
   if (!page.ok) throw new Error('The new player is unavailable.');
   const cache = await caches.open(CACHE);
@@ -13,8 +16,12 @@ async function installPlayer() {
 }
 self.addEventListener('install', event => event.waitUntil(installPlayer()));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys =>
-  Promise.all(keys.filter(k => k.startsWith('magic-v2-') && k !== CACHE)
+  Promise.all(keys.filter(k => k.startsWith(CACHE_PREFIX) && k !== CACHE)
     .map(k => caches.delete(k)))).then(() => self.clients.claim())));
+self.addEventListener('message', event => {
+  if (event.data?.type === 'MAGIC_PLAYER_VERSION' && event.ports?.[0])
+    event.ports[0].postMessage({version: VERSION, build: BUILD});
+});
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (event.request.method !== 'GET' || url.origin !== self.location.origin) return;
