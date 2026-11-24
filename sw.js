@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-const VERSION = '2.4.9';
-const BUILD = '50b6aac688d2e41307a1cd1c4aab01a666141f2f0444d6c427e1df6b034cbaaa';
+const VERSION = '3.0.0';
+const BUILD = 'be80038a774c96912c3fd32f20d498ab584142664c6a48220f23f96601347779';
 const CACHE_PREFIX = 'magic-player:' + encodeURIComponent(self.registration.scope) + ':';
-const CACHE = CACHE_PREFIX + 'afaadd535c19e492-verified';
+const CACHE = CACHE_PREFIX + '311e69e5ef0324e9-verified';
 async function installPlayer() {
-  const page = await fetch('./index.html?rev=afaadd535c19e492', {
-    cache: 'reload', integrity: 'sha256-r6rdU1wZ5JK7FCuo/uNSkwbTcf62jNeNtfHMBvGKtds='
+  const page = await fetch('./index.html?rev=311e69e5ef0324e9', {
+    cache: 'reload', integrity: 'sha256-MR5p5e8DJOlX5qIefHEzOJQJdXOBSubJoTqV4JKESi8='
   });
   if (!page.ok) throw new Error('The new player is unavailable.');
   const cache = await caches.open(CACHE);

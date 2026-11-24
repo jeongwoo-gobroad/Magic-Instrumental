@@ -8,6 +8,7 @@ const number = (id, lo, hi, fallback) => {
 const clockText = t => `${String(Math.floor(Math.max(0, t) / 60)).padStart(2, '0')}:${String(Math.floor(Math.max(0, t)) % 60).padStart(2, '0')}`;
 let archive = null, ctx = null, stretch = null, musicGain = null, clickGain = null;
 let decodedAudio = null, audioTask = null, audioGeneration = 0, audioPending = 0;
+let selectionGeneration = 0;
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
@@ -100,7 +101,7 @@ async function preparePlayback() {
   if (!ready || loading || archive !== selected) return false;
   if (stretch) return true;
   if (!audioTask) {
-    const decoded = decodedAudio, task = {cancelled: false, node: null, promise: null};
+    const decoded = decodedAudio, task = {cancelled: false, node: null, promise: null, cancel: null};
     requireMagic(decoded, '반주를 다시 열어 주세요.');
     audioTask = task;
     const prepare = async () => {
@@ -116,7 +117,8 @@ async function preparePlayback() {
       stretch = node; task.node = null; latency = nextLatency; decodedAudio = null;
       return true;
     };
-    task.promise = deadline(prepare(), 15000,
+    const cancelled = new Promise(resolve => { task.cancel = () => resolve(false); });
+    task.promise = deadline(Promise.race([prepare(), cancelled]), 15000,
       '반주 재생을 준비하지 못했습니다. 재생 또는 합주 준비를 다시 눌러 주세요.').catch(error => {
       task.cancelled = true; discardNode(task.node); task.node = null;
       if (archive === selected) throw error;
@@ -501,6 +503,8 @@ function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); 
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
   for (const id of ['file', 'sessionFile']) $(id).disabled = loading;
+  $('audioVariant').disabled = !value || loading;
+  $('partSelect').disabled = !value || loading;
   ensemble?.update();
 }
 function clearScorePage() {
@@ -513,41 +517,93 @@ function clearScorePage() {
   urls.clear(); pageSlots = []; wantedPages.clear(); pageLoads.clear(); pageErrors.clear();
   paper.classList.remove('continuous'); paper.removeAttribute('style');
 }
-function releaseAudio() {
+function cancelAudioTask() {
   if (audioTask) {
-    audioTask.cancelled = true; discardNode(audioTask.node); audioTask.node = null; audioTask = null;
+    audioTask.cancelled = true; audioTask.cancel?.(); discardNode(audioTask.node); audioTask.node = null; audioTask = null;
   }
+}
+function releaseAudio() {
+  cancelAudioTask();
   const node = stretch; stretch = null; decodedAudio = null;
   discardNode(node);
+}
+async function decodeVariant(selected, variant) {
+  const audio = variant.audio, fileError = '파일을 읽지 못했습니다. 파일 앱에서 기기에 다운로드한 뒤 다시 선택해 주세요.';
+  const blob = await deadline(selected.blob(audio.path), 60000, fileError);
+  const data = await deadline(blob.arrayBuffer(), 60000, fileError);
+  if (crypto.subtle) {
+    const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(n => n.toString(16).padStart(2, '0')).join('');
+    requireMagic(digest === selected.manifest.entries[audio.path].sha256, '음원 검증에 실패했습니다. 파일을 다시 가져와 주세요.');
+  }
+  const mp3 = audio.codec === 'mp3';
+  const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
+  if (mp3) validateMp3(data, audio);
+  else if (selected.manifest.version === 4) validateWav(data, audio);
+  let decoded;
+  try { decoded = await deadline(audioContext().decodeAudioData(data), 60000, '음원을 읽지 못했습니다. 다시 선택해 주세요.'); }
+  catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
+  if (mp3 || selected.manifest.version === 4) requireMagic(decoded.sampleRate === audio.sample_rate && decoded.length === audio.frames && decoded.numberOfChannels === 2, mp3 ? mp3Error : '음원의 원본 샘플 수·채널 정보가 일치하지 않습니다.');
+  else requireMagic(Math.abs(decoded.duration - audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
+  return decoded;
+}
+function showAudioChoices() {
+  $('audioVariant').replaceChildren(...(archive?.audioVariants || []).map(variant => {
+    const option = document.createElement('option'); option.value = variant.id;
+    option.textContent = variant.label; return option;
+  }));
+  if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
+  $('audioChoice').hidden = !archive || archive.audioVariants.length < 2;
+  showAudioVariantHint();
+}
+function showAudioVariantHint() {
+  const target = archive?.activeAudioVariant.target;
+  const detail = target === 'keys' ? '키보드는 피아노·오르간 등 건반 계열입니다. ' :
+    target === 'synth' ? '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ' : '';
+  $('audioVariantHint').textContent = detail + '음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.';
+}
+async function selectAudioVariant(identifier) {
+  if (!archive || !ready || loading || archive.activeAudioVariant.id === identifier) return;
+  const selected = archive, variant = selected.audioVariant(identifier), generation = ++selectionGeneration;
+  const previous = selected.activeAudioVariant;
+  audioGeneration++; ensemble?.unready(); pause(); cancelAudioTask();
+  const saved = position;
+  loading = true; setAvailable(false); setStatus(`${variant.label} 음원을 준비하고 있습니다…`);
+  try {
+    const decoded = await decodeVariant(selected, variant);
+    if (archive !== selected || generation !== selectionGeneration) return;
+    // Keep the old working audio until the selected replacement fully validates.
+    releaseAudio(); selected.activeAudioVariant = variant; decodedAudio = decoded;
+    $('audioVariant').value = variant.id;
+    duration = decoded.duration; position = clamp(saved, 0, duration); segment = upcoming = null;
+    updateKey(); showPosition(); showAudioVariantHint();
+    setStatus(`${variant.label} · 현재 위치를 유지했습니다. ${ensemble?.role ? '합주 준비를 다시 눌러 주세요.' : '재생을 눌러 이어서 연습하세요.'}`);
+  } catch (error) {
+    if (archive !== selected || generation !== selectionGeneration) return;
+    selected.activeAudioVariant = previous; $('audioVariant').value = previous.id;
+    fail(error);
+  } finally {
+    if (archive === selected && generation === selectionGeneration) {
+      loading = false; setAvailable(ready);
+    }
+  }
 }
 async function openFile(file) {
   if (!file || loading) return;
   ensemble?.unready();
-  loading = true; pause(); ready = false; setAvailable(false);
+  selectionGeneration++; loading = true; pause(); ready = false; setAvailable(false);
   setStatus('연습 파일을 확인하고 있습니다…');
   clearScorePage();
   archive = null;
+  showAudioChoices();
   try {
     releaseAudio();
     const fileError = '파일을 읽지 못했습니다. 파일 앱에서 기기에 다운로드한 뒤 다시 선택해 주세요.';
     const next = await deadline(new MagicArchive(file).open(), 60000, fileError);
     setStatus('반주를 준비하고 있습니다…');
-    const blob = await deadline(next.blob(next.manifest.audio.path), 60000, fileError);
-    const data = await deadline(blob.arrayBuffer(), 60000, fileError);
-    if (crypto.subtle) {
-      const digest = [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))].map(n => n.toString(16).padStart(2, '0')).join('');
-      requireMagic(digest === next.manifest.entries[next.manifest.audio.path].sha256, '반주 검증에 실패했습니다. 파일을 다시 가져와 주세요.');
-    }
-    const mp3 = next.manifest.version === 3;
-    const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
-    if (mp3) validateMp3(data, next.manifest.audio);
-    let decoded;
-    try { decoded = await deadline(audioContext().decodeAudioData(data), 60000, '반주를 읽지 못했습니다. 파일을 다시 선택해 주세요.'); }
-    catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
-    if (mp3) requireMagic(decoded.sampleRate === next.manifest.audio.sample_rate && decoded.length === next.manifest.audio.frames && decoded.numberOfChannels === 2, mp3Error);
-    else requireMagic(Math.abs(decoded.duration - next.manifest.audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
+    const decoded = await decodeVariant(next, next.activeAudioVariant);
     decodedAudio = decoded;
     archive = next; duration = decoded.duration; position = 0; segment = upcoming = null;
+    showAudioChoices();
     $('title').textContent = next.manifest.title;
     $('part').textContent = next.manifest.score.kind === 'gp' ? `GP 파트 · ${next.manifest.score.part}` : 'PDF 악보';
     $('partSelect').replaceChildren(...next.parts.map(part => {
@@ -577,6 +633,7 @@ async function openFile(file) {
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
   } catch (error) {
     archive = null; ready = false; seeking = false; position = duration = 0;
+    showAudioChoices();
     clearScorePage();
     $('empty').hidden = false;
     $('paper').removeAttribute('style');
@@ -597,7 +654,7 @@ async function openFile(file) {
   }
 }
 function updateKey() {
-  const base = archive?.manifest.audio.pitch_semitones || 0, extra = Number($('key').value), total = base + extra;
+  const base = archive?.activeAudio.pitch_semitones || 0, extra = Number($('key').value), total = base + extra;
   $('keyText').textContent = total ? `원곡 대비 ${total > 0 ? '+' : ''}${total}반음` : '원곡 키';
   $('key').title = `.magic 반주에 적용된 키 ${base >= 0 ? '+' : ''}${base}반음에서 추가 조절`;
 }
@@ -609,6 +666,7 @@ async function retime() {
 for (let n = -12; n <= 12; n++) { const option = document.createElement('option'); option.value = n; option.textContent = n ? `${n > 0 ? '+' : ''}${n}반음` : '추가 0'; $('key').append(option); }
 $('key').value = 0;
 for (const id of ['file', 'sessionFile']) $(id).onchange = event => openFile(event.target.files[0]);
+$('audioVariant').onchange = () => selectAudioVariant($('audioVariant').value).catch(fail);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
 $('seek').oninput = () => { seeking = true; };
@@ -650,7 +708,7 @@ $('partSelect').onchange = async () => {
     await showPage(selected.timing.cues[clamp(cueAt(nowPosition()), 0, selected.timing.cues.length - 1)].page);
     setStatus('파트를 바꿨습니다. 반주 재생 위치는 그대로 유지됩니다.');
   } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }
-  finally { $('partSelect').disabled = false; }
+  finally { $('partSelect').disabled = loading || !ready; }
 };
 $('zoom').onchange = resizePaper;
 let resizeFrame = 0;
@@ -855,4 +913,4 @@ updateMetro(); timer = setInterval(() => { try { tick(); } catch (error) { fail(
   check(true);
 })();
 // Stable inspection surface for automated tests; no file contents or uploads.
-window.MagicPlayer = {openFile, archive: () => archive, state: () => ({ready,loading,playing,position:nowPosition(),duration,page:shownPage,cue:currentCue,metro,latency}), pause, play, seek, context: () => ctx};
+window.MagicPlayer = {openFile, selectAudioVariant, archive: () => archive, state: () => ({ready,loading,playing,position:nowPosition(),duration,page:shownPage,cue:currentCue,metro,latency,audioVariant:archive?.activeAudioVariant.id}), pause, play, seek, context: () => ctx};
