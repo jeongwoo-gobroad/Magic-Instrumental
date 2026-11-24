@@ -1,0 +1,321 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Continuous PDF/GP camera paths in actual Chromium and WebKit viewers."""
+
+import hashlib
+import json
+import os
+import zipfile
+from pathlib import Path
+
+import numpy as np
+import pytest
+import soundfile as sf
+
+from practice_player.config import Paths
+from practice_player.magic_bundle import export_magic
+from practice_player.score_analysis import analyze_score
+from practice_player.score_layout import analyze_scroll
+from practice_player.score_view import view_profile
+from tests import test_web_player as player_tests
+from tests.test_magic_bundle import portable_study
+from tests.test_score_geometry import vector_pdf
+from tests.test_web_player import open_study
+
+page = player_tests.page
+web_url = player_tests.web_url
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_WEB_TESTS") != "1", reason="RUN_WEB_TESTS=1 and browser runtimes required"
+)
+
+
+@pytest.fixture(scope="module")
+def follow_files(tmp_path_factory):
+    root = tmp_path_factory.mktemp("continuous-score")
+    paths = Paths(root / "pdf")
+    paths.create()
+    audio = paths.targets / "Continuous Study.wav"
+    rate = 44100
+    times = np.arange(rate * 96) / rate
+    tone = (0.1 * np.sin(2 * np.pi * 220 * times)).astype(np.float32)
+    sf.write(audio, np.column_stack([tone, tone]), rate, subtype="PCM_16")
+    pdf = paths.score_targets / "Continuous Study.pdf"
+    vector_pdf(pdf, [
+        ((595, 842), [(700, [50, 170, 290, 410, 540], []),
+                       (400, [50, 170, 290, 410, 540], []),
+                       (90, [50, 170, 290, 410, 540], [])], [5]),
+        ((640, 880), [(740, [50, 180, 310, 440, 590], []),
+                       (410, [50, 180, 310, 440, 590], []),
+                       (90, [50, 180, 310, 440, 590], [])], [5]),
+        ((595, 842), [(700, [50, 170, 290, 410, 540], []),
+                       (400, [50, 170, 290, 410, 540], []),
+                       (90, [50, 170, 290, 410, 540], [])], [5]),
+    ])
+    timeline = analyze_score(
+        audio, pdf, paths, mode="pdf", bpm=120, route_override="1-36,1-4,29-36"
+    )
+    files = {"pdf": export_magic({
+        "root": str(paths.root), "audio": str(audio), "instrumental": str(audio),
+        "pdf": str(pdf), "timeline": str(timeline),
+        "output": str(root / "continuous-pdf.magic"), "title": "Continuous PDF Study",
+    })}
+    request, prepared, gp_paths = portable_study(root / "gp", "gp", count=48)
+    display = {key: prepared[key] for key in ("pdf", "layout", "source", "signature")}
+    timeline = analyze_score(
+        Path(request["audio"]), Path(request["pdf"]), gp_paths,
+        musicxml=Path(prepared["source"]), gp_track=2, gp_display=display,
+        mode="tempo", bpm=120, route_override="1-36,1-4,41-48",
+    )
+    request["timeline"] = str(analyze_scroll(
+        Path(request["audio"]), Path(request["pdf"]), gp_paths, timeline,
+        view_profile("width", 900, 700),
+    ))
+    files["gp"] = export_magic(request)
+    files["bad_page"] = root / "damaged-neighbor.magic"
+    with zipfile.ZipFile(files["pdf"]) as source, zipfile.ZipFile(files["bad_page"], "w") as target:
+        manifest = json.loads(source.read("manifest.json"))
+        name = manifest["pages"][1]["path"]
+        data = source.read(name)[:24] + b"This is not a complete PNG image."
+        manifest["entries"][name] = {"bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        for entry in source.namelist():
+            if entry != "manifest.json":
+                target.writestr(entry, data if entry == name else source.read(entry))
+        target.writestr("manifest.json", json.dumps(manifest))
+    files["offset_pdf"] = root / "negative-offset.magic"
+    with (
+        zipfile.ZipFile(files["pdf"]) as source,
+        zipfile.ZipFile(files["offset_pdf"], "w") as target,
+    ):
+        manifest = json.loads(source.read("manifest.json"))
+        timing = json.loads(source.read("timeline.json"))
+        timing["offset"] = -48
+        data = json.dumps(timing).encode()
+        manifest["entries"]["timeline.json"] = {
+            "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+        }
+        for entry in source.namelist():
+            if entry != "manifest.json":
+                target.writestr(entry, data if entry == "timeline.json" else source.read(entry))
+        target.writestr("manifest.json", json.dumps(manifest))
+    return files
+
+
+def wait_centered(page):
+    page.wait_for_function("""() => {
+      const cue = MagicPlayer.archive().timing.cues[MagicPlayer.state().cue];
+      const slot = document.querySelector(`.score-page[data-page="${cue.page}"]`);
+      const view = document.getElementById('viewport'), box = slot.getBoundingClientRect();
+      const image = slot.querySelector('img');
+      const center = box.top + (cue.box.top + cue.box.bottom) * box.height / 2;
+      return image.complete && image.naturalWidth > 0 && !image.hidden &&
+        Math.abs(center - view.getBoundingClientRect().top - view.clientTop -
+          view.clientHeight / 2) < 2;
+    }""", timeout=10000)
+
+
+def score_snapshot(page):
+    return page.evaluate("""() => {
+      const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
+      const pages = [...document.querySelectorAll('.score-page')];
+      const visible = pages.filter(el => {
+        const box = el.getBoundingClientRect();
+        return box.bottom > rect.top && box.top < rect.bottom;
+      });
+      return {top: view.scrollTop, left: view.scrollLeft, height: view.clientHeight,
+        visible: visible.map(el => Number(el.dataset.page)),
+        loaded: pages.filter(el => el.querySelector('img').hasAttribute('src'))
+          .map(el => Number(el.dataset.page)),
+        timing: JSON.stringify(MagicPlayer.archive().timing), state: MagicPlayer.state()};
+    }""")
+
+
+@pytest.mark.parametrize("kind", ["pdf", "gp"])
+def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow_files, kind):
+    open_study(page, follow_files[kind])
+    original = score_snapshot(page)["timing"]
+    cues = page.evaluate("MagicPlayer.archive().timing.cues")
+    for index in (0, len(cues) - 1):
+        page.evaluate("t => MagicPlayer.seek(t, false)", cues[index]["start"] + 0.2)
+        wait_centered(page)
+        assert page.locator("#follow").is_checked()
+    before = page.evaluate("MagicPlayer.state().position")
+    page.locator("#viewport").hover()
+    page.mouse.wheel(0, -250)
+    page.wait_for_function("!document.getElementById('follow').checked")
+    page.wait_for_timeout(100)
+    manual = score_snapshot(page)
+    page.locator("#highlightEnabled").uncheck()
+    page.locator("#follow").check()
+    wait_centered(page)
+    assert abs(score_snapshot(page)["top"] - manual["top"]) > 100
+    assert page.evaluate("MagicPlayer.state().position") == before
+    assert not page.evaluate("MagicPlayer.state().playing")
+    assert page.locator("#highlight").is_hidden()
+    page.locator("#highlightEnabled").check()
+
+    for width, height, zoom in ((768, 1024, "1"), (1180, 820, "3")):
+        page.set_viewport_size({"width": width, "height": height})
+        page.locator("#zoom").select_option(zoom)
+        wait_centered(page)
+        assert page.evaluate("MagicPlayer.state().position") == before
+        snapshot = score_snapshot(page)
+        assert set(snapshot["loaded"]) <= {
+            n for visible in snapshot["visible"] for n in (visible - 1, visible, visible + 1)
+        }
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+        capture_score(page, kind, f"center-{width}")
+
+    # Session mode changes viewport dimensions without a window resize event.
+    page.evaluate("document.body.dataset.session = 'member'")
+    wait_centered(page)
+    page.evaluate("delete document.body.dataset.session")
+    wait_centered(page)
+    assert score_snapshot(page)["timing"] == original
+    if kind == "gp":
+        page.locator("#partSelect").select_option("1")
+        page.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
+                               "!document.getElementById('partSelect').disabled")
+        wait_centered(page)
+        assert page.evaluate("MagicPlayer.state().position") == before
+
+
+@pytest.mark.parametrize("kind", ["pdf", "gp"])
+def test_playback_flows_across_rows_pages_and_snaps_navigation(page, follow_files, kind):
+    page.set_viewport_size({"width": 768, "height": 1024})
+    open_study(page, follow_files[kind])
+    cues = page.evaluate("MagicPlayer.archive().timing.cues")
+    row = next(i for i in range(1, len(cues)) if cues[i]["page"] == cues[i - 1]["page"]
+               and cues[i]["box"]["top"] > cues[i - 1]["box"]["top"] + 0.05)
+    boundary = next(i for i in range(1, len(cues)) if cues[i]["page"] == cues[i - 1]["page"] + 1)
+    page.locator("#speed").fill("50")
+    for index in (row, boundary):
+        page.evaluate("t => MagicPlayer.seek(t, false)", cues[index]["start"] - 0.3)
+        wait_centered(page)
+        if index == boundary:
+            page.wait_for_function("""next => {
+              const slot = document.querySelector(`.score-page[data-page="${next}"]`);
+              const image = slot.querySelector('img'), box = slot.getBoundingClientRect();
+              const view = document.getElementById('viewport').getBoundingClientRect();
+              return image.complete && image.naturalWidth > 0 &&
+                !image.hidden && box.top < view.bottom;
+            }""", arg=cues[index]["page"])
+            capture_score(page, kind, "next-page")
+        page.evaluate("""target => {
+          window.followSamples = []; window.followFinished = false;
+          const sample = () => {
+            const state = MagicPlayer.state(), view = document.getElementById('viewport');
+            followSamples.push({position: state.position, cue: state.cue,
+              top: view.scrollTop, time: performance.now()});
+            if (state.playing && state.position >= target + .3) followFinished = true;
+            else requestAnimationFrame(sample);
+          }; requestAnimationFrame(sample);
+        }""", cues[index]["start"])
+        page.locator("#play").click()
+        page.wait_for_function("window.followFinished", timeout=10000)
+        page.locator("#play").click()
+        wait_centered(page)
+        samples = page.evaluate("window.followSamples")
+        before = next(sample["top"] for sample in reversed(samples) if sample["cue"] < index)
+        after = samples[-1]["top"]
+        between = [sample for sample in samples if sample["cue"] == index
+                   and before + 2 < sample["top"] < after - 2]
+        assert len(between) >= 2, samples
+        transition = [sample for sample in samples if sample["cue"] == index]
+        assert transition[-1]["top"] > before + 20
+        assert transition[-1]["time"] - transition[0]["time"] >= 200
+
+    # Repeated visits and a forward jump choose the target immediately, not every intervening page.
+    jumps = [i for i in range(1, len(cues))
+             if cues[i]["source_index"] != cues[i - 1]["source_index"] + 1]
+    assert len(jumps) >= 2
+    for index in jumps[:2]:
+        page.evaluate("t => MagicPlayer.seek(t, false)", cues[index]["start"] - 0.1)
+        wait_centered(page)
+        page.evaluate("""target => {
+          window.jumpError = null;
+          const sample = () => {
+            if (MagicPlayer.state().cue < target) { requestAnimationFrame(sample); return; }
+            const cue = MagicPlayer.archive().timing.cues[target];
+            const view = document.getElementById('viewport');
+            const slot = document.querySelector(`.score-page[data-page="${cue.page}"]`);
+            const rect = slot.getBoundingClientRect();
+            jumpError = Math.abs(rect.top + (cue.box.top + cue.box.bottom) * rect.height / 2 -
+              view.getBoundingClientRect().top - view.clientTop - view.clientHeight / 2);
+          }; requestAnimationFrame(sample);
+        }""", index)
+        page.locator("#play").click()
+        page.wait_for_function("window.jumpError !== null", timeout=10000)
+        assert page.evaluate("window.jumpError") < 2
+        page.locator("#play").click()
+        wait_centered(page)
+
+
+def capture_score(page, kind, label):
+    destination = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+    if destination:
+        path = Path(destination)
+        path.mkdir(parents=True, exist_ok=True)
+        engine = page.context.browser.browser_type.name
+        page.locator("#scoreArea").screenshot(path=path / f"continuous-{kind}-{label}-{engine}.png")
+
+
+def test_late_page_load_cannot_attach_after_part_or_file_replacement(page, follow_files):
+    page.evaluate("""() => {
+      const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+      window.createdPageUrls = []; window.revokedPageUrls = [];
+      URL.createObjectURL = value => {
+        const url = create(value); createdPageUrls.push(url); return url;
+      };
+      URL.revokeObjectURL = url => { revokedPageUrls.push(url); revoke(url); };
+      const read = MagicArchive.prototype.blob;
+      window.delayNextPage = true; window.delayedPageRead = false;
+      MagicArchive.prototype.blob = async function(path, ...rest) {
+        if (delayNextPage && path.endsWith('/0002.png')) {
+          delayNextPage = false; delayedPageRead = true;
+          await new Promise(resolve => { window.releasePageRead = resolve; });
+        }
+        return read.call(this, path, ...rest);
+      };
+    }""")
+    open_study(page, follow_files["gp"])
+    page.wait_for_function("window.delayedPageRead")
+    old_urls = page.evaluate("createdPageUrls.slice()")
+    page.locator("#partSelect").select_option("1")
+    page.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
+                               "!document.getElementById('partSelect').disabled")
+    wait_centered(page)
+    page.evaluate("releasePageRead()")
+    page.wait_for_timeout(100)
+    assert set(old_urls) <= set(page.evaluate("revokedPageUrls"))
+    current_urls = page.locator(".score-image[src]").evaluate_all("els => els.map(el => el.src)")
+    assert not set(old_urls) & set(current_urls)
+
+    page.evaluate("delayNextPage = true; delayedPageRead = false")
+    open_study(page, follow_files["gp"])
+    page.wait_for_function("window.delayedPageRead")
+    old_urls = page.locator(".score-image[src]").evaluate_all("els => els.map(el => el.src)")
+    open_study(page, follow_files["offset_pdf"])
+    wait_centered(page)
+    assert page.evaluate("MagicPlayer.state().page") == 2
+    assert page.evaluate("MagicPlayer.state().position") == 0
+    page.evaluate("releasePageRead()")
+    page.wait_for_timeout(100)
+    assert set(old_urls) <= set(page.evaluate("revokedPageUrls"))
+    current_urls = page.locator(".score-image[src]").evaluate_all("els => els.map(el => el.src)")
+    assert not set(old_urls) & set(current_urls)
+    assert page.locator("#part").inner_text() == "PDF 악보"
+
+
+def test_corrupt_prefetched_page_does_not_block_open_and_can_be_replaced(page, follow_files):
+    open_study(page, follow_files["bad_page"])
+    wait_centered(page)
+    page.wait_for_timeout(100)
+    assert page.evaluate("MagicPlayer.state().ready")
+    assert not page.locator("#status").evaluate("el => el.classList.contains('file-error')")
+    page.locator("#nextPage").click()
+    page.wait_for_function("document.getElementById('status').classList.contains('file-error')")
+    assert "악보 이미지" in page.locator("#status").inner_text()
+    assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+    open_study(page, follow_files["pdf"])
+    page.locator("#follow").check()
+    wait_centered(page)

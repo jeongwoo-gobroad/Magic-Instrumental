@@ -188,7 +188,7 @@ def test_browser_pdf_only_system_camera_and_invalid_mode(pdf_only_study, web_url
                 const image = document.getElementById('scoreImage');
                 return image.complete && image.naturalWidth > 0;
             }""", timeout=10000)
-            # Camera easing advances per animation frame, not per elapsed millisecond.
+            # Wait for the actual viewport and image dimensions to settle after resizing.
             return page.evaluate("""() => new Promise((resolve, reject) => {
                 const view = document.getElementById('viewport');
                 const paper = document.getElementById('paper');
@@ -217,11 +217,11 @@ def test_browser_pdf_only_system_camera_and_invalid_mode(pdf_only_study, web_url
         page.set_viewport_size({"width": 600, "height": 960})
         resized = at(0.25)
         assert at(3.9) == pytest.approx(resized, abs=2)
-        # The old format continues to pan vertically through a tall single-part box.
+        # Legacy bundles without camera_mode also keep simultaneous staves together.
         page.evaluate("delete MagicPlayer.archive().timing.camera_mode")
         page.set_viewport_size({"width": 1180, "height": 820})
         legacy_start = at(0.25)
-        assert at(1.9) > legacy_start + 20
+        assert at(1.9) == pytest.approx(legacy_start, abs=2)
         bad = changed_camera_bundle(Path(output), "unknown")
         page.locator("#file").set_input_files(bad)
         page.wait_for_function("!MagicPlayer.state().loading")

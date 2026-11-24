@@ -992,6 +992,7 @@ class Window(QMainWindow):
             milliseconds = max(bounds[0], min(milliseconds, bounds[1] - 1))
         # All navigation paths explicitly resynchronize even when seeking within
         # the same beat. Preserve transport state and original-media coordinates.
+        self.score_panel.reset_follow()
         self.metronome.begin_seek()
         try:
             self.player.setPosition(max(0, min(milliseconds, self.player.duration())))

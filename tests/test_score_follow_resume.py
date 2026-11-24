@@ -35,21 +35,16 @@ def wheel_score(panel):
 def assert_current_measure_visible(panel):
     frame = panel.timeline.data["scroll"]["frames"][panel.current_index]
     assert panel.view.page == frame["page"]
-    box, page, viewport = frame["box"], panel.view.label.contentsRect(), panel.view.viewport()
-    for bar, origin, size, extent, first, last in (
-        (panel.view.horizontalScrollBar(), page.x(), page.width(), viewport.width(),
-         "left", "right"),
-        (panel.view.verticalScrollBar(), page.y(), page.height(), viewport.height(),
-         "top", "bottom"),
-    ):
-        start, end = origin + box[first] * size, origin + box[last] * size
-        if end - start > extent:
-            assert bar.value() == pytest.approx(
-                max(bar.minimum(), min(bar.maximum(), start)), abs=1,
-            )
-        else:
-            assert bar.value() <= start + 1
-            assert end <= bar.value() + extent + 1
+    box, page, viewport = frame["box"], panel.view.label.geometry(), panel.view.viewport()
+    middle = page.y() + (box["top"] + box["bottom"]) * page.height() / 2
+    assert middle - panel.view.verticalScrollBar().value() == pytest.approx(
+        viewport.height() / 2, abs=1,
+    )
+    start, end = page.x() + box["left"] * page.width(), page.x() + box["right"] * page.width()
+    bar = panel.view.horizontalScrollBar()
+    if end - start <= viewport.width():
+        assert bar.value() <= start + 1
+        assert end <= bar.value() + viewport.width() + 1
 
 
 def settle_view(app, panel):
@@ -162,28 +157,20 @@ def test_resume_same_page_after_view_change_without_highlight(resume_score, monk
     assert panel.current_index == 0 and panel.view.label.highlight_box is None
     assert "현재 마디" in panel.view_status.text() and "재분석" in panel.view_status.text()
 
-    moves, reveal = [], panel.view.reveal_box
-
-    def observed(box):
-        moves.append(box)
-        reveal(box)
-
-    monkeypatch.setattr(panel.view, "reveal_box", observed)
+    vertical = panel.view.verticalScrollBar().value()
     for seconds in (2.3, 2.5, 3.0):
         panel.follow_position(seconds)
-    assert not moves
+        assert panel.view.verticalScrollBar().value() == vertical
     window.seek_to(6250)
-    assert panel.current_index == 1 and len(moves) == 1
-    assert_current_measure_visible(panel)  # A wide, tall measure shows its beginning.
-    before = len(moves)
+    assert panel.current_index == 1
+    assert_current_measure_visible(panel)  # A tall system stays centred without staff scanning.
     window.resize(window.width() + 60, window.height() + 60)
     settle_view(app, panel)
-    assert len(moves) > before
     assert_current_measure_visible(panel)
-    before = len(moves)
+    before = panel.view.verticalScrollBar().value()
     panel.follow_position(6.5)
     panel.follow_position(6.8)
-    assert len(moves) == before
+    assert panel.view.verticalScrollBar().value() == before
     assert panel.timeline.data == original and window.player.position() == 6250
 
 
@@ -239,7 +226,7 @@ def test_missing_measure_positions_keep_page_follow_and_analysis_hint(resume_sco
     assert "분석" in panel.view_status.text() and panel.view.label.highlight_box is None
     window.seek_to(12250)
     assert panel.current_index == 2 and panel.view.page == 1
-    assert panel.view.verticalScrollBar().value() == 0
+    assert panel.view.verticalScrollBar().value() == panel.view.label.y()
 
 
 def test_replacing_score_refreshes_same_cue_position(resume_score, tmp_path):

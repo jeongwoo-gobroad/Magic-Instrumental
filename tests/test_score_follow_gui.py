@@ -126,9 +126,7 @@ def test_first_worker_result_follows_real_playback_and_resized_pages(
         assert panel.view.label.highlight_box != first_box
         wheel_score(panel)
         QTest.mouseClick(panel.follow, Qt.MouseButton.LeftButton)
-        assert (
-            panel.view.horizontalScrollBar().value(), panel.view.verticalScrollBar().value(),
-        ) == panel.timeline.scroll_at(window.player.position() / 1000)[1:]
+        assert_current_measure_visible(panel)
         play_at(6.25, 3, 1)
         returned = play_at(8.25, 4, 0)
         assert returned < bottom and "2회차" in panel.measure.text()
