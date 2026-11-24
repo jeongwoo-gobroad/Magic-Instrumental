@@ -1,0 +1,396 @@
+# SPDX-License-Identifier: GPL-3.0-only
+"""Real browser multi-audio selection and Session cancellation on one media clock."""
+
+import hashlib
+import json
+import os
+import zipfile
+from copy import deepcopy
+
+import pytest
+
+from practice_player.magic_bundle import AUDIO_VARIANT_SPECS, export_magic
+from tests import test_session_player as session_tests
+from tests import test_web_player as player_tests
+from tests.test_magic_variants import all_variant_study, variant_study
+from tests.test_web_audio import attach_music_probe, hold_resume_completion
+from tests.test_web_player import frequency, open_study
+
+page = player_tests.page
+web_url = player_tests.web_url
+relay_url = session_tests.relay_url
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_WEB_TESTS") != "1", reason="RUN_WEB_TESTS=1 and browser runtimes required"
+)
+
+
+@pytest.fixture(scope="module")
+def variant_files(tmp_path_factory):
+    root = tmp_path_factory.mktemp("portable-variants")
+    result = {}
+    for kind in ("pdf", "gp"):
+        request, _, _ = variant_study(root / kind, kind)
+        for codec in ("mp3", "wav"):
+            result[f"{kind}_{codec}"] = export_magic({
+                **request, "audio_format": codec, "output": str(root / f"{kind}-{codec}.magic"),
+            })
+    return result
+
+
+@pytest.fixture(scope="module")
+def all_options_file(tmp_path_factory):
+    request, _, _, frequencies = all_variant_study(tmp_path_factory.mktemp("all-options"))
+    return export_magic(request), frequencies
+
+
+def watch_decoding(page):
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      const decode = Audio.prototype.decodeAudioData;
+      window.decodeCalls = 0;
+      Audio.prototype.decodeAudioData = function (...args) {
+        window.decodeCalls++; return decode.apply(this, args);
+      };
+    }""")
+
+
+def select_variant(page, identifier):
+    page.locator("#audioVariant").select_option(identifier)
+    page.wait_for_function("!MagicPlayer.state().loading", timeout=45000)
+    assert page.evaluate("MagicPlayer.state().audioVariant") == identifier, (
+        page.locator("#status").inner_text()
+    )
+
+
+def assert_tone(page, target):
+    page.wait_for_function("""target => {
+      const data = new Float32Array(testAnalyser.frequencyBinCount);
+      testAnalyser.getFloatFrequencyData(data);
+      let peak = 1;
+      for (let i = 2; i < data.length; i++) if (data[i] > data[peak]) peak = i;
+      const frequency = peak * MagicPlayer.context().sampleRate / testAnalyser.fftSize;
+      return data[peak] > -45 && Math.abs(frequency - target) < 4;
+    }""", arg=target, timeout=10000)
+    observed = frequency(page)
+    assert observed["level"] > -45
+    assert observed["frequency"] == pytest.approx(target, abs=4)
+
+
+@pytest.mark.parametrize("kind,codec", [("pdf", "mp3"), ("pdf", "wav"),
+                                        ("gp", "mp3"), ("gp", "wav")])
+def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_files, kind, codec):
+    watch_decoding(page)
+    open_study(page, variant_files[f"{kind}_{codec}"])
+    assert page.evaluate("MagicPlayer.archive().manifest.version") == 4
+    assert page.evaluate("window.decodeCalls") == 1
+    assert page.locator("#audioChoice").is_visible()
+    if kind == "gp":
+        page.locator("#partSelect").select_option("1")
+        page.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
+                               "!document.getElementById('partSelect').disabled")
+    page.locator("#key").select_option("2")
+    page.locator("#speed").fill("150")
+    page.locator("#loopStart").select_option("2")
+    page.locator("#loopEnd").select_option("5")
+    page.locator("#loop").check()
+    page.locator("#highlightEnabled").uncheck()
+    page.locator("#follow").uncheck()
+    page.evaluate("MagicPlayer.seek(5, false)")
+    attach_music_probe(page)
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > 5.3")
+    assert_tone(page, 220 * 2 ** (2 / 12))
+    page.evaluate("""() => {
+      document.getElementById('audioVariant').addEventListener('change', () => {
+        window.variantPosition = MagicPlayer.state().position;
+      }, {capture: true, once: true});
+    }""")
+    select_variant(page, "guitar")
+    state = page.evaluate("MagicPlayer.state()")
+    assert state["ready"] and not state["playing"]
+    assert state["position"] == pytest.approx(page.evaluate("window.variantPosition"), abs=.04)
+    assert page.evaluate("window.decodeCalls") == 2
+    assert page.locator("#key").input_value() == "2"
+    assert page.locator("#speed").input_value() == "150"
+    assert page.locator("#loop").is_checked()
+    assert page.locator("#loopStart").input_value() == "2"
+    assert page.locator("#loopEnd").input_value() == "5"
+    assert not page.locator("#highlightEnabled").is_checked()
+    assert not page.locator("#follow").is_checked()
+    if kind == "gp":
+        assert page.evaluate("MagicPlayer.archive().activePart.track") == 1
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().playing")
+    assert_tone(page, 440 * 2 ** (2 / 12))
+    assert page.evaluate("window.decodeCalls") == 2
+    page.evaluate("MagicPlayer.pause()")
+    page.set_viewport_size({"width": 360, "height": 780})
+    assert page.locator("#audioVariant").is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
+    page, all_options_file,
+):
+    archive, frequencies = all_options_file
+    watch_decoding(page)
+    open_study(page, archive)
+    assert page.locator("#audioVariant option").count() == 15
+    assert page.evaluate("window.decodeCalls") == 1
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "keys"
+    assert page.locator('#audioVariant option[value="keys"]').inner_text() == "키보드만 듣기"
+    assert page.locator('#audioVariant option[value="piano"]').inner_text() == "피아노만 듣기"
+    assert page.locator('#audioVariant option[value="synth"]').inner_text() == "신시사이저만 듣기"
+    page.evaluate("MagicPlayer.seek(5, false)")
+    attach_music_probe(page)
+    page.locator("#play").click()
+    assert_tone(page, frequencies["keys"])
+    page.evaluate("MagicPlayer.pause()")
+    position = page.evaluate("MagicPlayer.state().position")
+    for decoded, identifier in enumerate(("no_keys", "piano", "no_piano", "synth", "no_synth"), 2):
+        select_variant(page, identifier)
+        assert page.evaluate("window.decodeCalls") == decoded
+        assert page.evaluate("MagicPlayer.state().position") == pytest.approx(position, abs=.04)
+        assert not page.evaluate("MagicPlayer.state().playing")
+        assert page.evaluate("MagicPlayer.archive().manifest.default_audio_variant") == "keys"
+        assert page.evaluate("MagicPlayer.archive().manifest.audio.path") == (
+            "audio/variants/keys.mp3"
+        )
+    page.locator("#play").click()
+    assert_tone(page, frequencies["no_synth"])
+    page.evaluate("MagicPlayer.pause()")
+    page.set_viewport_size({"width": 360, "height": 780})
+    assert page.locator("#audioVariant").is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
+def rewrite_bundle(source, destination, change, payload=None):
+    with zipfile.ZipFile(source) as archive:
+        entries = {name: archive.read(name) for name in archive.namelist()}
+    manifest = json.loads(entries["manifest.json"])
+    change(manifest)
+    if payload:
+        name, value = payload
+        entries[name] = value
+        manifest["entries"][name] = {
+            "bytes": len(value), "sha256": hashlib.sha256(value).hexdigest(),
+        }
+    entries["manifest.json"] = json.dumps(manifest).encode()
+    with zipfile.ZipFile(destination, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, data in entries.items():
+            archive.writestr(name, data)
+
+
+def test_recorded_common_gain_is_not_applied_to_embedded_samples_again(
+    page, variant_files, tmp_path,
+):
+    destination = tmp_path / "recorded-gain.magic"
+    rewrite_bundle(variant_files["pdf_wav"], destination, lambda m: m.update(audio_gain=.4))
+    open_study(page, destination)
+
+    def peak():
+        return page.evaluate("""() => decodedAudio.getChannelData(0).reduce(
+          (largest, sample) => Math.max(largest, Math.abs(sample)), 0)
+        """)
+
+    assert page.evaluate("MagicPlayer.archive().manifest.audio_gain") == .4
+    assert peak() == pytest.approx(.16, abs=1 / 32768)
+    select_variant(page, "guitar")
+    assert peak() == pytest.approx(.12, abs=1 / 32768)
+
+
+def test_variant_inventory_and_clock_mismatch_reject_before_decode(page, variant_files, tmp_path):
+    watch_decoding(page)
+
+    def duplicate(manifest):
+        manifest["audio_variants"].append(deepcopy(manifest["audio_variants"][0]))
+
+    def different_frames(manifest):
+        audio = manifest["audio_variants"][1]["audio"]
+        audio["frames"] += 1
+        audio["duration"] = audio["frames"] / 44100
+
+    cases = [
+        lambda m: m.update(default_audio_variant="no_bass"), duplicate, different_frames,
+        lambda m: m["audio_variants"][1]["audio"].update(source_sha256="0" * 64),
+        lambda m: m["audio_variants"][1]["audio"].update(pitch_semitones=2),
+        lambda m: m["audio_variants"][1].update(mode="without"),
+        lambda m: m["audio_variants"][1].update(target="bass"),
+        lambda m: m["audio_variants"][1]["audio"].update(path="audio/instrumental.mp3"),
+        lambda m: m["audio"].update(bitrate_kbps=128),
+        lambda m: m["audio_variants"].extend(
+            deepcopy(m["audio_variants"][0]) for _ in range(len(AUDIO_VARIANT_SPECS))
+        ),
+        lambda m: m["audio_variants"][1]["audio"].update(
+            frames=512 * 1024 * 1024, duration=512 * 1024 * 1024 / 44100,
+        ),
+        lambda m: m.pop("audio_gain"),
+        lambda m: m.update(audio_gain=0),
+        lambda m: m.update(audio_gain=1.01),
+        lambda m: m.update(audio_gain=True),
+    ]
+    for index, change in enumerate(cases):
+        broken = tmp_path / f"invalid-variant-{index}.magic"
+        rewrite_bundle(variant_files["pdf_mp3"], broken, change)
+        page.locator("#file").set_input_files(broken)
+        page.wait_for_function("!MagicPlayer.state().loading")
+        assert not page.evaluate("MagicPlayer.state().ready"), index
+        assert page.evaluate("window.decodeCalls") == 0
+        assert page.locator("#play").is_disabled()
+
+
+@pytest.mark.parametrize("codec", ["mp3", "wav"])
+def test_corrupt_unselected_audio_is_lazy_and_keeps_working_version(
+    page, variant_files, tmp_path, codec,
+):
+    name = f"audio/variants/guitar.{codec}"
+    with zipfile.ZipFile(variant_files[f"pdf_{codec}"]) as archive:
+        payload = bytearray(archive.read(name))
+    payload[0] ^= 1
+    broken = tmp_path / "bad-secondary.magic"
+    rewrite_bundle(variant_files[f"pdf_{codec}"], broken, lambda m: None,
+                   payload=(name, bytes(payload)))
+    watch_decoding(page)
+    open_study(page, broken)
+    assert page.evaluate("window.decodeCalls") == 1
+    page.evaluate("MagicPlayer.seek(5, false)")
+    page.locator("#audioVariant").select_option("guitar")
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert page.evaluate("window.decodeCalls") == 1
+    state = page.evaluate("MagicPlayer.state()")
+    assert state["ready"] and state["audioVariant"] == "no_vocals"
+    assert state["position"] == 5 and not state["playing"]
+    assert page.locator("#audioVariant").input_value() == "no_vocals"
+    assert page.locator("#status").get_attribute("class") == "file-error"
+    attach_music_probe(page)
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > 5.3")
+    assert_tone(page, 220)
+
+
+def test_native_decode_failure_retains_previous_worklet_and_allows_retry(page, variant_files):
+    open_study(page, variant_files["pdf_mp3"])
+    attach_music_probe(page)
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .3")
+    assert_tone(page, 220)
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      window.savedDecoder = Audio.prototype.decodeAudioData;
+      window.previousNode = stretch;
+      Audio.prototype.decodeAudioData = async () => { throw Error('Synthetic decoder failure'); };
+    }""")
+    page.locator("#audioVariant").select_option("guitar")
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert page.evaluate("MagicPlayer.state().ready && stretch === previousNode")
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "no_vocals"
+    assert not page.evaluate("MagicPlayer.state().playing")
+    page.evaluate("""() => {
+      const Audio = window.AudioContext || window.webkitAudioContext;
+      Audio.prototype.decodeAudioData = window.savedDecoder;
+    }""")
+    select_variant(page, "guitar")
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().playing")
+    assert_tone(page, 440)
+
+
+def test_late_audio_preparation_cannot_attach_previous_variant(page, variant_files):
+    open_study(page, variant_files["pdf_wav"])
+    page.evaluate("""() => {
+      const original = SignalsmithStretch;
+      window.releasePreviousLatency = null;
+      SignalsmithStretch = async (...args) => {
+        SignalsmithStretch = original;
+        const node = await original(...args), value = await node.latency();
+        node.latency = () => {
+          window.previousLatencyCompletion = new Promise(resolve => {
+            window.releasePreviousLatency = () => resolve(value);
+          });
+          return window.previousLatencyCompletion;
+        };
+        return node;
+      };
+    }""")
+    page.locator("#play").click()
+    page.wait_for_function("window.releasePreviousLatency !== null")
+    page.evaluate("window.previousTask = audioTask")
+    select_variant(page, "guitar")
+    assert page.evaluate("previousTask.cancelled && stretch === null && !!decodedAudio")
+    page.evaluate("""async () => {
+      window.releasePreviousLatency();
+      await window.previousLatencyCompletion;
+    }""")
+    assert page.evaluate("stretch === null && !!decodedAudio")
+    assert not page.evaluate("MagicPlayer.state().playing")
+    attach_music_probe(page)
+    page.locator("#play").click()
+    page.wait_for_function("MagicPlayer.state().position > .3")
+    assert_tone(page, 440)
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_session_shared_variants_keep_identity_and_require_fresh_ready(
+    engine, web_url, relay_url, variant_files,  # noqa: F811
+):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = getattr(playwright, engine).launch()
+        leader, member = [browser.new_page() for _ in range(2)]
+        errors = []
+        for participant in (leader, member):
+            participant.on("pageerror", lambda error: errors.append(str(error)))
+            participant.goto(web_url + "#ensemble")
+            participant.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
+        open_study(leader, variant_files["gp_mp3"])
+        leader.locator("#leaderMode").click()
+        leader.wait_for_function("MagicEnsemble.state().role === 'leader'")
+        leader.locator("#shareFile").click()
+        leader.wait_for_function("ensemble.shared", timeout=45000)
+        member.locator("#inviteCode").fill(leader.evaluate("MagicEnsemble.state().code"))
+        member.locator("#memberMode").click()
+        member.wait_for_function("!document.getElementById('getShared').disabled")
+        member.locator("#getShared").click()
+        member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+        assert member.locator("#audioChoice").is_visible()
+        assert member.locator("#playerControls").is_hidden()
+        member.locator("#partSelect").select_option("1")
+        member.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
+                                 "!document.getElementById('partSelect').disabled")
+        hold_resume_completion(member, "#sessionPrepare")
+        member.locator("#sessionPrepare").click()
+        member.wait_for_function("window.releaseResume !== null")
+        select_variant(member, "guitar")
+        member.evaluate("async () => { releaseResume(); await heldAudioAction; }")
+        assert not member.evaluate("MagicEnsemble.state().prepared || ensemble.wantsReady")
+        assert not member.evaluate("MagicPlayer.state().playing")
+        assert leader.evaluate("ensemble.media()") == member.evaluate("ensemble.media()")
+        assert leader.evaluate("MagicPlayer.state().audioVariant") == "no_vocals"
+        for participant in (leader, member):
+            attach_music_probe(participant)
+            participant.locator("#sessionPrepare").click()
+            participant.wait_for_function("MagicEnsemble.state().prepared")
+        leader.wait_for_function("!document.getElementById('play').disabled")
+        leader.locator("#play").click()
+        for participant in (leader, member):
+            participant.wait_for_function("MagicPlayer.state().position > .3", timeout=10000)
+        assert_tone(leader, 220)
+        assert_tone(member, 440)
+        select_variant(member, "no_vocals")
+        leader.wait_for_function("!MagicPlayer.state().playing")
+        assert not member.evaluate("MagicEnsemble.state().prepared")
+        assert leader.evaluate("MagicEnsemble.state().prepared")
+        assert member.evaluate("MagicPlayer.archive().activePart.track") == 1
+        assert member.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
+        assert leader.locator("#play").is_disabled()
+        member.locator("#sessionPrepare").click()
+        member.wait_for_function("MagicEnsemble.state().prepared")
+        leader.wait_for_function("!document.getElementById('play').disabled")
+        leader.locator("#play").click()
+        for participant in (leader, member):
+            participant.wait_for_function("MagicPlayer.state().playing", timeout=10000)
+        assert_tone(member, 220)
+        browser.close()
+        assert errors == []

@@ -32,7 +32,7 @@ $VenvPython = "$env:LOCALAPPDATA\Magic-Instrumental\.venv\Scripts\python.exe"
 
 경로를 바꿨다면 `$VenvPython`도 해당 경로로 지정합니다. `doctor`는 환경·GPU·FFmpeg·Audiveris 위치를 출력하며 개인 경로를 포함하므로 그대로 게시하지 마세요.
 
-일반 테스트는 임시 디렉토리의 합성 음원·PDF·MusicXML을 사용합니다. Qt GUI는 offscreen으로 검증하며 기본 테스트에서는 실제 모델 4개를 건너뜁니다. 가중치 이용 조건을 확인하고 실제 모델 시험이 필요하면 Mac에서 다음을 실행합니다.
+일반 테스트는 임시 디렉토리의 합성 음원·PDF·MusicXML을 사용합니다. Qt GUI는 offscreen으로 검증하며 기본 테스트에서는 실제 모델·메모리 조합 10개를 건너뜁니다. 가중치 이용 조건을 확인하고 실제 모델 시험이 필요하면 Mac에서 다음을 실행합니다.
 
 ```sh
 RUN_MODEL_TESTS=1 "$VENV_PYTHON" -m pytest tests/test_integration.py -v
@@ -49,6 +49,18 @@ Windows에서는 `$env:RUN_MODEL_TESTS = '1'`을 설정한 뒤 같은 pytest 파
 - 원곡 시간과 배속 적용 후 시간을 혼동하지 마세요. OMR·정렬·스크롤 경로 계산은 작업 프로세스에서만 합니다.
 - GUI 주 스레드에 모델 로딩·분리를 추가하지 마세요. Windows 취소는 Java를 포함한 자식 프로세스까지 처리합니다.
 - 사용자 동작이 달라지면 README, 사용 안내, AI 인계, CHANGELOG를 갱신합니다.
+
+
+## 분리 옵션 CLI
+
+```sh
+python main.py separate --input targets/example.wav --model auto --variant no_guitar
+python main.py separate --input targets/example.wav --model auto --all-variants
+python main.py separate --input targets/example.wav --model hyperace --variant no_vocals --offline
+python main.py magic-import --input practice.magic
+```
+
+옵션은 `no_vocals`, `vocals`, `no_guitar`, `guitar`, `no_drums`, `drums`, `no_bass`, `bass`, `no_keys`, `keys`, `no_piano`, `piano`, `no_synth`, `synth`, `original`입니다. `keys`는 건반 계열, `piano`는 피아노, `synth`는 실험적인 전자 합성음 분리이며 서로 겹칠 수 있습니다. 자동 추천은 Leap·SW·Mega를 파트별로 선택합니다. `--events` 결과는 기존 `instrumental` 경로와 함께 `selected_variant`, `variants`, 원본 frame/rate 정보를 제공합니다. `instrumental`은 호환성을 위해 유지한 이름이며 현재 선택한 음원의 경로입니다. 모델별 출력·캐시 변경과 실제 검증 범위는 [모델 문서](docs/SEPARATION_MODELS.md), 저장 계약은 [형식 문서](docs/MAGIC_FORMAT.md)를 확인하세요.
 
 ## 의존성 갱신
 
@@ -76,11 +88,11 @@ Audiveris/영어 데이터/원본 라이선스의 버전·다운로드 SHA-256·
 재현 순서, 기대 동작, 실제 동작, OS/CPU/GPU, 앱 버전을 적어 주세요. 개인 이름·이메일·절대 경로·음원 제목·악보 페이지를 지운 최소 로그를 첨부하세요. 유료 음원·악보·모델 가중치를 이슈나 PR에 업로드하지 마세요. PR에는 해결한 문제와 검증 결과를 설명합니다.
 
 
-## Portable player development (v2)
+## Portable player development (v3)
 
 See [`.magic` contract and browser architecture](docs/MAGIC_FORMAT.md). All browser sources are in `web_player/`; regenerate `index.html` and `sw.js` with `python tools/build_web.py`. The checked-in vendor distribution must match `vendor/provenance.json` before the documented scheduling adapter is applied.
 
-Install the development requirements into the existing external venv, then run `python -m playwright install chromium webkit`. On macOS use `RUN_WEB_TESTS=1 python -m pytest -q tests/test_web_player.py tests/test_web_follow.py tests/test_web_audio.py tests/test_web_update.py`; on Windows set `$env:RUN_WEB_TESTS = '1'` before the same command. These opt-in tests launch actual Chromium/WebKit, read synthetic GP/PDF bundles, measure output frequency and media-time rate, exercise count/loop/offline paths, and reject malformed archives. The separate follow module covers continuous PDF/GP pages, viewport-centered current measures, page/system transitions, navigation jumps, manual-follow restoration and zoom/resize behavior. The separate audio module covers playback-session requests, stopped-clock retries and cancellation after background transitions. It injects those platform conditions while retaining real decoding and worklet output; browser automation does not replace physical iPad/Android speaker and lifecycle testing.
+Install the development requirements into the existing external venv, then run `python -m playwright install chromium webkit`. On macOS use `RUN_WEB_TESTS=1 python -m pytest -q tests/test_web_player.py tests/test_web_follow.py tests/test_web_audio.py tests/test_web_update.py tests/test_web_variants.py`; on Windows set `$env:RUN_WEB_TESTS = '1'` before the same command. These opt-in tests launch actual Chromium/WebKit, read synthetic GP/PDF bundles, measure output frequency and media-time rate, exercise count/loop/offline paths, and reject malformed archives. The separate follow module covers continuous PDF/GP pages, viewport-centered current measures, page/system transitions, navigation jumps, manual-follow restoration and zoom/resize behavior. The variants module checks actual decoded spectra, transactional option replacement, retained position/key/rate/range/part, baked common gain, failed replacements and independent Session audio choices. Native pipeline/export/import and worker-driven Qt tests are in `test_cli_variants.py`, `test_gui_variants.py`, `test_magic_variants.py` and `test_magic_import.py`. The separate audio module covers playback-session requests, stopped-clock retries and cancellation after background transitions. It injects those platform conditions while retaining real decoding and worklet output; browser automation does not replace physical iPad/Android speaker and lifecycle testing.
 
 `tests/test_web_update.py` exercises the service-worker lifecycle with actual browser registrations and multiple builds: an active verified worker can change while the open document stays intact, and applying an update explicitly loads the new document. Cover safe-apply guards during file/audio preparation, playback, metronome use and Session connection/membership; offline application of a prepared build; failed network/integrity checks; and independent worker scopes. Existing pre-2.4.8 documents have no update controls, so keep their online launch and manual refresh/reopen migration covered. Never substitute a mocked version string for a verified worker/cache lifecycle, and do not call desktop browser coverage a physical home-screen installation test.
 

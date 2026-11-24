@@ -32,6 +32,7 @@ def test_gui_cache_worker_playback_controls_and_export(tone, tmp_path, fake_engi
     shutil.copyfile(tone, source)
     result = process(source, Settings(), paths, runner=fake_engine)
     window = Window(paths)
+    window.models.setCurrentIndex(window.models.findData("hyperace"))
     window.show()
     try:
         assert window.tracks.count() == 1

@@ -109,6 +109,8 @@ def test_cli_cache_hit_runs_offline_without_importing_engine(tone, tmp_path, fak
             str(tone),
             "--root",
             str(paths.root),
+            "--model",
+            "hyperace",
             "--device",
             "cuda",
             "--offline",

@@ -24,6 +24,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
     paths = Paths(tmp_path / "연습 공간")
     paths.create()
     window = Window(paths)
+    window.models.setCurrentIndex(window.models.findData("hyperace"))
     window.show()
 
     def click(widget):
@@ -39,7 +40,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         assert "새로고침" in window.status.text()
         source = paths.targets / tone.name
         shutil.copyfile(tone, source)
-        process(source, Settings(), paths, runner=fake_engine)
+        process(source, Settings(model="hyperace"), paths, runner=fake_engine)
         click(window.refresh_button)
         assert window.tracks.currentItem().text() == tone.name
         click(window.prepare_button)
@@ -114,8 +115,13 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         finish()
         with zipfile.ZipFile(bundle) as archive:
             manifest = json.loads(archive.read("manifest.json"))
-            assert manifest["version"] == 3
-            assert manifest["audio"]["path"] == "audio/instrumental.mp3"
+            assert manifest["version"] == 4
+            assert manifest["default_audio_variant"] == "no_vocals"
+            assert [item["id"] for item in manifest["audio_variants"]] == [
+                "no_vocals", "vocals", "original",
+            ]
+            assert manifest["audio"] == manifest["audio_variants"][0]["audio"]
+            assert manifest["audio"]["path"] == "audio/variants/no_vocals.mp3"
             assert manifest["audio"]["codec"] == "mp3"
             assert manifest["audio"]["bitrate_kbps"] == 256
             assert archive.read(manifest["audio"]["path"])
@@ -129,6 +135,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         window.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     reopened = Window(paths)
+    reopened.models.setCurrentIndex(reopened.models.findData("hyperace"))
     reopened.show()
     try:
         assert reopened.theme.currentData() == "light"
@@ -141,7 +148,7 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
         shutil.copyfile(tone, other)
         with other.open("ab") as stream:
             stream.write(b"fixture")
-        process(other, Settings(), paths, runner=fake_engine)
+        process(other, Settings(model="hyperace"), paths, runner=fake_engine)
         (paths.score_targets / "두 번째.gp5").write_bytes(b"bad score")
         click(reopened.refresh_button)
         for row in range(reopened.tracks.count()):

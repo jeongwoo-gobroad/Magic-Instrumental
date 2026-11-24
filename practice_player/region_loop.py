@@ -22,7 +22,7 @@ def timing_signature(timeline):
     # Camera/page-only changes do not move the selected audio interval.
     data = {
         "audio": timeline.data.get("audio_sha256"),
-        "pdf": timeline.data.get("pdf_sha256"),
+        "pdf": timeline.data.get("portable_timing_sha256", timeline.data.get("pdf_sha256")),
         "offset": timeline.data.get("offset", 0),
         "end": timeline.end,
         "cues": [[cue.get(key) for key in ("start", "source_index", "measure", "visit")]

@@ -4,16 +4,21 @@ Original Magic-Instrumental code and documentation: **GNU GPL v3.0 only (SPDX: G
 
 ## Model weights
 
-The app downloads author-published weights/configuration on first use. `practice_player/config.py` is the exact revision/checksum source of truth. Check the author's terms before use; a downloadable checkpoint is not automatically an open-source license or permission for every purpose.
+The app downloads pinned upstream weights/configuration on first use; the SW checkpoint uses a surviving fixed mirror. `practice_player/config.py` is the exact revision/checksum source of truth. Check the author's terms before use; a downloadable checkpoint is not automatically an open-source license or permission for every purpose.
 
-| Model / author | Pinned revision | Terms checked 2026-11-18 |
+| Model / author | Pinned revision | Terms checked 2026-11-25 |
 |---|---|---|
 | [BS-Roformer-HyperACE / pcunwa](https://huggingface.co/pcunwa/BS-Roformer-HyperACE) | `5b1f8283125d5e4a3614d0e3635a636e09c84059` | The checked model card does not specify a weight license. Obtain clarification from the author for your use; commercial use and redistribution permission are not established by this repository. |
 | [mel-band-roformer-deux / becruily](https://huggingface.co/becruily/mel-band-roformer-deux) | `402dd9a19baaed8c6f1b54458ce6ae2ae19f354e` | The author declares [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/): noncommercial terms and attribution requirements apply. |
+| [BS-Roformer-Leap / pcunwa](https://huggingface.co/pcunwa/BS-Roformer-Leap) | `4e47d6662ae82eaa8b4ac4329fe66099a843b48e` | The author card does not declare a weight license. Commercial-use and redistribution permission are not established. |
+| [BS-ROFO-SW-Fixed / enerjazzer mirror](https://huggingface.co/enerjazzer/BS-ROFO-SW-Fixed) | `a443a2985534b3bc815ef54a5d446c6a0390f974` | The mirror explicitly declares `unknown`. Original-trainer permission has not been verified; this mirror is not a license grant. |
+| [MVSep Mega 53 v1 / ZFTurbo](https://github.com/ZFTurbo/Music-Source-Separation-Training/releases/tag/v1.0.21) | Official release `v1.0.21`; exact checkpoint and YAML SHA-256 pinned | Published by the model developer. The surrounding training repository has an MIT software license; the release does not provide a separate explicit weight-license grant. Do not automatically apply the code license to weights or claim unrestricted redistribution rights. |
 
-HyperACE uses `v2_voc/bs_roformer_voc_hyperacev2.ckpt` and its matching config; deux uses `becruily_deux.ckpt`. These are unmodified downloaded weights. The app verifies hashes and uses a runtime MPS inference compatibility fix without rewriting checkpoints. Selection was informed by author cards and [MVSEP BS-RoFormer](https://www.mvsep.com/algorithms/34) / [Mel-Band](https://mvsep.com/algorithms/49) comparisons, not an exhaustive independent benchmark. Do not describe all bundled model choices as commercially licensed.
+HyperACE uses `v2_voc/bs_roformer_voc_hyperacev2.ckpt` and its matching config; deux uses `becruily_deux.ckpt`. Leap uses `Xe/bs_leap_xe_voc.ckpt`; SW uses `BS-Rofo-SW-Fixed.ckpt`. SW bytes match the `BS-Roformer-SW.ckpt` asset of the [python-audio-separator maintainer distribution](https://github.com/nomadkaraoke/python-audio-separator/releases/tag/model-configs), independently confirming byte identity but not ownership or permission. These are unmodified downloaded weights. The app verifies hashes and uses a runtime MPS inference compatibility fix without rewriting checkpoints. See [3.0.0 model-selection evidence and limits](docs/SEPARATION_MODELS.md). Earlier vocal selection was informed by author cards and [MVSEP BS-RoFormer](https://www.mvsep.com/algorithms/34) / [Mel-Band](https://mvsep.com/algorithms/49) comparisons, not an exhaustive independent benchmark. Do not describe all available model choices as commercially licensed.
 
 ## Software and runtime
+
+Mega uses the unchanged official `mvsep_mega_model_bs_roformer_53_stems_v1.ckpt` and matching YAML. Only `keys` and `synth` output heads are selected at runtime. No repackaged third-party single-head checkpoint is used. The application source release contains neither these weights nor copies of their configs. See the upstream release and [MVSep category evaluation](https://mvsep.com/algorithms/135) for overlapping category and quality limitations.
 
 Dependencies are installed from their distributors, not copied into this source repository. The following summarizes principal projects; the actual installed distributions' license files and bundled dependency notices remain authoritative. Transitive packages are pinned in the platform lock files and retain their own terms.
 

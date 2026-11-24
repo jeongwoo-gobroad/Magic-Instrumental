@@ -583,6 +583,9 @@ def test_highlight_preference_survives_parts_files_and_reload(page, study_files)
 
 
 def test_highlight_toggle_works_without_local_storage(page, study_files):
+    # Finish the initial worker/update check before replacing its document.
+    page.wait_for_function("navigator.serviceWorker.controller !== null")
+    page.wait_for_function("!document.getElementById('checkUpdate').disabled")
     page.add_init_script("""
       for (const method of ['getItem', 'setItem']) {
         Storage.prototype[method] = () => {

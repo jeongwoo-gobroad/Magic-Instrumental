@@ -130,7 +130,7 @@ class MetronomeBar(QWidget):
         row.addWidget(self.volume)
         row.addWidget(QLabel("박자"))
         self.beats = QSpinBox()
-        self.beats.setRange(1, 12)
+        self.beats.setRange(1, 16)
         self.beats.setValue(4)
         self.beats.setAccessibleName("한 마디의 박자 수")
         row.addWidget(self.beats)
@@ -223,7 +223,7 @@ class MetronomeBar(QWidget):
             values = json.loads(settings_path.read_text(encoding="utf-8"))
             bpm, beats = float(values.get("bpm", 120)), int(values.get("beats", 4))
             origin = float(values.get("origin", 0))
-            if not (20 <= bpm <= 400 and 1 <= beats <= 12 and -30 <= origin <= 1800):
+            if not (20 <= bpm <= 400 and 1 <= beats <= 16 and -30 <= origin <= 1800):
                 raise ValueError("invalid metronome settings")
         except (OSError, ValueError, TypeError, AttributeError):
             values = {}
