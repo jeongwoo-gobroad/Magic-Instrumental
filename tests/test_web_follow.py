@@ -139,6 +139,19 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
         wait_centered(page)
         assert page.locator("#follow").is_checked()
     before = page.evaluate("MagicPlayer.state().position")
+    page.locator("#follow").uncheck()
+    page.evaluate("""() => {
+      const view = document.getElementById('viewport');
+      const last = document.querySelector('.score-page[data-page="2"]').getBoundingClientRect();
+      view.scrollTop += last.top - view.getBoundingClientRect().top - view.clientTop - 8;
+      return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    }""")
+    page.wait_for_function("pageLoads.size === 0")
+    gap = score_snapshot(page)
+    assert gap["visible"] == [2]
+    assert 0 not in gap["loaded"], "The page before the off-screen neighbor stayed decoded"
+    page.locator("#follow").check()
+    wait_centered(page)
     page.locator("#viewport").hover()
     page.mouse.wheel(0, -250)
     page.wait_for_function("!document.getElementById('follow').checked")
@@ -164,6 +177,22 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
         }
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         capture_score(page, kind, f"center-{width}")
+        if width == 768:
+            geometry = page.locator("#viewport").evaluate("""el => [
+              el.clientWidth, el.clientHeight, el.scrollWidth, el.scrollHeight,
+              el.scrollLeft, el.scrollTop
+            ]""")
+            # Preserve both paints to diagnose WebKit's deferred resize interpolation.
+            page.wait_for_timeout(750)
+            wait_centered(page)
+            after = page.locator("#viewport").evaluate("""el => [
+              el.clientWidth, el.clientHeight, el.scrollWidth, el.scrollHeight,
+              el.scrollLeft, el.scrollTop
+            ]""")
+            assert after == pytest.approx(geometry, abs=1)
+            assert page.evaluate("MagicPlayer.state().position") == before
+            assert not page.evaluate("MagicPlayer.state().playing")
+            capture_score(page, kind, "center-768-settled")
 
     # Session mode changes viewport dimensions without a window resize event.
     page.evaluate("document.body.dataset.session = 'member'")
@@ -181,6 +210,7 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
 
 @pytest.mark.parametrize("kind", ["pdf", "gp"])
 def test_playback_flows_across_rows_pages_and_snaps_navigation(page, follow_files, kind):
+    page.emulate_media(reduced_motion="no-preference")
     page.set_viewport_size({"width": 768, "height": 1024})
     open_study(page, follow_files[kind])
     cues = page.evaluate("MagicPlayer.archive().timing.cues")
@@ -201,28 +231,35 @@ def test_playback_flows_across_rows_pages_and_snaps_navigation(page, follow_file
             }""", arg=cues[index]["page"])
             capture_score(page, kind, "next-page")
         page.evaluate("""target => {
-          window.followSamples = []; window.followFinished = false;
-          const sample = () => {
-            const state = MagicPlayer.state(), view = document.getElementById('viewport');
-            followSamples.push({position: state.position, cue: state.cue,
-              top: view.scrollTop, time: performance.now()});
-            if (state.playing && state.position >= target + .3) followFinished = true;
+          window.followSamples = []; window.followFinished = false; window.followDiscarded = 0;
+          const cue = MagicPlayer.archive().timing.cues[target.index];
+          const sample = rafTime => {
+            const time = performance.now(), state = MagicPlayer.state();
+            const view = document.getElementById('viewport');
+            const slot = document.querySelector(`.score-page[data-page="${cue.page}"]`);
+            const box = slot.getBoundingClientRect(), viewport = view.getBoundingClientRect();
+            const center = box.top + (cue.box.top + cue.box.bottom) * box.height / 2;
+            const targetTop = view.scrollTop + center - viewport.top - view.clientTop -
+              view.clientHeight / 2;
+            followSamples.push({position: state.position, cue: state.cue, page: state.page,
+              top: view.scrollTop, time, rafTime, targetTop, targetCenter: center,
+              viewportTop: viewport.top, width: view.clientWidth, height: view.clientHeight,
+              pageHeight: box.height, playing: state.playing,
+              follow: document.getElementById('follow').checked});
+            if (followSamples.length > 1200) { followSamples.shift(); followDiscarded++; }
+            if (state.playing && state.position >= target.start + .3) followFinished = true;
             else requestAnimationFrame(sample);
           }; requestAnimationFrame(sample);
-        }""", cues[index]["start"])
+        }""", {"index": index, "start": cues[index]["start"]})
         page.locator("#play").click()
-        page.wait_for_function("window.followFinished", timeout=10000)
+        try:
+            page.wait_for_function("window.followFinished", timeout=10000)
+        finally:
+            samples = page.evaluate("window.followSamples")
+            save_follow_trace(page, kind, "row" if index == row else "page", index, samples)
         page.locator("#play").click()
         wait_centered(page)
-        samples = page.evaluate("window.followSamples")
-        before = next(sample["top"] for sample in reversed(samples) if sample["cue"] < index)
-        after = samples[-1]["top"]
-        between = [sample for sample in samples if sample["cue"] == index
-                   and before + 2 < sample["top"] < after - 2]
-        assert len(between) >= 2, samples
-        transition = [sample for sample in samples if sample["cue"] == index]
-        assert transition[-1]["top"] > before + 20
-        assert transition[-1]["time"] - transition[0]["time"] >= 200
+        assert_smooth_follow(samples, index)
 
     # Repeated visits and a forward jump choose the target immediately, not every intervening page.
     jumps = [i for i in range(1, len(cues))
@@ -248,6 +285,58 @@ def test_playback_flows_across_rows_pages_and_snaps_navigation(page, follow_file
         assert page.evaluate("window.jumpError") < 2
         page.locator("#play").click()
         wait_centered(page)
+
+
+
+def assert_smooth_follow(samples, index):
+    before = next(sample["top"] for sample in reversed(samples) if sample["cue"] < index)
+    transition = [sample for sample in samples if sample["cue"] == index]
+    assert transition, "Playback never reached the next cue"
+    first = transition[0]
+    target = first["targetTop"]
+    distance = target - before
+    assert distance > 20
+    assert abs(first["top"] - before) <= 2, "The first frame jumped to the target"
+    assert all(sample["follow"] for sample in transition)
+    assert all((sample["width"], sample["height"]) == (first["width"], first["height"])
+               for sample in transition), "The viewport resized during the transition"
+    assert all(abs(sample["targetTop"] - target) < 2 for sample in transition)
+    assert all(left["top"] <= right["top"] + 1
+               for left, right in zip(transition, transition[1:])), "The camera moved backwards"
+    between = [sample for sample in transition if before + 2 < sample["top"] < target - 2]
+    # A 200 ms transition sampled every 100 ms has only one intermediate frame.
+    assert between, "The camera never displayed an intermediate position"
+    start = first["time"]
+    for sample in transition:
+        elapsed = sample["time"] - start
+        bounds = []
+        # DOM sampling follows the app callback; allow a small scheduling/rounding margin.
+        for shift in (-20, 20):
+            progress = min(1, max(0, (elapsed + shift) / 200))
+            bounds.append(before + distance * progress * progress * (3 - 2 * progress))
+        assert bounds[0] - 2 <= sample["top"] <= bounds[1] + 2, {
+            "elapsed_ms": elapsed, "actual": sample["top"], "expected_range": bounds,
+        }
+    settled = next((sample for sample in transition if abs(sample["top"] - target) <= 2), None)
+    assert settled, "The camera did not reach the measure center"
+    gaps = [right["time"] - left["time"] for left, right in zip(transition, transition[1:])]
+    elapsed = settled["time"] - start
+    assert 160 <= elapsed <= 220 + max(gaps), {"settled_ms": elapsed, "frame_gaps": gaps}
+    assert abs(transition[-1]["top"] - target) <= 2
+
+
+def save_follow_trace(page, kind, label, index, samples):
+    destination = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+    if destination:
+        path = Path(destination)
+        path.mkdir(parents=True, exist_ok=True)
+        engine = page.context.browser.browser_type.name
+        payload = {"kind": kind, "engine": engine, "transition": label, "cue": index,
+                   "expected_duration_ms": 200, "samples": samples,
+                   "discarded": page.evaluate("window.followDiscarded")}
+        (path / f"continuous-{kind}-{label}-{engine}.json").write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
 
 
 def capture_score(page, kind, label):

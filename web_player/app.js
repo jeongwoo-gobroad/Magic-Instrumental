@@ -385,7 +385,10 @@ function prepareVisiblePages() {
 function refreshVisiblePages() {
   if (!archive || !pageSlots.length) return;
   const view = $('viewport'), top = view.scrollTop - $('paper').offsetTop;
-  const first = pageAtHeight(top), last = pageAtHeight(top + view.clientHeight);
+  const bottom = top + view.clientHeight;
+  let first = pageAtHeight(top), last = pageAtHeight(bottom);
+  if (first < last && pageSlots[first].top + pageSlots[first].height <= top) first++;
+  if (last > first && pageSlots[last].top >= bottom) last--;
   // Keep all visible pages and one neighbor on either side, not the whole score.
   wantedPages = new Set();
   for (let index = Math.max(0, first - 1); index <= Math.min(pageSlots.length - 1, last + 1); index++) wantedPages.add(index);
