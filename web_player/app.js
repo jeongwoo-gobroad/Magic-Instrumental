@@ -11,6 +11,8 @@ let decodedAudio = null, audioTask = null, audioGeneration = 0, audioPending = 0
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
+let pageSlots = [], wantedPages = new Set(), pageLoads = new Map(), pageErrors = new Map();
+let followCue = -1, followTime = 0, followStamp = 0, followMotion = null;
 let token = 0, timer = null, wakeLock = null, seeking = false;
 let ensemble = null;
 function setStatus(text, error = false) {
@@ -212,7 +214,7 @@ async function play(count = $('count').checked || ($('loop').checked && $('loopC
 }
 async function seek(target, resume = playing) {
   pause(); const [lo, hi] = loopBounds(); position = clamp(target, lo, Math.max(lo, hi - .001));
-  showPosition(); if (resume) await play(false);
+  resetFollow(); showPosition(); if (resume) await play(false);
 }
 function cueAt(time) {
   if (!archive) return -1;
@@ -298,38 +300,158 @@ function updateDots() {
   const dots = [...$('dots').children];
   dots.forEach((dot, i) => dot.classList.toggle('on', beat !== null && ((beat % dots.length) + dots.length) % dots.length === i));
 }
-async function showPage(index) {
-  if (!archive || index < 0 || index >= archive.pages.length) return;
-  if (shownPage === index || pendingPage === index) return;
-  pendingPage = index;
-  const generation = ++pageGeneration, selected = archive, pages = archive.pages;
-  let url = urls.get(index);
-  if (!url) {
+function resetFollow() {
+  followCue = -1; followMotion = null; followStamp = 0;
+}
+function makeScorePages() {
+  if (!archive || pageSlots.length) return;
+  const firstImage = $('scoreImage'), paper = $('paper'), fragment = document.createDocumentFragment();
+  pageSlots = archive.pages.map((page, index) => {
+    const element = document.createElement('div'), image = index ? document.createElement('img') : firstImage;
+    element.className = 'score-page'; element.dataset.page = index;
+    image.className = 'score-image'; image.alt = `악보 ${index + 1}페이지`; image.hidden = true;
+    element.append(image); fragment.append(element);
+    return {element, image, top: 0, height: 0};
+  });
+  paper.append(fragment); paper.classList.add('continuous'); $('empty').hidden = true;
+  resizePaper();
+}
+function pageAtHeight(height) {
+  let low = 0, high = pageSlots.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (pageSlots[middle].top <= height) low = middle + 1; else high = middle;
+  }
+  return clamp(low - 1, 0, pageSlots.length - 1);
+}
+function selectScorePage(index) {
+  if (shownPage === index) return;
+  $('scoreImage')?.removeAttribute('id');
+  pageSlots[index].image.id = 'scoreImage'; shownPage = index;
+  $('pageText').textContent = `${index + 1} / ${pageSlots.length}`;
+}
+function loadScorePage(index) {
+  if (pageLoads.has(index)) return pageLoads.get(index);
+  if (pageErrors.has(index)) return Promise.reject(pageErrors.get(index));
+  if (urls.has(index)) return Promise.resolve(true);
+  const selected = archive, pages = selected.pages, generation = pageGeneration;
+  const slot = pageSlots[index];
+  let cancelled = false;
+  const sameScore = () => archive === selected && pages === selected.pages && generation === pageGeneration;
+  const current = () => !cancelled && sameScore();
+  const prepare = (async () => {
     const bytes = await selected.blob(pages[index].path, 20000000);
     const head = new Uint8Array(await bytes.slice(0, 24).arrayBuffer());
-    const view = new DataView(head.buffer), p = pages[index];
-    requireMagic(head.length === 24 && head[0] === 137 && decoder.decode(head.slice(1, 4)) === 'PNG' && view.getUint32(16) === p.width && view.getUint32(20) === p.height, '악보 이미지가 손상되었습니다.');
-    if (generation !== pageGeneration || archive !== selected) return;
-    url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'})); urls.set(index, url);
-    while (urls.size > 3) { const key = urls.keys().next().value; URL.revokeObjectURL(urls.get(key)); urls.delete(key); }
+    const view = new DataView(head.buffer), page = pages[index];
+    requireMagic(head.length === 24 && head[0] === 137 && decoder.decode(head.slice(1, 4)) === 'PNG' && view.getUint32(16) === page.width && view.getUint32(20) === page.height, '악보 이미지가 손상되었습니다.');
+    if (!current() || !wantedPages.has(index)) return false;
+    const url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'}));
+    urls.set(index, url); slot.image.src = url;
+    try { await slot.image.decode(); }
+    catch (_) {
+      if (!current() || !wantedPages.has(index) || urls.get(index) !== url) return false;
+      URL.revokeObjectURL(url); urls.delete(index); slot.image.removeAttribute('src');
+      throw new Error('악보 이미지가 손상되었습니다. 파일을 다시 가져와 주세요.');
+    }
+    if (!current() || !wantedPages.has(index) || urls.get(index) !== url) return false;
+    slot.image.hidden = false;
+    showHighlight(archive.timing.cues[cueAt(nowPosition())]);
+    return true;
+  })();
+  const task = deadline(prepare, 60000, '악보 페이지를 읽지 못했습니다. 파일을 다시 선택해 주세요.').catch(error => {
+    if (!current()) return false;
+    cancelled = true;
+    const url = urls.get(index);
+    if (url) { URL.revokeObjectURL(url); urls.delete(index); }
+    slot.image.hidden = true; slot.image.removeAttribute('src');
+    pageErrors.set(index, error); throw error;
+  }).finally(() => {
+    if (pageLoads.get(index) === task) pageLoads.delete(index);
+    if (sameScore()) prepareVisiblePages();
+  });
+  pageLoads.set(index, task);
+  return task;
+}
+function prepareVisiblePages() {
+  if (!archive || !pageSlots.length) return;
+  const center = Math.max(0, shownPage);
+  const queue = [...wantedPages].filter(index => !urls.has(index) && !pageLoads.has(index) && !pageErrors.has(index))
+    .sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+  while (queue.length && pageLoads.size < 3) {
+    const index = queue.shift();
+    loadScorePage(index).catch(error => { if (index === shownPage && ready) fail(error); });
   }
-  if (generation !== pageGeneration) return;
-  pendingPage = -1; shownPage = index; $('scoreImage').src = url; $('scoreImage').hidden = false; $('empty').hidden = true;
-  $('pageText').textContent = `${index + 1} / ${archive.pages.length}`;
-  $('viewport').scrollTo(0, 0); resizePaper();
+}
+function refreshVisiblePages() {
+  if (!archive || !pageSlots.length) return;
+  const view = $('viewport'), top = view.scrollTop - $('paper').offsetTop;
+  const bottom = top + view.clientHeight;
+  let first = pageAtHeight(top), last = pageAtHeight(bottom);
+  if (first < last && pageSlots[first].top + pageSlots[first].height <= top) first++;
+  if (last > first && pageSlots[last].top >= bottom) last--;
+  // Keep all visible pages and one neighbor on either side, not the whole score.
+  wantedPages = new Set();
+  for (let index = Math.max(0, first - 1); index <= Math.min(pageSlots.length - 1, last + 1); index++) wantedPages.add(index);
+  for (const [index, url] of urls) if (!wantedPages.has(index)) {
+    pageSlots[index].image.hidden = true; pageSlots[index].image.removeAttribute('src');
+    URL.revokeObjectURL(url); urls.delete(index);
+  }
+  if (!$('follow').checked) selectScorePage(pageAtHeight(top + view.clientHeight / 2));
+  prepareVisiblePages(); showHighlight(archive.timing.cues[cueAt(nowPosition())]);
+}
+async function ensureScorePage(index) {
+  const generation = pageGeneration;
+  while (generation === pageGeneration && !pageLoads.has(index) && !urls.has(index) && pageLoads.size >= 3) {
+    await Promise.race([...pageLoads.values()].map(task => task.catch(() => false)));
+  }
+  if (generation !== pageGeneration) return false;
+  return loadScorePage(index);
+}
+async function showPage(index) {
+  if (!archive || index < 0 || index >= archive.pages.length) return;
+  makeScorePages();
+  const generation = pageGeneration;
+  pendingPage = index; selectScorePage(index); resetFollow();
+  const view = $('viewport');
+  view.scrollTo(0, Math.max(0, pageSlots[index].top + $('paper').offsetTop - 16));
+  if ($('follow').checked) showPosition();
+  refreshVisiblePages(); wantedPages.add(index);
+  await ensureScorePage(index);
+  if (generation !== pageGeneration || pendingPage !== index) return;
+  pendingPage = -1;
   showHighlight(archive.timing.cues[cueAt(nowPosition())]);
 }
 function resizePaper() {
-  if (!archive || shownPage < 0) return;
-  const width = Math.max(200, $('viewport').clientWidth - 32) * Number($('zoom').value);
-  const page = archive.pages[shownPage];
-  $('paper').style.width = width + 'px'; $('paper').style.minHeight = '0';
-  $('paper').style.height = (width * page.height / page.width) + 'px';
+  if (!archive || !pageSlots.length) return;
+  const paper = $('paper'), view = $('viewport');
+  const previous = pageSlots[pageAtHeight(view.scrollTop + view.clientHeight / 2 - paper.offsetTop)];
+  const fraction = previous.height ? (view.scrollTop + view.clientHeight / 2 - paper.offsetTop - previous.top) / previous.height : 0;
+  const width = Math.max(200, view.clientWidth - 32) * Number($('zoom').value);
+  const oldWidth = paper.clientWidth, oldHeight = previous.height;
+  paper.style.width = width + 'px'; paper.style.minHeight = '0';
+  paper.style.paddingBlock = view.clientHeight / 2 + 'px';
+  let top = view.clientHeight / 2;
+  pageSlots.forEach((slot, index) => {
+    const page = archive.pages[index]; slot.top = top; slot.height = width * page.height / page.width;
+    slot.element.style.height = slot.height + 'px'; top += slot.height + 16;
+  });
+  const paperTop = paper.getBoundingClientRect().top;
+  pageSlots.forEach(slot => {
+    const rect = slot.element.getBoundingClientRect(); slot.top = rect.top - paperTop; slot.height = rect.height;
+  });
+  resetFollow();
+  if (!$('follow').checked && oldHeight) {
+    view.scrollTop = paper.offsetTop + previous.top + previous.height * fraction - view.clientHeight / 2;
+    if (oldWidth) view.scrollLeft *= width / oldWidth;
+  }
+  if ($('follow').checked) showPosition();
+  refreshVisiblePages();
 }
 function showHighlight(cue) {
-  const highlight = $('highlight'), box = cue?.box;
-  highlight.hidden = !$('highlightEnabled').checked || !box || shownPage !== cue.page;
+  const highlight = $('highlight'), box = cue?.box, slot = pageSlots[cue?.page];
+  highlight.hidden = !$('highlightEnabled').checked || !box || !slot || !urls.has(cue.page);
   if (highlight.hidden) return;
+  if (highlight.parentElement !== slot.element) slot.element.append(highlight);
   Object.assign(highlight.style, {left: box.left * 100 + '%', top: box.top * 100 + '%', width: (box.right - box.left) * 100 + '%', height: (box.bottom - box.top) * 100 + '%'});
 }
 function showPosition() {
@@ -340,23 +462,40 @@ function showPosition() {
   const cue = archive?.timing.cues[index];
   $('measure').textContent = cue ? `${cue.measure}마디 · ${cue.visit}회차` : '—';
   showHighlight(cue);
-  if (!cue) return;
-  if ($('follow').checked && shownPage !== cue.page) { showPage(cue.page).catch(fail); return; }
-  const b = cue.box;
-  if (shownPage !== cue.page) return;
-  const paper = $('paper'), view = $('viewport'), width = paper.clientWidth, height = paper.clientHeight;
-  if ($('follow').checked) {
-    const end = archive.timing.cues[index + 1]?.start ?? archive.timing.end;
-    const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
-    const x = (b.left + (b.right - b.left) * fraction) * width - view.clientWidth * .35;
-    const tall = Math.max(0, (b.bottom - b.top) * height - view.clientHeight * .7);
-    // Simultaneous staves stay together; bar time must not scan down the parts.
-    const y = b.top * height - 32 + (archive.timing.camera_mode === 'system' ? 0 : tall * fraction);
-    const desiredX = clamp(x, 0, Math.max(0, paper.offsetWidth + 32 - view.clientWidth));
-    const desiredY = clamp(y, 0, Math.max(0, paper.offsetHeight + 32 - view.clientHeight));
-    view.scrollLeft += (desiredX - view.scrollLeft) * .24;
-    view.scrollTop += (desiredY - view.scrollTop) * .24;
+  if (!cue || !$('follow').checked || !pageSlots.length) return;
+  const previous = archive.timing.cues[followCue], slot = pageSlots[cue.page];
+  const paper = $('paper'), view = $('viewport'), width = slot.element.clientWidth, box = cue.box;
+  const end = archive.timing.cues[index + 1]?.start ?? archive.timing.end;
+  const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
+  const measureWidth = (box.right - box.left) * width;
+  const focusX = box.left * width + measureWidth * (measureWidth > view.clientWidth ? fraction : .5);
+  const x = paper.offsetLeft + focusX - view.clientWidth / 2;
+  // A measure's simultaneous staves share one vertical center, including notation and TAB.
+  const y = paper.offsetTop + slot.top + (box.top + box.bottom) * slot.height / 2 - view.clientHeight / 2;
+  const desiredX = clamp(x, 0, Math.max(0, view.scrollWidth - view.clientWidth));
+  const desiredY = clamp(y, 0, Math.max(0, view.scrollHeight - view.clientHeight));
+  const now = performance.now(), elapsed = followStamp ? Math.min(50, now - followStamp) : 16;
+  if (followCue !== index) {
+    const adjacent = playing && index === followCue + 1 && previous && cue.source_index === previous.source_index + 1 &&
+      cue.page >= previous.page && cue.page <= previous.page + 1 && time >= followTime && time - followTime < 1 &&
+      Math.abs(desiredY - view.scrollTop) <= view.clientHeight;
+    followMotion = adjacent && !matchMedia('(prefers-reduced-motion: reduce)').matches ?
+      {fromX: view.scrollLeft, fromY: view.scrollTop, start: now} : null;
+    if (!followMotion) { view.scrollLeft = desiredX; view.scrollTop = desiredY; }
+    followCue = index; selectScorePage(cue.page);
+    refreshVisiblePages();
+    if (pageErrors.has(cue.page)) fail(pageErrors.get(cue.page));
   }
+  if (followMotion) {
+    const progress = clamp((now - followMotion.start) / 200, 0, 1), smooth = progress * progress * (3 - 2 * progress);
+    view.scrollLeft = followMotion.fromX + (desiredX - followMotion.fromX) * smooth;
+    view.scrollTop = followMotion.fromY + (desiredY - followMotion.fromY) * smooth;
+    if (progress === 1) followMotion = null;
+  } else {
+    view.scrollLeft += (desiredX - view.scrollLeft) * (1 - Math.exp(-elapsed / 65));
+    view.scrollTop = desiredY;
+  }
+  followTime = time; followStamp = now;
 }
 function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
@@ -365,11 +504,14 @@ function setAvailable(value) {
   ensemble?.update();
 }
 function clearScorePage() {
-  pageGeneration++; shownPage = pendingPage = -1;
-  $('scoreImage').hidden = true; $('highlight').hidden = true;
-  $('scoreImage').removeAttribute('src');
+  pageGeneration++; shownPage = pendingPage = -1; resetFollow();
+  const image = $('scoreImage'), highlight = $('highlight'), paper = $('paper');
+  image.hidden = highlight.hidden = true; image.removeAttribute('src');
+  paper.append(image, highlight);
+  for (const slot of pageSlots) slot.element.remove();
   for (const url of urls.values()) URL.revokeObjectURL(url);
-  urls.clear();
+  urls.clear(); pageSlots = []; wantedPages.clear(); pageLoads.clear(); pageErrors.clear();
+  paper.classList.remove('continuous'); paper.removeAttribute('style');
 }
 function releaseAudio() {
   if (audioTask) {
@@ -429,7 +571,8 @@ async function openFile(file) {
     });
     requireMagic($('loopStart').options.length > 0, '악보의 마디 시간이 반주 범위 밖입니다. 컴퓨터에서 시간표를 보정해 주세요.');
     $('loopEnd').selectedIndex = $('loopEnd').options.length - 1;
-    await deadline(showPage(0), 60000, '악보를 읽지 못했습니다. 파일을 다시 선택해 주세요.');
+    const initialCue = next.timing.cues[clamp(cueAt(0), 0, next.timing.cues.length - 1)];
+    await deadline(showPage(initialCue.page), 60000, '악보를 읽지 못했습니다. 파일을 다시 선택해 주세요.');
     ready = true; setAvailable(true); updateMetro(); updateKey();
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
   } catch (error) {
@@ -509,10 +652,20 @@ $('partSelect').onchange = async () => {
   } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }
   finally { $('partSelect').disabled = false; }
 };
-$('zoom').onchange = resizePaper; window.addEventListener('resize',resizePaper);
-$('scoreImage').onload = resizePaper;
+$('zoom').onchange = resizePaper;
+let resizeFrame = 0;
+new ResizeObserver(() => {
+  if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resizePaper(); });
+}).observe($('viewport'));
+$('follow').onchange = () => { resetFollow(); if ($('follow').checked) showPosition(); };
+$('viewport').addEventListener('scroll', refreshVisiblePages, {passive: true});
 for (const [id, direction] of [['prevPage',-1],['nextPage',1]]) $(id).onclick = () => { $('follow').checked = false; showPage(shownPage + direction).catch(fail); };
-for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEventListener(event, () => { $('follow').checked = false; }, {passive:true});
+for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEventListener(event, () => { $('follow').checked = false; resetFollow(); }, {passive:true});
+$('viewport').addEventListener('keydown', event => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)) {
+    $('follow').checked = false; resetFollow();
+  }
+});
 try { $('highlightEnabled').checked = localStorage.getItem('magic-measure-highlight') !== 'false'; } catch (_) {}
 $('highlightEnabled').onchange = () => {
   try { localStorage.setItem('magic-measure-highlight', String($('highlightEnabled').checked)); } catch (_) {}
