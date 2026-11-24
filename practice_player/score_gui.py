@@ -2,13 +2,12 @@
 """PDF display and review UI; playback only reads an already computed schedule."""
 
 import json
-import math
 import time
 from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -102,6 +101,8 @@ class ScorePageLabel(QLabel):
 class PdfView(QScrollArea):
     geometry_changed = Signal()
     manual_navigation = Signal()
+    page_changed = Signal(int)
+    render_failed = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -109,21 +110,46 @@ class PdfView(QScrollArea):
         self.page = 0
         self.zoom = "page"
         self.cache = OrderedDict()
+        self.page_sizes = []
+        self.labels = []
+        self._rendered = {}
+        self._center_y = None
+        self._laying_out = False
+        self._browsing = False
         self.highlight_enabled = True
         self.highlight_page = None
         self.highlight_box = None
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         for bar in (self.horizontalScrollBar(), self.verticalScrollBar()):
-            bar.sliderPressed.connect(self.manual_navigation)
-            bar.actionTriggered.connect(lambda _: self.manual_navigation.emit())
-        self.label = ScorePageLabel("score_targets에 음원과 같은 이름의 PDF를 넣으세요.")
-        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.setWidget(self.label)
-        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            bar.sliderPressed.connect(self.manual_move)
+            bar.actionTriggered.connect(lambda _: self.manual_move())
+        self.surface = QWidget()
+        self.empty_label = ScorePageLabel("score_targets에 음원과 같은 이름의 PDF를 넣으세요.")
+        self.empty_label.setParent(self.surface)
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label = self.empty_label
+        self.setWidget(self.surface)
+        self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.resized)
+        self.render_timer = QTimer(self)
+        self.render_timer.setSingleShot(True)
+        self.render_timer.timeout.connect(self.render_visible)
+        self.slide = QPropertyAnimation(self.verticalScrollBar(), b"value", self)
+        self.slide.setDuration(200)
+        self.slide.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.verticalScrollBar().valueChanged.connect(self.scrolled)
+
+    def stop_motion(self):
+        self.slide.stop()
+        self._center_y = None
+
+    def manual_move(self):
+        self.stop_motion()
+        self._browsing = True
+        self.manual_navigation.emit()
 
     def profile(self):
         return view_profile(
@@ -135,14 +161,27 @@ class PdfView(QScrollArea):
         self.geometry_changed.emit()
 
     def wheelEvent(self, event):
-        self.manual_navigation.emit()
+        self.manual_move()
         super().wheelEvent(event)
 
     def clear(self):
         self.timer.stop()
+        self.render_timer.stop()
+        self.stop_motion()
+        self._browsing = self._laying_out = False
         self.cache.clear()
         self.set_highlight(None, None)
-        self.label.clear()
+        for label in self.labels:
+            label.clear()
+            label.hide()
+            label.deleteLater()
+        self.labels.clear()
+        self.page_sizes.clear()
+        self._rendered.clear()
+        self.label = self.empty_label
+        self.empty_label.clear()
+        self.empty_label.show()
+        self.surface.resize(self.viewport().size())
         if self.document:
             self.document.close()
         self.document = None
@@ -155,44 +194,142 @@ class PdfView(QScrollArea):
         if not 1 <= len(self.document) <= 200:
             self.clear()
             raise ValueError("1~200페이지의 PDF가 필요합니다.")
+        self.empty_label.hide()
+        for number in range(len(self.document)):
+            page = self.document[number]
+            try:
+                self.page_sizes.append(page.get_size())
+            finally:
+                page.close()
+            label = ScorePageLabel("")
+            label.setParent(self.surface)
+            label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            label.setStyleSheet("background: white;")
+            label.show()
+            self.labels.append(label)
         self.page = 0
+        self.label = self.labels[0]
         self.render()
+        self.show_page(0)
+
+    def set_page(self, page):
+        if self.document and 0 <= page < len(self.labels):
+            self._browsing = False
+            self.page = page
+            self.label = self.labels[page]
+            self.update_highlight()
+            self.render_timer.start(0)
 
     def show_page(self, page):
         if self.document and 0 <= page < len(self.document):
-            self.page = page
-            self.render()
-            self.verticalScrollBar().setValue(0)
+            self.stop_motion()
+            self.set_page(page)
+            self.verticalScrollBar().setValue(self.label.y())
+            self.render_visible()
 
     def render(self):
         if not self.document:
+            self.surface.resize(self.viewport().size())
+            self.empty_label.resize(self.viewport().size())
             return
-        page = self.document[self.page]
-        size = page.get_size()
-        width, height = rendered_size(size, self.profile())
+        self.stop_motion()
+        self._laying_out = True
+        profile = self.profile()
+        sizes = [rendered_size(size, profile) for size in self.page_sizes]
+        width = max(self.viewport().width(), *(size[0] for size in sizes))
+        # End padding lets even the first and last staff reach the viewport centre.
+        y = self.viewport().height() // 2
+        for label, (page_width, page_height) in zip(self.labels, sizes):
+            label.setGeometry((width - page_width) // 2, y, page_width, page_height)
+            y += page_height + 16
+        self.surface.resize(width, y - 16 + self.viewport().height() // 2)
+        self._laying_out = False
+        self.render_visible()
+        self.update_highlight()
+
+    def scrolled(self):
+        if not self.document or self._laying_out:
+            return
+        if self._browsing:
+            middle = self.verticalScrollBar().value() + self.viewport().height() / 2
+            page = min(
+                range(len(self.labels)),
+                key=lambda index: max(
+                    self.labels[index].y() - middle,
+                    middle - self.labels[index].y() - self.labels[index].height(), 0,
+                ),
+            )
+            if page != self.page:
+                self.page = page
+                self.label = self.labels[page]
+                self.update_highlight()
+                self.page_changed.emit(page)
+        self.render_timer.start(0)
+
+    def render_visible(self):
+        if not self.document or self._laying_out:
+            return
+        top = self.verticalScrollBar().value()
+        bottom = top + self.viewport().height()
+        visible = [
+            index for index, label in enumerate(self.labels)
+            if label.y() <= bottom and label.y() + label.height() >= top
+        ]
+        wanted = set(visible)
+        if visible:
+            wanted.add(max(0, visible[0] - 1))
+            wanted.add(min(len(self.labels) - 1, visible[-1] + 1))
+        wanted.add(self.page)
+        for index in tuple(self._rendered):
+            if index not in wanted:
+                self.labels[index].clear()
+                del self._rendered[index]
+        for index in sorted(wanted):
+            try:
+                self.render_page(index)
+            except Exception as error:
+                label = self.labels[index]
+                label.clear()
+                label.setText(f"{index + 1}쪽을 표시할 수 없습니다. 악보를 다시 여세요.")
+                self._rendered[index] = (label.width(), label.height(), self.devicePixelRatioF())
+                self.render_failed.emit(f"{index + 1}쪽 표시 실패: {error}")
+        self.update_highlight()
+
+    def render_page(self, number):
+        label, size = self.labels[number], self.page_sizes[number]
+        width, height = label.width(), label.height()
+        rendered = (width, height, self.devicePixelRatioF())
+        if self._rendered.get(number) == rendered:
+            return
         # Re-render vectors for enlargement; bounded resolution/cache controls memory.
         scale = min(width / size[0] * self.devicePixelRatioF(), 4096 / max(size))
-        key = (self.page, round(scale, 2))
+        key = (number, round(scale, 2))
         if key not in self.cache:
-            bitmap = page.render(scale=scale)
-            pil = bitmap.to_pil().convert("RGB")
-            image = QImage(
-                pil.tobytes(), pil.width, pil.height, pil.width * 3, QImage.Format.Format_RGB888
-            ).copy()
+            page = self.document[number]
+            try:
+                bitmap = page.render(scale=scale)
+                try:
+                    pil = bitmap.to_pil().convert("RGB")
+                    image = QImage(
+                        pil.tobytes(), pil.width, pil.height, pil.width * 3,
+                        QImage.Format.Format_RGB888,
+                    ).copy()
+                finally:
+                    bitmap.close()
+            finally:
+                page.close()
             self.cache[key] = QPixmap.fromImage(image)
-            bitmap.close()
             if len(self.cache) > 3:
                 self.cache.popitem(last=False)
-        page.close()
+        self.cache.move_to_end(key)
         pixmap = self.cache[key]
         scaled = pixmap.scaled(
             QSize(width, height),
             Qt.AspectRatioMode.IgnoreAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        self.label.setPixmap(scaled)
-        self.label.resize(scaled.size())
-        self.update_highlight()
+        label.setPixmap(scaled)
+        self._rendered[number] = rendered
 
     def set_highlight(self, page, box):
         self.highlight_page, self.highlight_box = page, box
@@ -203,30 +340,42 @@ class PdfView(QScrollArea):
         self.update_highlight()
 
     def update_highlight(self):
-        box = self.highlight_box if (
-            self.highlight_enabled and self.document and self.highlight_page == self.page
-        ) else None
-        self.label.set_highlight(box)
+        for index, label in enumerate(self.labels):
+            box = self.highlight_box if (
+                self.highlight_enabled and index == self.highlight_page
+            ) else None
+            label.set_highlight(box)
 
     def move_camera(self, x, y):
-        self.horizontalScrollBar().setValue(x)
-        self.verticalScrollBar().setValue(y)
+        self.stop_motion()
+        self._browsing = False
+        self.horizontalScrollBar().setValue(self.label.x() + x)
+        self.verticalScrollBar().setValue(self.label.y() + y)
 
-    def reveal_box(self, box):
-        """Show saved page coordinates using the currently rendered page size."""
-        page, viewport = self.label.contentsRect(), self.viewport()
-        for bar, origin, size, extent, first, last in (
-            (self.horizontalScrollBar(), page.x(), page.width(), viewport.width(),
-             "left", "right"),
-            (self.verticalScrollBar(), page.y(), page.height(), viewport.height(),
-             "top", "bottom"),
-        ):
-            start, end = origin + box[first] * size, origin + box[last] * size
-            if end - start > extent or start < bar.value():
-                # A measure larger than the viewport starts at its leading edge.
-                bar.setValue(math.floor(start))
-            elif end > bar.value() + extent:
-                bar.setValue(math.ceil(end - extent))
+    def center_box(self, box, fraction=0, *, animate=False, snap=False):
+        """Map saved measure geometry into the continuous, current-size score surface."""
+        self._browsing = False
+        page, viewport = self.label.geometry(), self.viewport()
+        left = page.x() + box["left"] * page.width()
+        right = page.x() + box["right"] * page.width()
+        horizontal = (left + right) / 2
+        if right - left > viewport.width():
+            horizontal = left + (right - left) * min(1, max(0, fraction))
+        self.horizontalScrollBar().setValue(round(horizontal - viewport.width() / 2))
+        y = round(
+            page.y() + (box["top"] + box["bottom"]) * page.height() / 2
+            - viewport.height() / 2
+        )
+        if snap or self._center_y != y:
+            bar = self.verticalScrollBar()
+            self.slide.stop()
+            self._center_y = y
+            if animate and not snap and abs(y - bar.value()) <= viewport.height():
+                self.slide.setStartValue(bar.value())
+                self.slide.setEndValue(y)
+                self.slide.start()
+            else:
+                bar.setValue(y)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -252,7 +401,7 @@ class ScorePanel(QWidget):
         self.timeline_path = None
         self.busy = False
         self.current_index = None
-        self._follow_box_key = None
+        self._follow_index = None
         self.last_position = 0
         self.anchor_time = time.monotonic()
         self.player = None
@@ -320,7 +469,8 @@ class ScorePanel(QWidget):
         self.follow = QCheckBox("자동 넘김 · 스크롤")
         self.follow.setChecked(True)
         self.follow.setToolTip(
-            "끄면 페이지와 스크롤을 직접 조절합니다. 현재 마디 표시는 계속 갱신됩니다."
+            "현재 마디를 악보 영역 중앙에 두고 페이지를 이어서 스크롤합니다. "
+            "끄면 직접 이동하며, 다시 켜면 현재 재생 위치로 돌아갑니다."
         )
         self.follow.toggled.connect(self.change_follow)
         row.addWidget(self.follow)
@@ -345,6 +495,8 @@ class ScorePanel(QWidget):
         self.highlight.toggled.connect(self.change_highlight)
         self.view.geometry_changed.connect(self.view_changed)
         self.view.manual_navigation.connect(lambda: self.follow.setChecked(False))
+        self.view.page_changed.connect(self.page_scrolled)
+        self.view.render_failed.connect(self.status.setText)
         layout.addWidget(self.view, 1)
         self.view_status = QLabel("배율과 악보 영역을 정한 뒤 사전 분석하세요.")
         self.view_status.setWordWrap(True)
@@ -382,7 +534,7 @@ class ScorePanel(QWidget):
         self.zoom.currentIndexChanged.connect(self.change_zoom)
         row.addWidget(self.zoom)
         self.zoom.setToolTip(
-            "분석 전에 배율을 정하세요. 배율·악보 영역 변경 시 스크롤 재분석이 필요합니다."
+            "저장된 마디 위치가 있으면 배율·악보 영역을 바꿔도 중앙 따라가기가 유지됩니다."
         )
         layout.addLayout(row)
         self.set_busy(False)
@@ -392,8 +544,12 @@ class ScorePanel(QWidget):
         if self.preferences is not None:
             self.preferences.setValue("score_highlight", enabled)
 
+    def reset_follow(self):
+        self._follow_index = None
+        self.view.stop_motion()
+
     def change_follow(self, _enabled):
-        self._follow_box_key = None
+        self.reset_follow()
         self.on_position(self.player.position() if self.player else self.last_position)
 
     def bind_track(self, audio, source_hash):
@@ -404,7 +560,7 @@ class ScorePanel(QWidget):
 
     def clear_score(self):
         self.pdf = self.timeline = self.timeline_path = self.current_index = None
-        self._follow_box_key = None
+        self._follow_index = None
         self.gp_source = self.gp_info = None
         self.parts.setVisible(False)
         self.view.clear()
@@ -454,7 +610,7 @@ class ScorePanel(QWidget):
             self.view.load(pdf)
             self.pdf = pdf
             self.timeline = self.timeline_path = self.current_index = None
-            self._follow_box_key = None
+            self._follow_index = None
             self.gp_source = Path(prepared["source"]) if prepared else None
             self.gp_info = prepared
             self.parts.blockSignals(True)
@@ -514,7 +670,7 @@ class ScorePanel(QWidget):
             raise ValueError("현재 곡·PDF와 분석 결과가 일치하지 않습니다.")
         self.timeline_path, self.timeline = Path(path), plan
         self.current_index = None
-        self._follow_box_key = None
+        self._follow_index = None
         if plan.data.get("scroll"):
             index = self.zoom.findData(plan.data["scroll"]["profile"]["zoom"])
             if index < 0:
@@ -592,7 +748,7 @@ class ScorePanel(QWidget):
         self.view_changed()
 
     def view_changed(self):
-        self._follow_box_key = None
+        self.reset_follow()
         self.update_view_status()
         self.on_position(self.player.position() if self.player else self.last_position)
 
@@ -605,14 +761,19 @@ class ScorePanel(QWidget):
 
     def update_view_status(self):
         frames = (self.timeline.data.get("scroll") or {}).get("frames", []) if self.timeline else []
-        if not self.timeline or not self.timeline.data.get("scroll"):
-            self.view_status.setText("현재 마디 표시·확대 스크롤: 배율을 정한 뒤 사전 분석하세요.")
+        if frames and all(frame.get("box") for frame in frames):
+            self.view_status.setText(
+                "현재 마디를 중앙에 두고 PDF·GP 페이지를 이어서 따라갑니다. "
+                "배율·악보 영역을 바꿔도 재분석 없이 적용됩니다."
+            )
+        elif not self.timeline or not self.timeline.data.get("scroll"):
+            self.view_status.setText("현재 마디 중앙 따라가기: 먼저 악보 사전 분석을 실행하세요.")
         elif self.view_matches():
-            self.view_status.setText("확대 스크롤 준비 완료 · 저장된 이동 경로로 재생합니다.")
+            self.view_status.setText("마디 위치가 없는 구간은 기존 화면 이동 경로로 재생합니다.")
         elif any(frame.get("box") for frame in frames):
             self.view_status.setText(
-                "현재 마디 위치를 따라갑니다. 부드러운 스크롤은 사전 분석에서 "
-                "기존 시간표를 유지하고 재분석하세요."
+                "마디 위치가 있는 구간은 중앙을 따라갑니다. 없는 구간은 "
+                "기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
             )
         else:
             self.view_status.setText(
@@ -622,7 +783,7 @@ class ScorePanel(QWidget):
         if self.timeline and (not frames or not all(frame.get("box") for frame in frames)):
             self.view_status.setText(
                 self.view_status.text()
-                + "\n마디 위치가 없으면 화면 크기·배율 변경 후에는 페이지 이동만 가능합니다. "
+                + "\n중앙 따라가기에 필요한 마디 위치를 추가하려면 "
                 "기존 시간표를 유지하고 화면 이동 경로를 다시 분석하세요."
             )
         self.view_status.setToolTip(self.view_status.text())
@@ -635,6 +796,7 @@ class ScorePanel(QWidget):
     def transport_changed(self, state):
         from PySide6.QtMultimedia import QMediaPlayer
 
+        self.reset_follow()
         self.on_position(self.player.position())
         if state == QMediaPlayer.PlaybackState.PlayingState:
             self.camera_timer.start()
@@ -642,7 +804,7 @@ class ScorePanel(QWidget):
             self.camera_timer.stop()
 
     def follow_clock(self):
-        # Only interpolate the saved path. No PDF inspection or layout analysis here.
+        # Only read saved timing and geometry; page rendering is queued separately.
         if self.player:
             seconds = (
                 self.last_position / 1000
@@ -656,19 +818,30 @@ class ScorePanel(QWidget):
         self.follow.setChecked(False)
         self.jump_page(max(0, min(len(self.view.document) - 1, value - 1)))
 
-    def jump_page(self, page):
+    def page_scrolled(self, page):
         self.page.blockSignals(True)
         self.page.setValue(page + 1)
         self.page.blockSignals(False)
+
+    def jump_page(self, page, *, navigate=True):
+        self.page_scrolled(page)
         if self.view.page != page:
-            self.view.show_page(page)
+            if navigate:
+                self.view.show_page(page)
+            else:
+                self.view.set_page(page)
 
     def on_position(self, milliseconds):
+        playing = self.player is not None and self.player.isPlaying()
+        expected = self.last_position / 1000
+        if playing:
+            expected += (time.monotonic() - self.anchor_time) * self.player.playbackRate()
+        snap = not playing or abs(milliseconds / 1000 - expected) > 0.35
         self.last_position = milliseconds
         self.anchor_time = time.monotonic()
-        self.follow_position(milliseconds / 1000)
+        self.follow_position(milliseconds / 1000, snap=snap)
 
-    def follow_position(self, seconds):
+    def follow_position(self, seconds, *, snap=False):
         if not self.timeline:
             self.view.set_highlight(None, None)
             return
@@ -676,30 +849,40 @@ class ScorePanel(QWidget):
         if index is None:
             self.measure.setText("악보 시작 전 / 종료")
             self.current_index = None
-            self._follow_box_key = None
+            self.reset_follow()
             self.view.set_highlight(None, None)
             return
         cue = self.timeline.cues[index]
         self.current_index = index
         self.measure.setText(f"{cue['measure']}마디 · {cue['visit']}회차")
-        if self.follow.isChecked():
-            self.jump_page(cue["page"])
         frames = (self.timeline.data.get("scroll") or {}).get("frames", [])
         box = frames[index].get("box") if frames else None
+        if self.follow.isChecked():
+            self.jump_page(cue["page"], navigate=not box)
         self.view.set_highlight(cue["page"], box)
         if not self.follow.isChecked():
             return
-        if self.view_matches():
-            self._follow_box_key = None
+        if box:
+            previous = self._follow_index
+            animate = (
+                previous is not None and previous + 1 == index
+                and self.timeline.cues[previous]["source_index"] + 1 == cue["source_index"]
+                and 0 <= cue["page"] - self.timeline.cues[previous]["page"] <= 1
+                and self.player is not None and self.player.isPlaying()
+            )
+            end = self.timeline.starts[index + 1] if index + 1 < len(frames) else self.timeline.end
+            fraction = (
+                seconds - self.timeline.data.get("offset", 0) - self.timeline.starts[index]
+            ) / (end - self.timeline.starts[index])
+            self.view.center_box(
+                box, fraction, animate=animate, snap=snap or previous is None,
+            )
+            self._follow_index = index
+        elif self.view_matches():
+            self._follow_index = None
             camera = self.timeline.scroll_at(seconds)
             if camera:
                 self.view.move_camera(camera[1], camera[2])
-        elif box:
-            # Page-relative boxes remain valid after zooming or folding the tools.
-            key = (index, self.view.label.contentsRect(), self.view.viewport().size())
-            if key != self._follow_box_key:
-                self.view.reveal_box(box)
-                self._follow_box_key = key
 
     def analysis_options(self):
         dialog = QDialog(self)

@@ -2,7 +2,7 @@
 
 Make an instrumental on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
 
-Current version: **2.4.8** · Mac / Windows / web player
+Current version: **2.4.9** · Mac / Windows / web player
 
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
@@ -12,7 +12,7 @@ In a small window, scroll down the left side to reach the save buttons. Drag the
 
 ## Install and open
 
-Download the [2.4.8 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v2.4.8/Magic-Instrumental-2.4.8.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [2.4.9 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v2.4.9/Magic-Instrumental-2.4.9.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -22,7 +22,7 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
-**2.4.8 adds web update notices, an explicit apply action and home-screen installation instructions.** The desktop changes only its version number, retaining MP3 export and the follow-resume correction. 2.4.6/2.4.7, the original 2.4.5 installation and its follow-resume repair can all use the regular updater below; no separate repair step is needed first.
+**2.4.9 adds continuous, centered PDF and GP score following on both desktop and web.** Pages flow vertically, keeping the active measure near the middle of the score viewport to make room for the upcoming music. Existing 2.4.8 and earlier installations can use the regular updater below. MP3 export, home-screen installation and the explicit web update controls remain available.
 
 On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
 
@@ -47,13 +47,15 @@ Applied desktop key changes are included in the exported audio. The web player c
 
 **New exports use MP3 at 256 kbps by default.** The **연습 파일 반주 음질** dialog also offers MP3 at 128, 192 or 320 kbps, and **WAV · 무손실** (lossless WAV). The desktop remembers your confirmed choice for the next export. MP3 reduces the embedded accompaniment size; the reduction in the whole `.magic` depends on the score pages and other contents. Playback still decodes the audio, so a smaller file does not guarantee lower memory use.
 
-Existing `.magic` files containing WAV remain playable and are never converted automatically. Use **web player 2.4.8 or later** for MP3 and WAV bundles. Follow the [web update steps below](#home-screen-installation-and-web-updates), then check the footer version before choosing your file.
+Existing `.magic` files containing WAV remain playable and are never converted automatically. Use **web player 2.4.9 or later** for MP3 and WAV bundles. Follow the [web update steps below](#home-screen-installation-and-web-updates), then check the footer version before choosing your file.
 
 **Measure highlighting is on by default.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. Use **마디 강조** (measure highlight) on the desktop or web player to hide it immediately or show the current measure again without reanalysis. The desktop app and each web browser remember their own choice across songs and parts, including Session use.
 
-Automatic page turns and scrolling are controlled separately. The measure number and repeat visit keep updating when highlighting or following is off. An enabled highlight appears only on the current measure's page; opening another page hides it until you return. Pausing keeps it in place; seeking, repeats and coda jumps update it to the new playback position. Zooming or resizing scales it with the page.
+Automatic following stacks PDF and GP pages vertically and centers the active measure in the score viewport. Nearby forward moves between systems and pages are smooth. Moves longer than the viewport height, explicit seeks, repeats and coda jumps return promptly to the target without scrolling through intervening pages. Blank space above and below the score lets the first and last measures reach the center too. Simultaneous staves stay together; lower the zoom if a full score is taller than the viewport.
 
-On the desktop, scrolling or turning pages manually disables following. Turn **자동 넘김 · 스크롤** back on to return immediately to the current playback measure. Saved measure positions keep following available after zooming, resizing or folding the preparation controls, including when highlighting is off. Older analyses without measure positions retain page following and show a view-only reanalysis notice.
+How much upcoming music is visible depends on zoom, viewport height and the original page margins. The next system or page may still be outside the viewport. Reduce zoom or give the score more vertical space; on desktop, try **한 페이지** (fit page) or fold the preparation controls.
+
+On the desktop, scrolling or turning pages manually disables following. Turn **자동 넘김 · 스크롤** back on to center the current playback measure immediately; the web control is **자동 따라가기**. Saved measure positions keep centered following available after zooming, resizing or folding the preparation controls without reanalysis. Highlighting remains independent. Measure numbers and repeat visits continue updating with either setting off, and resuming following while paused does not start audio.
 
 **If highlighting is on but an older analysis has no measure positions:** open score pre-analysis and select **기존 마디 시간표 유지 · 화면 이동 경로만 분석** (keep the existing measure timeline and rebuild only the display path). This adds measure positions while preserving your corrected timings. It does not rerun note recognition or audio alignment, and the original score stays unchanged.
 
@@ -67,15 +69,15 @@ When the app falls back to PDF measure/BPM timing, it follows printed order unle
 
 **If repeat/coda behavior changed after an update:** reopen the score. When the latest result is an unreviewed automatic fallback from an older analysis policy, the app reconnects an earlier reviewed timeline for the exact same audio and PDF if one remains available. Otherwise run score pre-analysis again. Previous recognition sources are reused only when their contents match the saved analysis. Existing files, reviewed timing and explicit routes are preserved. Save a new `.magic` after changing the timeline so the tablet receives the correction.
 
-**If following does not resume when you turn it back on:** update to 2.4.8 or later. When saved measure positions exist, returning to the current measure needs no reanalysis. Use **악보 사전 분석 → 기존 마디 시간표 유지 · 화면 이동 경로만 분석** to rebuild a smooth camera path for a new zoom/window size, or to add missing positions to an older analysis. This preserves reviewed timing without rerunning note recognition or audio alignment. To reread repeat/coda signs, clear that checkbox and run full analysis. A combined timing/scroll job switches to the new result only after both stages succeed.
+**If following does not resume when you turn it back on:** update to 2.4.9 or later. Existing measure positions support centered following at the current zoom and viewport size; this viewing change alone requires no new `.magic` export. Use **악보 사전 분석 → 기존 마디 시간표 유지 · 화면 이동 경로만 분석** only to add missing positions to an older analysis. This preserves reviewed timing without rerunning note recognition or audio alignment. To reread repeat/coda signs, clear that checkbox and run full analysis. A combined timing/scroll job switches to the new result only after both stages succeed.
 
 **Desktop metronome alone:** uncheck ‘음원과 연동’ (link to audio), then press ‘메트로놈 켜기’ (turn metronome on). No song is required. An always-visible hint and status show standalone playback, waiting for audio, linked playback, or other waiting states; mute and zero volume are also indicated.
 
 On iPad, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari or Chrome; on Android, use Chrome. Open the web address first, tap **.magic 파일 열기** (open a .magic file), then choose the file saved on your computer. Other file types may also appear in the picker; an invalid file produces an error when opened.
 
-**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **2.4.8 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
+**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **2.4.9 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
 
-**If the song and score open but your iPad remains silent:** update the web player to **2.4.8 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
+**If the song and score open but your iPad remains silent:** update the web player to **2.4.9 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
 
 ### Home-screen installation and web updates
 
@@ -91,7 +93,7 @@ Connect to the internet for the first launch and wait for **오프라인 준비 
 
 **From 2.4.8**, the player checks at startup, on returning to the foreground and on reconnecting. You can also press **업데이트 확인** (check for updates). When a new screen is ready, **업데이트 적용 · 다시 열기** (apply update and reopen) appears; the current practice screen never reloads automatically. Finish file loading/audio preparation, stop playback, turn off the metronome, and leave Session before applying. **Select your .magic again after the screen reopens.** An update already downloaded can be applied offline. A failed or offline check does not mean that the app is up to date.
 
-**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **2.4.8 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
+**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **2.4.9 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
 
 **To use the mobile metronome alone, uncheck ‘반주와 함께’ (with accompaniment), then turn it on.** No song file is required. With that box checked, clicks wait until the accompaniment plays; the header shows the waiting state.
 

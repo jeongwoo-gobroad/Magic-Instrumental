@@ -1,8 +1,8 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="2.4.8"><meta name="magic-build" content="589e94c62f0c0917d0b22cb05fd7bb2c3594953e4c44b32d45de77b7f6c94008"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
+<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="2.4.9"><meta name="magic-build" content="50b6aac688d2e41307a1cd1c4aab01a666141f2f0444d6c427e1df6b034cbaaa"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
 :root{color-scheme:light;--bg:#f0f2ef;--card:#fff;--ink:#1b302d;--muted:#667872;--line:#d7dfd9;--accent:#206c56;--soft:#e4f1e9;--button:#edf2ef;--shadow:0 10px 30px #173e2910}
 :root[data-theme=dark]{color-scheme:dark;--bg:#101d1b;--card:#172824;--ink:#e6f0e9;--muted:#a1b4ac;--line:#344d44;--accent:#9cddbc;--soft:#2a4b3c;--button:#263b33;--shadow:0 10px 30px #0002}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:16px auto;min-height:100%;background:#fff;box-shadow:0 3px 12px #0002}#scoreImage{width:100%;height:auto;display:block}#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{position:relative;overflow-anchor:none;height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:0 auto;min-height:100%;background:#fff}#paper.continuous{background:transparent}.score-page{position:relative;width:100%;margin-bottom:16px;background:#fff;box-shadow:0 3px 12px #0002;overflow:hidden}.score-page:last-child{margin-bottom:0}.score-image,#scoreImage{width:100%;height:100%;display:block}.score-image[hidden],#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
 @media(max-width:900px){header{padding:20px}.metronome{margin:0 16px 16px}main{padding:0 16px 20px;grid-template-columns:300px minmax(0,1fr);gap:14px}.card{padding:15px}.score-toolbar{padding:10px}h1{font-size:24px}.row{gap:5px}.row button{padding:8px}#viewport{height:calc(100dvh - 300px)}}
 @media(max-width:700px){main{display:flex;flex-direction:column}.score-area{position:relative;top:0;width:100%;order:-1}aside{width:100%}#viewport{height:55dvh;min-height:280px}.metronome{gap:8px}header{padding:16px}h1{font-size:22px}.score-toolbar{gap:8px}.score-toolbar>div:first-child{min-width:65px}.metronome details{margin-left:0}.metro-settings{position:fixed;top:150px;right:12px;left:12px;width:auto}#empty{padding:40px 15px}.transport{flex-wrap:nowrap}.card{padding:18px}}
 
@@ -88,8 +88,8 @@ aside, .card, .score-area, select { min-width: 0; }
 <p class="small">공유 버튼을 누른 파일만 중계 서버로 전송합니다. 방 종료 시 삭제됩니다. 각자 파일을 열면 전송하지 않습니다. 합주 중에는 화면을 켜 두세요.</p></details>
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>컴퓨터에서 준비할 악보로는 Guitar Pro 원본(.gp3, .gp4, .gp5)을 권장합니다. 음표와 마디를 직접 읽고 연습할 파트를 고를 수 있습니다. 이 웹 재생기에서는 컴퓨터에서 저장한 .magic 파일을 여세요.</p><p>iPad의 Safari·Chrome 또는 Android의 Chrome에서 이 웹주소를 열고 ‘.magic 파일 열기’를 누르세요. 파일 이름을 바꾸거나 압축을 풀 필요가 없습니다.</p><p><b>홈 화면에서 앱처럼 열기</b><br>iPad Safari: 공유 → 홈 화면에 추가(필요하면 ‘더 보기’) → ‘웹 앱으로 열기’가 보이면 켜기 → 추가.<br>iPad Chrome: 공유 → 홈 화면에 추가 → 추가. 항목이 없으면 Safari에서 같은 주소를 여세요.<br>Android Chrome: 메뉴(⋮) → 설치 및 바로가기 만들기 → 설치. 버전에 따라 ‘앱 설치’ 또는 ‘홈 화면에 추가’로 표시됩니다.</p><p>홈 화면의 Magic Player를 온라인에서 한 번 열고 ‘오프라인 준비 완료’를 확인하세요. 그 뒤에는 기기에 저장한 .magic 파일을 인터넷 없이 열 수 있습니다. Session은 인터넷 연결이 필요합니다.</p><p>새 버전은 앱 실행·화면 복귀·온라인 복귀 때 확인합니다. 아래 ‘업데이트 확인’으로 직접 확인할 수도 있습니다. 새 버전 안내가 나오면 연습과 Session을 마친 뒤 ‘업데이트 적용 · 다시 열기’를 누르세요. 현재 파일은 다시 선택해야 합니다. 업데이트 때문에 재생 중에 자동으로 화면을 다시 열지는 않습니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
 <p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a></p>
-</aside><section class="score-area" id="scoreArea"><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label><input id="highlightEnabled" type="checkbox" checked> 마디 강조</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
-<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v2.4.8</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
+</aside><section class="score-area" id="scoreArea"><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label><input id="highlightEnabled" type="checkbox" checked> 마디 강조</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport" tabindex="0" aria-label="악보 · 직접 스크롤하면 자동 따라가기가 해제됩니다"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
+<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v2.4.9</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
 <footer class="support-footer">버그 및 개선 사항 제보: <a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a></footer>
 <script>
 var SignalsmithStretch = (() => {
@@ -727,6 +727,8 @@ let decodedAudio = null, audioTask = null, audioGeneration = 0, audioPending = 0
 let ready = false, loading = false, playing = false, metro = false, position = 0, duration = 0;
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
+let pageSlots = [], wantedPages = new Set(), pageLoads = new Map(), pageErrors = new Map();
+let followCue = -1, followTime = 0, followStamp = 0, followMotion = null;
 let token = 0, timer = null, wakeLock = null, seeking = false;
 let ensemble = null;
 function setStatus(text, error = false) {
@@ -928,7 +930,7 @@ async function play(count = $('count').checked || ($('loop').checked && $('loopC
 }
 async function seek(target, resume = playing) {
   pause(); const [lo, hi] = loopBounds(); position = clamp(target, lo, Math.max(lo, hi - .001));
-  showPosition(); if (resume) await play(false);
+  resetFollow(); showPosition(); if (resume) await play(false);
 }
 function cueAt(time) {
   if (!archive) return -1;
@@ -1014,38 +1016,158 @@ function updateDots() {
   const dots = [...$('dots').children];
   dots.forEach((dot, i) => dot.classList.toggle('on', beat !== null && ((beat % dots.length) + dots.length) % dots.length === i));
 }
-async function showPage(index) {
-  if (!archive || index < 0 || index >= archive.pages.length) return;
-  if (shownPage === index || pendingPage === index) return;
-  pendingPage = index;
-  const generation = ++pageGeneration, selected = archive, pages = archive.pages;
-  let url = urls.get(index);
-  if (!url) {
+function resetFollow() {
+  followCue = -1; followMotion = null; followStamp = 0;
+}
+function makeScorePages() {
+  if (!archive || pageSlots.length) return;
+  const firstImage = $('scoreImage'), paper = $('paper'), fragment = document.createDocumentFragment();
+  pageSlots = archive.pages.map((page, index) => {
+    const element = document.createElement('div'), image = index ? document.createElement('img') : firstImage;
+    element.className = 'score-page'; element.dataset.page = index;
+    image.className = 'score-image'; image.alt = `악보 ${index + 1}페이지`; image.hidden = true;
+    element.append(image); fragment.append(element);
+    return {element, image, top: 0, height: 0};
+  });
+  paper.append(fragment); paper.classList.add('continuous'); $('empty').hidden = true;
+  resizePaper();
+}
+function pageAtHeight(height) {
+  let low = 0, high = pageSlots.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (pageSlots[middle].top <= height) low = middle + 1; else high = middle;
+  }
+  return clamp(low - 1, 0, pageSlots.length - 1);
+}
+function selectScorePage(index) {
+  if (shownPage === index) return;
+  $('scoreImage')?.removeAttribute('id');
+  pageSlots[index].image.id = 'scoreImage'; shownPage = index;
+  $('pageText').textContent = `${index + 1} / ${pageSlots.length}`;
+}
+function loadScorePage(index) {
+  if (pageLoads.has(index)) return pageLoads.get(index);
+  if (pageErrors.has(index)) return Promise.reject(pageErrors.get(index));
+  if (urls.has(index)) return Promise.resolve(true);
+  const selected = archive, pages = selected.pages, generation = pageGeneration;
+  const slot = pageSlots[index];
+  let cancelled = false;
+  const sameScore = () => archive === selected && pages === selected.pages && generation === pageGeneration;
+  const current = () => !cancelled && sameScore();
+  const prepare = (async () => {
     const bytes = await selected.blob(pages[index].path, 20000000);
     const head = new Uint8Array(await bytes.slice(0, 24).arrayBuffer());
-    const view = new DataView(head.buffer), p = pages[index];
-    requireMagic(head.length === 24 && head[0] === 137 && decoder.decode(head.slice(1, 4)) === 'PNG' && view.getUint32(16) === p.width && view.getUint32(20) === p.height, '악보 이미지가 손상되었습니다.');
-    if (generation !== pageGeneration || archive !== selected) return;
-    url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'})); urls.set(index, url);
-    while (urls.size > 3) { const key = urls.keys().next().value; URL.revokeObjectURL(urls.get(key)); urls.delete(key); }
+    const view = new DataView(head.buffer), page = pages[index];
+    requireMagic(head.length === 24 && head[0] === 137 && decoder.decode(head.slice(1, 4)) === 'PNG' && view.getUint32(16) === page.width && view.getUint32(20) === page.height, '악보 이미지가 손상되었습니다.');
+    if (!current() || !wantedPages.has(index)) return false;
+    const url = URL.createObjectURL(new Blob([bytes], {type: 'image/png'}));
+    urls.set(index, url); slot.image.src = url;
+    try { await slot.image.decode(); }
+    catch (_) {
+      if (!current() || !wantedPages.has(index) || urls.get(index) !== url) return false;
+      URL.revokeObjectURL(url); urls.delete(index); slot.image.removeAttribute('src');
+      throw new Error('악보 이미지가 손상되었습니다. 파일을 다시 가져와 주세요.');
+    }
+    if (!current() || !wantedPages.has(index) || urls.get(index) !== url) return false;
+    slot.image.hidden = false;
+    showHighlight(archive.timing.cues[cueAt(nowPosition())]);
+    return true;
+  })();
+  const task = deadline(prepare, 60000, '악보 페이지를 읽지 못했습니다. 파일을 다시 선택해 주세요.').catch(error => {
+    if (!current()) return false;
+    cancelled = true;
+    const url = urls.get(index);
+    if (url) { URL.revokeObjectURL(url); urls.delete(index); }
+    slot.image.hidden = true; slot.image.removeAttribute('src');
+    pageErrors.set(index, error); throw error;
+  }).finally(() => {
+    if (pageLoads.get(index) === task) pageLoads.delete(index);
+    if (sameScore()) prepareVisiblePages();
+  });
+  pageLoads.set(index, task);
+  return task;
+}
+function prepareVisiblePages() {
+  if (!archive || !pageSlots.length) return;
+  const center = Math.max(0, shownPage);
+  const queue = [...wantedPages].filter(index => !urls.has(index) && !pageLoads.has(index) && !pageErrors.has(index))
+    .sort((a, b) => Math.abs(a - center) - Math.abs(b - center));
+  while (queue.length && pageLoads.size < 3) {
+    const index = queue.shift();
+    loadScorePage(index).catch(error => { if (index === shownPage && ready) fail(error); });
   }
-  if (generation !== pageGeneration) return;
-  pendingPage = -1; shownPage = index; $('scoreImage').src = url; $('scoreImage').hidden = false; $('empty').hidden = true;
-  $('pageText').textContent = `${index + 1} / ${archive.pages.length}`;
-  $('viewport').scrollTo(0, 0); resizePaper();
+}
+function refreshVisiblePages() {
+  if (!archive || !pageSlots.length) return;
+  const view = $('viewport'), top = view.scrollTop - $('paper').offsetTop;
+  const bottom = top + view.clientHeight;
+  let first = pageAtHeight(top), last = pageAtHeight(bottom);
+  if (first < last && pageSlots[first].top + pageSlots[first].height <= top) first++;
+  if (last > first && pageSlots[last].top >= bottom) last--;
+  // Keep all visible pages and one neighbor on either side, not the whole score.
+  wantedPages = new Set();
+  for (let index = Math.max(0, first - 1); index <= Math.min(pageSlots.length - 1, last + 1); index++) wantedPages.add(index);
+  for (const [index, url] of urls) if (!wantedPages.has(index)) {
+    pageSlots[index].image.hidden = true; pageSlots[index].image.removeAttribute('src');
+    URL.revokeObjectURL(url); urls.delete(index);
+  }
+  if (!$('follow').checked) selectScorePage(pageAtHeight(top + view.clientHeight / 2));
+  prepareVisiblePages(); showHighlight(archive.timing.cues[cueAt(nowPosition())]);
+}
+async function ensureScorePage(index) {
+  const generation = pageGeneration;
+  while (generation === pageGeneration && !pageLoads.has(index) && !urls.has(index) && pageLoads.size >= 3) {
+    await Promise.race([...pageLoads.values()].map(task => task.catch(() => false)));
+  }
+  if (generation !== pageGeneration) return false;
+  return loadScorePage(index);
+}
+async function showPage(index) {
+  if (!archive || index < 0 || index >= archive.pages.length) return;
+  makeScorePages();
+  const generation = pageGeneration;
+  pendingPage = index; selectScorePage(index); resetFollow();
+  const view = $('viewport');
+  view.scrollTo(0, Math.max(0, pageSlots[index].top + $('paper').offsetTop - 16));
+  if ($('follow').checked) showPosition();
+  refreshVisiblePages(); wantedPages.add(index);
+  await ensureScorePage(index);
+  if (generation !== pageGeneration || pendingPage !== index) return;
+  pendingPage = -1;
   showHighlight(archive.timing.cues[cueAt(nowPosition())]);
 }
 function resizePaper() {
-  if (!archive || shownPage < 0) return;
-  const width = Math.max(200, $('viewport').clientWidth - 32) * Number($('zoom').value);
-  const page = archive.pages[shownPage];
-  $('paper').style.width = width + 'px'; $('paper').style.minHeight = '0';
-  $('paper').style.height = (width * page.height / page.width) + 'px';
+  if (!archive || !pageSlots.length) return;
+  const paper = $('paper'), view = $('viewport');
+  const previous = pageSlots[pageAtHeight(view.scrollTop + view.clientHeight / 2 - paper.offsetTop)];
+  const fraction = previous.height ? (view.scrollTop + view.clientHeight / 2 - paper.offsetTop - previous.top) / previous.height : 0;
+  const width = Math.max(200, view.clientWidth - 32) * Number($('zoom').value);
+  const oldWidth = paper.clientWidth, oldHeight = previous.height;
+  paper.style.width = width + 'px'; paper.style.minHeight = '0';
+  paper.style.paddingBlock = view.clientHeight / 2 + 'px';
+  let top = view.clientHeight / 2;
+  pageSlots.forEach((slot, index) => {
+    const page = archive.pages[index]; slot.top = top; slot.height = width * page.height / page.width;
+    slot.element.style.height = slot.height + 'px'; top += slot.height + 16;
+  });
+  const paperTop = paper.getBoundingClientRect().top;
+  pageSlots.forEach(slot => {
+    const rect = slot.element.getBoundingClientRect(); slot.top = rect.top - paperTop; slot.height = rect.height;
+  });
+  resetFollow();
+  if (!$('follow').checked && oldHeight) {
+    view.scrollTop = paper.offsetTop + previous.top + previous.height * fraction - view.clientHeight / 2;
+    if (oldWidth) view.scrollLeft *= width / oldWidth;
+  }
+  if ($('follow').checked) showPosition();
+  refreshVisiblePages();
 }
 function showHighlight(cue) {
-  const highlight = $('highlight'), box = cue?.box;
-  highlight.hidden = !$('highlightEnabled').checked || !box || shownPage !== cue.page;
+  const highlight = $('highlight'), box = cue?.box, slot = pageSlots[cue?.page];
+  highlight.hidden = !$('highlightEnabled').checked || !box || !slot || !urls.has(cue.page);
   if (highlight.hidden) return;
+  if (highlight.parentElement !== slot.element) slot.element.append(highlight);
   Object.assign(highlight.style, {left: box.left * 100 + '%', top: box.top * 100 + '%', width: (box.right - box.left) * 100 + '%', height: (box.bottom - box.top) * 100 + '%'});
 }
 function showPosition() {
@@ -1056,23 +1178,40 @@ function showPosition() {
   const cue = archive?.timing.cues[index];
   $('measure').textContent = cue ? `${cue.measure}마디 · ${cue.visit}회차` : '—';
   showHighlight(cue);
-  if (!cue) return;
-  if ($('follow').checked && shownPage !== cue.page) { showPage(cue.page).catch(fail); return; }
-  const b = cue.box;
-  if (shownPage !== cue.page) return;
-  const paper = $('paper'), view = $('viewport'), width = paper.clientWidth, height = paper.clientHeight;
-  if ($('follow').checked) {
-    const end = archive.timing.cues[index + 1]?.start ?? archive.timing.end;
-    const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
-    const x = (b.left + (b.right - b.left) * fraction) * width - view.clientWidth * .35;
-    const tall = Math.max(0, (b.bottom - b.top) * height - view.clientHeight * .7);
-    // Simultaneous staves stay together; bar time must not scan down the parts.
-    const y = b.top * height - 32 + (archive.timing.camera_mode === 'system' ? 0 : tall * fraction);
-    const desiredX = clamp(x, 0, Math.max(0, paper.offsetWidth + 32 - view.clientWidth));
-    const desiredY = clamp(y, 0, Math.max(0, paper.offsetHeight + 32 - view.clientHeight));
-    view.scrollLeft += (desiredX - view.scrollLeft) * .24;
-    view.scrollTop += (desiredY - view.scrollTop) * .24;
+  if (!cue || !$('follow').checked || !pageSlots.length) return;
+  const previous = archive.timing.cues[followCue], slot = pageSlots[cue.page];
+  const paper = $('paper'), view = $('viewport'), width = slot.element.clientWidth, box = cue.box;
+  const end = archive.timing.cues[index + 1]?.start ?? archive.timing.end;
+  const fraction = clamp((time - archive.timing.offset - cue.start) / (end - cue.start), 0, 1);
+  const measureWidth = (box.right - box.left) * width;
+  const focusX = box.left * width + measureWidth * (measureWidth > view.clientWidth ? fraction : .5);
+  const x = paper.offsetLeft + focusX - view.clientWidth / 2;
+  // A measure's simultaneous staves share one vertical center, including notation and TAB.
+  const y = paper.offsetTop + slot.top + (box.top + box.bottom) * slot.height / 2 - view.clientHeight / 2;
+  const desiredX = clamp(x, 0, Math.max(0, view.scrollWidth - view.clientWidth));
+  const desiredY = clamp(y, 0, Math.max(0, view.scrollHeight - view.clientHeight));
+  const now = performance.now(), elapsed = followStamp ? Math.min(50, now - followStamp) : 16;
+  if (followCue !== index) {
+    const adjacent = playing && index === followCue + 1 && previous && cue.source_index === previous.source_index + 1 &&
+      cue.page >= previous.page && cue.page <= previous.page + 1 && time >= followTime && time - followTime < 1 &&
+      Math.abs(desiredY - view.scrollTop) <= view.clientHeight;
+    followMotion = adjacent && !matchMedia('(prefers-reduced-motion: reduce)').matches ?
+      {fromX: view.scrollLeft, fromY: view.scrollTop, start: now} : null;
+    if (!followMotion) { view.scrollLeft = desiredX; view.scrollTop = desiredY; }
+    followCue = index; selectScorePage(cue.page);
+    refreshVisiblePages();
+    if (pageErrors.has(cue.page)) fail(pageErrors.get(cue.page));
   }
+  if (followMotion) {
+    const progress = clamp((now - followMotion.start) / 200, 0, 1), smooth = progress * progress * (3 - 2 * progress);
+    view.scrollLeft = followMotion.fromX + (desiredX - followMotion.fromX) * smooth;
+    view.scrollTop = followMotion.fromY + (desiredY - followMotion.fromY) * smooth;
+    if (progress === 1) followMotion = null;
+  } else {
+    view.scrollLeft += (desiredX - view.scrollLeft) * (1 - Math.exp(-elapsed / 65));
+    view.scrollTop = desiredY;
+  }
+  followTime = time; followStamp = now;
 }
 function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); requestAnimationFrame(frame); }
 function setAvailable(value) {
@@ -1081,11 +1220,14 @@ function setAvailable(value) {
   ensemble?.update();
 }
 function clearScorePage() {
-  pageGeneration++; shownPage = pendingPage = -1;
-  $('scoreImage').hidden = true; $('highlight').hidden = true;
-  $('scoreImage').removeAttribute('src');
+  pageGeneration++; shownPage = pendingPage = -1; resetFollow();
+  const image = $('scoreImage'), highlight = $('highlight'), paper = $('paper');
+  image.hidden = highlight.hidden = true; image.removeAttribute('src');
+  paper.append(image, highlight);
+  for (const slot of pageSlots) slot.element.remove();
   for (const url of urls.values()) URL.revokeObjectURL(url);
-  urls.clear();
+  urls.clear(); pageSlots = []; wantedPages.clear(); pageLoads.clear(); pageErrors.clear();
+  paper.classList.remove('continuous'); paper.removeAttribute('style');
 }
 function releaseAudio() {
   if (audioTask) {
@@ -1145,7 +1287,8 @@ async function openFile(file) {
     });
     requireMagic($('loopStart').options.length > 0, '악보의 마디 시간이 반주 범위 밖입니다. 컴퓨터에서 시간표를 보정해 주세요.');
     $('loopEnd').selectedIndex = $('loopEnd').options.length - 1;
-    await deadline(showPage(0), 60000, '악보를 읽지 못했습니다. 파일을 다시 선택해 주세요.');
+    const initialCue = next.timing.cues[clamp(cueAt(0), 0, next.timing.cues.length - 1)];
+    await deadline(showPage(initialCue.page), 60000, '악보를 읽지 못했습니다. 파일을 다시 선택해 주세요.');
     ready = true; setAvailable(true); updateMetro(); updateKey();
     setStatus(next.timing.reviewed ? '준비 완료 · 재생을 눌러 주세요.' : '준비 완료 · 자동 추정한 마디입니다. 반주와 맞는지 확인해 주세요.');
   } catch (error) {
@@ -1225,10 +1368,20 @@ $('partSelect').onchange = async () => {
   } catch (error) { $('partSelect').value = selected.activePart.track; fail(error); }
   finally { $('partSelect').disabled = false; }
 };
-$('zoom').onchange = resizePaper; window.addEventListener('resize',resizePaper);
-$('scoreImage').onload = resizePaper;
+$('zoom').onchange = resizePaper;
+let resizeFrame = 0;
+new ResizeObserver(() => {
+  if (!resizeFrame) resizeFrame = requestAnimationFrame(() => { resizeFrame = 0; resizePaper(); });
+}).observe($('viewport'));
+$('follow').onchange = () => { resetFollow(); if ($('follow').checked) showPosition(); };
+$('viewport').addEventListener('scroll', refreshVisiblePages, {passive: true});
 for (const [id, direction] of [['prevPage',-1],['nextPage',1]]) $(id).onclick = () => { $('follow').checked = false; showPage(shownPage + direction).catch(fail); };
-for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEventListener(event, () => { $('follow').checked = false; }, {passive:true});
+for (const event of ['wheel','touchstart','pointerdown']) $('viewport').addEventListener(event, () => { $('follow').checked = false; resetFollow(); }, {passive:true});
+$('viewport').addEventListener('keydown', event => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(event.key)) {
+    $('follow').checked = false; resetFollow();
+  }
+});
 try { $('highlightEnabled').checked = localStorage.getItem('magic-measure-highlight') !== 'false'; } catch (_) {}
 $('highlightEnabled').onchange = () => {
   try { localStorage.setItem('magic-measure-highlight', String($('highlightEnabled').checked)); } catch (_) {}
@@ -1659,7 +1812,7 @@ class Ensemble {
     if (!p || ctx.currentTime < p.at) return;
     requireMagic(p.armed && ctx.currentTime - p.at < .2, '기기가 멈춰 합주를 일시정지했습니다. 다시 준비해 주세요.');
     const saved = nowPosition(p.at);
-    this.pending = null; upcoming = null;
+    this.pending = null; upcoming = null; resetFollow();
     if (p.next) { segment = p.next; playing = true; position = p.next.input; }
     else { segment = null; playing = false; position = p.data.action === 'pause' ? saved : p.data.state.position; }
     $('play').textContent = playing ? 'Ⅱ 일시정지' : '▶ 재생';

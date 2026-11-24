@@ -161,6 +161,15 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         leader.locator("#step").fill("5")
         leader.locator("#forward").click()
         member.wait_for_function("MagicPlayer.state().position >= 10", timeout=7000)
+        for participant in (leader, member):
+            participant.wait_for_function("""() => {
+              const state = MagicPlayer.state(), cue = MagicPlayer.archive().timing.cues[state.cue];
+              const slot = document.querySelector(`.score-page[data-page="${cue.page}"]`);
+              const view = document.getElementById('viewport'), box = slot.getBoundingClientRect();
+              const center = box.top + (cue.box.top + cue.box.bottom) * box.height / 2;
+              return Math.abs(center - view.getBoundingClientRect().top - view.clientTop -
+                view.clientHeight / 2) < 2;
+            }""")
         leader.wait_for_timeout(250)
         assert abs(leader.evaluate("MagicPlayer.state().position") -
                    member.evaluate("MagicPlayer.state().position")) < .13

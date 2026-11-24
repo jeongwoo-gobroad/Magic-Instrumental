@@ -98,7 +98,8 @@ def test_highlight_pixels_scale_without_changing_pdf_pixmap(blank_score, theme):
         assert check_box(label, FIRST).width() > before.width()
 
         view.show_page(1)
-        assert label.highlight_box is None and label.highlight_rect().isEmpty()
+        assert view.label.highlight_box is None
+        check_box(label, FIRST)  # The active page keeps its ink when it is beside another page.
         view.show_page(0)
         check_box(label, FIRST)
         view.clear()
@@ -159,49 +160,48 @@ def shown_score(tmp_path, blank_score, tone):
 
 def test_highlight_tracks_seek_repeat_offset_and_manual_page_while_paused(shown_score):
     app, panel, path = shown_score
-    label = panel.view.label
-    assert label.highlight_box is None
+    assert panel.view.label.highlight_box is None
     panel.on_position(2250)
-    check_box(label, FIRST)
+    check_box(panel.view.label, FIRST)
     panel.follow.setChecked(False)
     panel.on_position(4250)
     assert panel.current_index == 1 and "2마디" in panel.measure.text()
-    assert panel.view.page == 0 and label.highlight_box is None
+    assert panel.view.page == 0 and panel.view.label.highlight_box is None
 
     # No playback tick is available while paused: page changes must update immediately.
     panel.manual_page(2)
-    check_box(label, SECOND)
+    check_box(panel.view.label, SECOND)
     panel.manual_page(1)
-    assert label.highlight_box is None
+    assert panel.view.label.highlight_box is None
     panel.manual_page(2)
-    check_box(label, SECOND)
+    check_box(panel.view.label, SECOND)
     panel.zoom.setCurrentIndex(panel.zoom.findData(3.0))
     assert not panel.view_matches()
-    check_box(label, SECOND)
+    check_box(panel.view.label, SECOND)
     panel.resize(760, 980)
     QTest.qWait(120)
-    check_box(label, SECOND)
+    check_box(panel.view.label, SECOND)
 
     panel.on_position(6250)
-    assert label.highlight_box is None and panel.view.page == 1
+    assert panel.view.label.highlight_box is None and panel.view.page == 1
     panel.follow.setChecked(True)
     assert panel.current_index == 2 and "2회차" in panel.measure.text()
     assert panel.view.page == 0
-    check_box(label, FIRST)
+    check_box(panel.view.label, FIRST)
     panel.on_position(7250)
-    check_box(label, CODA)
+    check_box(panel.view.label, CODA)
     changed = ScoreTimeline.load(path)
     changed.data["offset"] = 1.25
     changed.save(path)
     panel.load_timeline(path)
     assert panel.current_index == 2 and panel.view.page == 0
-    check_box(label, FIRST)
+    check_box(panel.view.label, FIRST)
     panel.on_position(10250)
-    assert panel.current_index is None and label.highlight_box is None
+    assert panel.current_index is None and panel.view.label.highlight_box is None
     panel.on_position(2250)
-    check_box(label, FIRST)
+    check_box(panel.view.label, FIRST)
     panel.clear_score()
-    assert panel.timeline is None and label.highlight_box is None
+    assert panel.timeline is None and panel.view.label.highlight_box is None
 
 
 def test_highlight_toggle_preserves_paused_position_following_and_view(shown_score):

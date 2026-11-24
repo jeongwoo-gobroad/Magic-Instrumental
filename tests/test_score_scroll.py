@@ -266,9 +266,8 @@ def test_gui_saved_scroll_resize_zoom_pause_and_seek(score_fixture, monkeypatch)
         app.processEvents()
         assert panel.view_matches(), (profile, panel.view.profile())
         panel.on_position(11000)
-        x, y = panel.timeline.scroll_at(11)[1:]
-        assert panel.view.verticalScrollBar().value() == y
-        assert panel.view.horizontalScrollBar().value() == x
+        assert_current_measure_visible(panel)
+        y = panel.view.verticalScrollBar().value()
         window.speed.setValue(50)
         panel.on_position(11000)
         assert panel.view.verticalScrollBar().value() == y

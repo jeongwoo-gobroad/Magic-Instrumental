@@ -526,12 +526,17 @@ def test_highlight_toggle_preserves_paused_follow_and_camera(page, study_files):
     page.evaluate("MagicPlayer.seek(0, false)")
     toggle.check()
     assert page.evaluate("MagicPlayer.state().page") == shown
-    assert highlight.is_hidden() and "1마디" in page.locator("#measure").inner_text()
+    assert "1마디" in page.locator("#measure").inner_text()
+    assert highlight.evaluate("""el => {
+      const box = el.getBoundingClientRect();
+      const view = document.getElementById('viewport').getBoundingClientRect();
+      return el.hidden || box.bottom <= view.top || box.top >= view.bottom;
+    }""")
     while shown > 0:
         page.locator("#prevPage").click()
         page.wait_for_function("page => MagicPlayer.state().page === page", arg=shown - 1)
         shown -= 1
-    assert highlight.is_visible()
+    highlight.wait_for(state="visible")
 
     camera = page.locator("#viewport").evaluate("el => [el.scrollLeft, el.scrollTop]")
     page.evaluate("MagicPlayer.seek(4, false)")
@@ -634,7 +639,8 @@ def test_gp_opens_plays_pitch_rate_seeks_and_follows(page, study_files):
     page.evaluate("MagicPlayer.pause()")
     page.evaluate("MagicPlayer.seek(52,false)")
     page.wait_for_function("MagicPlayer.state().page > 0")
-    assert page.locator("#scoreImage").evaluate("el => el.complete && el.naturalWidth > 0")
+    page.wait_for_function("document.getElementById('scoreImage').complete && "
+                           "document.getElementById('scoreImage').naturalWidth > 0")
     page.locator("#zoom").select_option("2")
     page.wait_for_timeout(400)
     assert page.locator("#paper").evaluate("el => el.clientWidth") > page.locator(

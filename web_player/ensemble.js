@@ -238,7 +238,7 @@ class Ensemble {
     if (!p || ctx.currentTime < p.at) return;
     requireMagic(p.armed && ctx.currentTime - p.at < .2, '기기가 멈춰 합주를 일시정지했습니다. 다시 준비해 주세요.');
     const saved = nowPosition(p.at);
-    this.pending = null; upcoming = null;
+    this.pending = null; upcoming = null; resetFollow();
     if (p.next) { segment = p.next; playing = true; position = p.next.input; }
     else { segment = null; playing = false; position = p.data.action === 'pause' ? saved : p.data.state.position; }
     $('play').textContent = playing ? 'Ⅱ 일시정지' : '▶ 재생';
