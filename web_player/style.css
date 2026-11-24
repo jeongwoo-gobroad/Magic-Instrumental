@@ -21,6 +21,10 @@ body[data-session=member] #sessionSong { order: -4; }
 /* Keep Korean labels together while still wrapping long song and instrument names. */
 body { word-break: keep-all; overflow-wrap: anywhere; }
 aside, .card, .score-area, select { min-width: 0; }
+.audio-choice label { display: block; font-weight: 700; min-height: 0; margin-bottom: 8px; }
+.audio-choice select { width: 100%; max-width: 100%; }
+.audio-choice p { margin: 10px 0 0; }
+body[data-session] #audioChoice { order: -1; }
 .small, #status, .metro-help, .score-toolbar label, .score-toolbar select,
 .range-pair label, #clock, #effective { font-size: 13px; }
 :root:not([data-theme=dark]) { --muted: #53665e; }

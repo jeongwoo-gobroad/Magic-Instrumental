@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """FFmpeg decoding/export; no shell interpolation and no system FFmpeg required."""
 
+import json
 import math
 import os
 import shutil
@@ -122,14 +123,37 @@ def publish_export(staged: Path, destination: Path, *, overwrite: bool) -> None:
         os.link(staged, destination)
 
 
+def is_managed_audio(path: Path) -> bool:
+    """Prepared stem sets, pitch files and imported packages are not export destinations."""
+    path = path.resolve()
+    if path.name == "instrumental.wav" and (path.parent / "pitch.json").is_file():
+        return True
+    manifest = path.parent / "manifest.json"
+    if manifest.is_file():
+        if path.name == "instrumental.wav":
+            return True
+        try:
+            if manifest.stat().st_size <= 1024 * 1024:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+                if path.name in data.get("files", {}):
+                    return True
+        except (OSError, ValueError, TypeError, AttributeError):
+            pass
+    for directory in path.parents:
+        if (directory.name == "v1" and directory.parent.parent.name == "imported-magic"
+                and len(directory.parent.name) == 64
+                and all(c in "0123456789abcdef" for c in directory.parent.name)
+                and (directory / "bundle.json").is_file()
+                and (directory / "cache-manifest.json").is_file()):
+            return True
+    return False
+
+
 def export_tempo(source: Path, destination: Path, speed: float, *, overwrite: bool = False) -> Path:
     effect = tempo_filter(speed)
     if destination.suffix.lower() not in {".wav", ".flac"}:
         raise ValueError("내보내기는 WAV 또는 FLAC을 선택하세요.")
-    if source.resolve() == destination.resolve() or (
-        destination == destination.with_name("instrumental.wav")
-        and (destination.parent / "manifest.json").exists()
-    ):
+    if source.resolve() == destination.resolve() or is_managed_audio(destination):
         raise ValueError("원본 캐시를 덮어쓸 수 없습니다. 다른 경로를 선택하세요.")
     if destination.exists() and not overwrite:
         raise FileExistsError("출력 파일이 이미 있습니다. 다른 이름 또는 --overwrite를 사용하세요.")

@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .config import MODELS, ROOT, Paths, Settings
+from .variants import SUPPORTED_VARIANTS
 
 EVENT_PREFIX = "@@PRACTICE@@"
 
@@ -23,7 +24,15 @@ def parser() -> argparse.ArgumentParser:
     group = split.add_mutually_exclusive_group(required=True)
     group.add_argument("--input", type=Path)
     group.add_argument("--all", action="store_true")
-    split.add_argument("--model", choices=MODELS, default="hyperace")
+    split.add_argument("--model", choices=["auto", *MODELS], default="auto")
+    split.add_argument(
+        "--variant", default="no_vocals",
+        choices=SUPPORTED_VARIANTS,
+        help="without/no_ 옵션은 해당 악기를 제외하고, 악기 이름은 해당 악기만 준비",
+    )
+    split.add_argument(
+        "--all-variants", action="store_true", help="지원하는 음원 선택지를 함께 준비"
+    )
     split.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto")
     split.add_argument("--low-memory", action="store_true")
     split.add_argument("--offline", action="store_true")
@@ -62,13 +71,72 @@ def parser() -> argparse.ArgumentParser:
     pitch = sub.add_parser("pitch", help="반주 키 변경")
     pitch.add_argument("--input", type=Path, required=True)
     pitch.add_argument("--semitones", type=int, required=True)
+    pitch.add_argument("--expected-sha256", help=argparse.SUPPRESS)
+    pitch.add_argument("--expected-frames", type=int, help=argparse.SUPPRESS)
     for command in (gp, pitch):
         command.add_argument("--root", type=Path, default=ROOT)
         command.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
-    magic = sub.add_parser("magic-export", help="태블릿용 .magic 저장")
+    magic = sub.add_parser("magic-export", help="PC·태블릿용 .magic 저장")
     magic.add_argument("--request", type=Path, required=True)
     magic.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
+    magic_import = sub.add_parser("magic-import", help=".magic 검증 및 PC 재생 준비")
+    magic_import.add_argument("--input", type=Path, required=True)
+    magic_import.add_argument("--root", type=Path, default=ROOT)
+    magic_import.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
     return result
+
+
+def prepare_audio_options(source, model, device, low_memory, paths, report, *,
+                          variant_id="no_vocals", prepare_all=False, offline=False):
+    """Choose each recommended model once, then combine only its assigned options."""
+    from dataclasses import replace
+
+    from .pipeline import process
+    from .variants import recommended_model, supported_variants
+
+    wanted = (
+        tuple(SUPPORTED_VARIANTS) if model == "auto" else supported_variants(model)
+    ) if prepare_all else (variant_id,)
+    if variant_id not in wanted:
+        raise ValueError("선택한 모델이 이 음원을 지원하지 않습니다. 자동 추천을 선택하세요.")
+    assignments = {
+        identifier: (
+            "original" if identifier == "original" and not prepare_all
+            else recommended_model(identifier) if model == "auto" else model
+        )
+        for identifier in wanted
+    }
+    variants, results = {}, []
+    for key in dict.fromkeys(assignments.values()):
+        assigned = [identifier for identifier, owner in assignments.items() if owner == key]
+        result = process(
+            source, Settings(key, device, low_memory), paths, report, offline=offline,
+            variant_id=variant_id if variant_id in assigned else assigned[0],
+            prepare_all=prepare_all,
+        )
+        if results and (
+            result.source_hash != results[0].source_hash
+            or result.source_frames != results[0].source_frames
+            or result.sample_rate != results[0].sample_rate
+        ):
+            raise ValueError("준비 중 원곡 또는 음원 길이가 달라졌습니다. 다시 준비하세요.")
+        results.append(result)
+        for identifier in assigned:
+            if identifier not in result.variants:
+                raise ValueError("선택한 음원 결과가 없습니다. 분리 모델과 로그를 확인하세요.")
+            variants[identifier] = result.variants[identifier]
+        if not prepare_all:
+            for identifier, item in result.variants.items():
+                if model != "auto" or recommended_model(identifier) == key:
+                    variants[identifier] = item
+    variants = {identifier: variants[identifier] for identifier in SUPPORTED_VARIANTS
+                if identifier in variants}
+    selected = variants[variant_id]
+    return replace(
+        results[0], instrumental=selected.path, selected_variant=variant_id,
+        variants=variants, cached=all(result.cached for result in results),
+        device=next((result.device for result in results if not result.cached), results[0].device),
+    )
 
 
 def doctor() -> int:
@@ -140,6 +208,12 @@ def main(argv=None) -> int:
             path = export_magic(json.loads(args.request.read_text(encoding="utf-8")), progress)
             emit("magic_result", path=str(path))
             return 0
+        if args.command == "magic-import":
+            from .magic_import import import_magic
+
+            imported = import_magic(args.input, Paths(args.root.resolve()), progress)
+            emit("magic_imported", **imported)
+            return 0
         if args.command == "gp-prepare":
             from .gp_collection import prepare_all_gp
 
@@ -148,9 +222,30 @@ def main(argv=None) -> int:
             emit("gp_prepared", **{k: v for k, v in info.items() if k not in {"bars", "files"}})
             return 0
         if args.command == "pitch":
+            from .audio import inspect_audio
+            from .cache import hash_file
             from .transpose import prepare_pitch
 
+            if args.expected_sha256 is not None:
+                import re
+
+                if not re.fullmatch(r"[a-f0-9]{64}", args.expected_sha256):
+                    raise ValueError("저장된 음원 검증 정보가 올바르지 않습니다.")
+                if hash_file(args.input) != args.expected_sha256:
+                    raise ValueError(
+                        "저장된 음원이 변경되었습니다. 곡을 다시 준비하거나 .magic을 다시 여세요."
+                    )
+                info = inspect_audio(args.input, scan=True)
+                if (info["frames"] != args.expected_frames or info["sample_rate"] != 44100):
+                    raise ValueError("저장된 음원의 길이가 다릅니다. 곡을 다시 준비하세요.")
             path = prepare_pitch(args.input, Paths(args.root.resolve()), args.semitones, progress)
+            if args.expected_sha256 is not None and hash_file(args.input) != args.expected_sha256:
+                raise ValueError("준비 중 음원이 변경되었습니다. 다시 시도하세요.")
+            if args.expected_sha256 is not None:
+                prepared = inspect_audio(path)
+                if (prepared["frames"] != args.expected_frames
+                        or prepared["sample_rate"] != 44100 or prepared["channels"] != 2):
+                    raise ValueError("준비한 음원의 재생 길이가 다릅니다. 곡을 다시 준비하세요.")
             emit("pitch_result", path=str(path), semitones=args.semitones)
             return 0
         if args.command == "score-analyze":
@@ -206,18 +301,19 @@ def main(argv=None) -> int:
             emit("score_result", path=str(path), message=f"악보 분석 저장: {path}")
             return 0
         from .audio import discover
-        from .pipeline import process
 
         paths = Paths(args.root.resolve())
         paths.create()
         sources = discover(paths.targets) if args.all else [args.input]
         if not sources:
             raise ValueError(f"음원이 없습니다. {paths.targets}에 음원을 넣으세요.")
-        settings = Settings(args.model, args.device, args.low_memory)
         failed = 0
         for source in sources:
             try:
-                result = process(source, settings, paths, progress, offline=args.offline)
+                result = prepare_audio_options(
+                    source, args.model, args.device, args.low_memory, paths, progress,
+                    variant_id=args.variant, prepare_all=args.all_variants, offline=args.offline,
+                )
                 emit("result", **result.to_dict(), message=f"준비 완료: {result.instrumental}")
             except Exception as error:
                 failed += 1

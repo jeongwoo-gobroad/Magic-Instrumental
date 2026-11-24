@@ -14,7 +14,7 @@ from practice_player.config import ROOT
 
 @pytest.mark.integration
 @pytest.mark.skipif(os.environ.get("RUN_MODEL_TESTS") != "1", reason="Real weights opt-in")
-@pytest.mark.parametrize("model", ["hyperace", "deux"])
+@pytest.mark.parametrize("model", ["hyperace", "deux", "leap", "sw6", "mega"])
 @pytest.mark.parametrize("low_memory", [False, True])
 def test_real_model(tone, tmp_path, model, low_memory):
     # Cross the actual chunk boundary, including the final partial chunk.
@@ -45,15 +45,28 @@ def test_real_model(tone, tmp_path, model, low_memory):
         str(tmp_path),
         "--model",
         model,
+        "--all-variants",
         "--events",
     ]
     if low_memory:
         args.append("--low-memory")
+    if model == "mega":
+        args.extend(["--variant", "keys"])
     result = subprocess.run(args, capture_output=True, text=True, timeout=600, encoding="utf-8")
     assert result.returncode == 0, result.stdout[-3000:] + result.stderr[-6000:]
     event = json.loads(result.stdout.split("@@PRACTICE@@")[-1])
     assert event["device"] in {"mps", "cuda", "cpu"}
     assert not event["cached"]
+    assert event["source_frames"] == 44100 * duration
+    expected = {"no_vocals", "vocals", "original"}
+    if model == "sw6":
+        expected.update({"guitar", "no_guitar", "drums", "no_drums", "bass", "no_bass",
+                         "piano", "no_piano"})
+    elif model == "mega":
+        expected = {"keys", "no_keys", "synth", "no_synth", "original"}
+    assert set(event["variants"]) == expected
+    for option in event["variants"].values():
+        assert option["frames"] == 44100 * duration
     hit = subprocess.run(
         args + ["--offline"], capture_output=True, text=True, timeout=20, encoding="utf-8"
     )

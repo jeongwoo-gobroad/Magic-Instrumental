@@ -189,8 +189,16 @@ class PdfView(QScrollArea):
     def load(self, path):
         import pypdfium2
 
+        self.load_document(pypdfium2.PdfDocument(str(path)))
+
+    def load_pages(self, pages):
+        from .page_images import PageImages
+
+        self.load_document(PageImages(pages))
+
+    def load_document(self, document):
         self.clear()
-        self.document = pypdfium2.PdfDocument(str(path))
+        self.document = document
         if not 1 <= len(self.document) <= 200:
             self.clear()
             raise ValueError("1~200페이지의 PDF가 필요합니다.")
@@ -399,6 +407,7 @@ class ScorePanel(QWidget):
         self.gp_info = None
         self.timeline = None
         self.timeline_path = None
+        self.portable_bundle = None
         self.busy = False
         self.current_index = None
         self._follow_index = None
@@ -414,6 +423,7 @@ class ScorePanel(QWidget):
         layout.setContentsMargins(8, 10, 8, 10)
         tools = QWidget()
         setup = QVBoxLayout(tools)
+        self.tools, self.setup = tools, setup
         setup.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(tools)
         row = QHBoxLayout()
@@ -431,6 +441,7 @@ class ScorePanel(QWidget):
         row.addWidget(folder)
         setup.addLayout(row)
         self.name = QLabel("곡을 준비하면 같은 이름의 악보를 찾습니다.")
+        self.name.setTextFormat(Qt.TextFormat.PlainText)
         self.name.setWordWrap(True)
         setup.addWidget(self.name)
         self.parts = QComboBox()
@@ -450,6 +461,7 @@ class ScorePanel(QWidget):
         row.addWidget(self.review)
         setup.addLayout(row)
         self.status = QLabel("재생 전에 기호 인식과 음원 정렬을 완료하세요.")
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         self.status.setObjectName("muted")
         self.status_area = status_area(self.status, "악보 분석 상태")
@@ -485,6 +497,7 @@ class ScorePanel(QWidget):
         )
         row.addWidget(self.highlight)
         self.measure = QLabel("현재 마디 · 회차")
+        self.measure.setTextFormat(Qt.TextFormat.PlainText)
         self.measure.setWordWrap(True)
         self.measure_area = status_area(self.measure, "현재 마디와 반복 회차")
         self.measure.setText("—")
@@ -553,16 +566,23 @@ class ScorePanel(QWidget):
         self.on_position(self.player.position() if self.player else self.last_position)
 
     def bind_track(self, audio, source_hash):
-        if self.source_hash != source_hash:
+        if self.source_hash != source_hash or self.portable_bundle is not None:
             self.clear_score()
         self.audio, self.source_hash = Path(audio), source_hash
         self.find_pdf()
 
     def clear_score(self):
+        if self.portable_bundle is not None:
+            self.layout().removeWidget(self.parts)
+            self.setup.insertWidget(2, self.parts)
+            self.tools.setVisible(not self.tools_toggle.isChecked())
+            self.tools_toggle.show()
+        self.portable_bundle = None
         self.pdf = self.timeline = self.timeline_path = self.current_index = None
         self._follow_index = None
         self.gp_source = self.gp_info = None
         self.parts.setVisible(False)
+        self.parts.setToolTip("")
         self.view.clear()
         self.page.setRange(1, 1)
         self.page.setSuffix("")
@@ -650,10 +670,66 @@ class ScorePanel(QWidget):
         self.timeline_changed.emit()
 
     def change_part(self, _index):
+        if self.portable_bundle is not None and not self.busy:
+            try:
+                self.open_portable_part(self.parts.currentData())
+            except (OSError, ValueError, KeyError, TypeError, StopIteration) as error:
+                self.status.setText(f"저장된 악보를 열지 못했습니다. .magic을 다시 여세요: {error}")
+            return
         if self.gp_source and not self.busy:
             self.gp_prepare_requested.emit(
                 {"gp": str(self.gp_source), "gp-track": self.parts.currentData()}
             )
+
+    def bind_portable(self, bundle):
+        self.clear_score()
+        self.portable_bundle = bundle
+        # Stored scores need only part selection; omit source-analysis controls.
+        self.setup.removeWidget(self.parts)
+        self.layout().insertWidget(1, self.parts)
+        self.tools.hide()
+        self.tools_toggle.hide()
+        self.source_hash = bundle["archive_hash"]
+        self.audio = None
+        self.parts.blockSignals(True)
+        self.parts.clear()
+        for part in bundle["parts"]:
+            self.parts.addItem(
+                part["name"] + (" · 타악기" if part["percussion"] else ""), part["track"]
+            )
+        self.parts.blockSignals(False)
+        self.parts.setToolTip("파일에 함께 저장된 악보 파트를 선택합니다. 재분석하지 않습니다.")
+        self.parts.setVisible(bundle["score"]["kind"] == "gp")
+        self.name.setText(bundle["title"] + " · .magic에 저장된 악보")
+        self.name.setToolTip("")
+        self.open_portable_part(bundle["default_part"])
+
+    def open_portable_part(self, track):
+        bundle = self.portable_bundle
+        if bundle is None:
+            return
+        part = next(item for item in bundle["parts"] if item["track"] == track)
+        plan = ScoreTimeline.load(Path(part["timeline"]))
+        if (plan.data["audio_sha256"] != bundle["archive_hash"]
+                or plan.data["pdf_sha256"] != part["page_inventory_sha256"]):
+            raise ValueError("저장된 악보가 변경되었습니다. .magic 파일을 다시 여세요.")
+        self.view.load_pages(part["pages"])
+        self.timeline = plan
+        self.timeline_path = Path(part["timeline"])
+        self.current_index = self._follow_index = None
+        self.parts.setCurrentIndex(self.parts.findData(track))
+        self.page.blockSignals(True)
+        self.page.setRange(1, len(part["pages"]))
+        self.page.setSuffix(f" / {len(part['pages'])}")
+        self.page.setValue(1)
+        self.page.blockSignals(False)
+        state = "보정 저장됨" if plan.data.get("reviewed") else "시간표 확인 권장"
+        self.status.setText(f"저장된 악보 · {len(plan.cues)}개 연주 마디 · {state}")
+        self.status.setToolTip("\n".join(plan.data.get("warnings", [])))
+        self.set_busy(self.busy)
+        self.update_view_status()
+        self.on_position(self.player.position() if self.player else self.last_position)
+        self.timeline_changed.emit()
 
     def accept_gp(self, info):
         self.open_pdf(Path(info["pdf"]), prepared=info)
@@ -734,10 +810,14 @@ class ScorePanel(QWidget):
 
     def set_busy(self, busy):
         self.busy = busy
-        self.choose.setEnabled(not busy and self.audio is not None)
-        self.refresh.setEnabled(not busy and self.audio is not None)
-        self.analyze.setEnabled(not busy and self.pdf is not None)
-        self.review.setEnabled(not busy and self.timeline is not None)
+        editable = self.portable_bundle is None
+        self.choose.setEnabled(not busy and editable and self.audio is not None)
+        self.refresh.setEnabled(not busy and editable and self.audio is not None)
+        self.analyze.setEnabled(not busy and editable and self.pdf is not None)
+        self.review.setEnabled(not busy and editable and self.timeline is not None)
+        self.review.setToolTip(
+            "원본 곡에서 보정한 뒤 .magic을 다시 저장하면 반영됩니다." if not editable else ""
+        )
         self.parts.setEnabled(not busy)
         if not busy and self.gp_info:
             self.parts.setCurrentIndex(self.parts.findData(self.gp_info["metadata"]["track"]))

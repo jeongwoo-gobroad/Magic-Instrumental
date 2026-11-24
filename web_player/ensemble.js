@@ -38,7 +38,7 @@ class Ensemble {
   error(error) { this.status(error?.message || '합주 연결을 확인해 주세요.'); }
   media() {
     requireMagic(archive, '먼저 연습할 .magic 파일을 열어 주세요.');
-    return {source: archive.manifest.audio.source_sha256 || archive.manifest.entries[archive.manifest.audio.path].sha256, duration};
+    return {source: archive.activeAudio.source_sha256 || archive.manifest.entries[archive.activeAudio.path].sha256, duration};
   }
   async api(path, options = {}) {
     const response = await fetch(this.base + path, {...options, cache: 'no-store',
@@ -188,7 +188,7 @@ class Ensemble {
   }
   snapshot(target = nowPosition()) {
     return {position: target, rate: number('speed',25,200,100)/100,
-      key: Number($('key').value) + archive.manifest.audio.pitch_semitones,
+      key: Number($('key').value) + archive.activeAudio.pitch_semitones,
       bpm: number('bpm',20,400,120), beats: number('beats',1,16,4), unit: Number($('unit').value),
       origin: number('origin',-30,1800,0), count: $('count').checked,
       countBars: Number($('countBars').value), loop: $('loop').checked ? loopBounds() : null,
@@ -205,7 +205,7 @@ class Ensemble {
     requireMagic(this.prepared && ready && ctx?.state === 'running' && !document.hidden, '합주 준비를 다시 눌러 주세요.');
     const wait = (data.at - this.serverNow()) / 1000;
     requireMagic(wait >= latency + .2 && wait <= 6, '예약이 늦게 도착했습니다. 네트워크를 확인한 뒤 다시 시작하세요.');
-    const extra = data.state.key - archive.manifest.audio.pitch_semitones;
+    const extra = data.state.key - archive.activeAudio.pitch_semitones;
     requireMagic(extra >= -12 && extra <= 12, '반주에 저장된 키 차이가 너무 큽니다. 리더가 공유한 파일을 열어 주세요.');
     this.seq = data.seq;
     this.pending = {data, at: ctx.currentTime + wait, armed:false, next:null};
@@ -216,7 +216,7 @@ class Ensemble {
     this.remoteState = state;
     for (const id of ['bpm','beats','unit','origin','countBars']) $(id).value = state[id];
     for (const id of ['count','loopCount']) $(id).checked = state[id];
-    $('key').value = state.key - archive.manifest.audio.pitch_semitones;
+    $('key').value = state.key - archive.activeAudio.pitch_semitones;
     $('speed').value = state.rate * 100;
     $('speedText').textContent = state.rate.toFixed(2) + '×';
     $('linked').checked = true; updateMetro(); updateKey();
@@ -249,7 +249,7 @@ class Ensemble {
     this.update();
   }
   async share() {
-    requireMagic(this.role === 'leader' && [2, 3].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
+    requireMagic(this.role === 'leader' && [2, 3, 4].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
     if (this.uploading) return;
     const generation = this.generation;
     this.uploading = true; this.update(); this.status('멤버에게 공유할 파일을 서버로 보내고 있습니다…');
@@ -340,13 +340,14 @@ class Ensemble {
     $('sessionPrepare').textContent = $('ensembleReady').textContent;
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
-    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
+    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
     $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
+    $('audioVariant').disabled = !ready || loading || this.busy || !!this.downloadTask;
     $('linked').disabled = active;
-    for (const id of ensembleTransport) $(id).disabled = !ready || member || (leader && (!this.prepared || !this.allReady() || !!this.pending));
-    for (const id of ensembleSettings) $(id).disabled = member || (leader && (playing || !!this.pending)) || (['loop','loopStart','loopEnd'].includes(id) && !ready);
+    for (const id of ensembleTransport) $(id).disabled = !ready || loading || member || (leader && (!this.prepared || !this.allReady() || !!this.pending));
+    for (const id of ensembleSettings) $(id).disabled = loading || member || (leader && (playing || !!this.pending)) || (['loop','loopStart','loopEnd'].includes(id) && !ready);
     $('ensembleRules').hidden = !active;
   }
   bindTransport() {

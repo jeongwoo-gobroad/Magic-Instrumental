@@ -46,6 +46,7 @@ from .metronome import MetronomeBar
 from .region_loop import RegionLoop
 from .score_gui import ScorePanel
 from .updates import UpdateBar, open_updater
+from .variants import SUPPORTED_VARIANTS, variant_label
 
 STYLE = """
 QWidget { background: #11151d; color: #e7edf7; font-size: 14px; }
@@ -84,6 +85,17 @@ def time_label(milliseconds: int) -> str:
     return f"{seconds // 60:02d}:{seconds % 60:02d}"
 
 
+def export_variant_request(item):
+    request = {key: item[key] for key in ("id", "label", "mode", "target", "path")}
+    # Keep the prepared cache identity; a later export must not bless changed bytes.
+    if all(key in item for key in ("sha256", "source_hash", "frames")):
+        request.update(
+            expected_sha256=item["sha256"], expected_source_sha256=item["source_hash"],
+            expected_frames=item["frames"],
+        )
+    return request
+
+
 class Window(QMainWindow):
     def __init__(self, paths: Paths | None = None):
         super().__init__()
@@ -110,6 +122,17 @@ class Window(QMainWindow):
         self.source_name = ""
         self.source_path = None
         self.pending_source = None
+        self.loaded_source_hash = None
+        self.prepared_variants = {}
+        self.selected_variant = "no_vocals"
+        self.imported_bundle = None
+        self.base_pitch_semitones = 0
+        self._pending_variant = None
+        self._variant_restore = None
+        self._pending_magic = None
+        self._prepare_restore = None
+        self._magic_export_ids = None
+        self._magic_export_default = None
         self.preferences = QSettings(
             str(self.paths.processed / "ui.ini"), QSettings.Format.IniFormat
         )
@@ -129,6 +152,8 @@ class Window(QMainWindow):
         self.region_timer.setInterval(5)
         self.region_timer.timeout.connect(self.check_region)
         self.build_ui()
+        self.current_track.setTextFormat(Qt.TextFormat.PlainText)
+        self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.connect_player()
         self.refresh_tracks()
         self.set_busy(False)
@@ -150,7 +175,8 @@ class Window(QMainWindow):
         self.theme.currentIndexChanged.connect(self.apply_theme)
         heading.addWidget(self.theme)
         layout.addLayout(heading)
-        subtitle = QLabel("보컬은 덜어내고, 나의 속도로 연습하세요.")
+        subtitle = QLabel("보컬·기타·드럼·베이스·키보드, 필요한 소리를 골라 연습하세요.")
+        subtitle.setWordWrap(True)
         subtitle.setObjectName("subtitle")
         layout.addWidget(subtitle)
         splitter = QSplitter(Qt.Orientation.Vertical)
@@ -180,11 +206,30 @@ class Window(QMainWindow):
         )
         buttons.addWidget(folder)
         left.addLayout(buttons)
+        self.open_magic_button = QPushButton(".magic 연습 파일 열기")
+        self.open_magic_button.setObjectName("openMagicFile")
+        self.open_magic_button.clicked.connect(self.choose_magic)
+        left.addWidget(self.open_magic_button)
         splitter.addWidget(library)
         panel = QWidget()
         right = QVBoxLayout(panel)
         right.setContentsMargins(6, 0, 0, 0)
         right.setSpacing(7)
+        target_row = QHBoxLayout()
+        target_row.addWidget(QLabel("준비할 음원"))
+        self.separation_variant = QComboBox()
+        self.separation_variant.setObjectName("separationVariant")
+        self.separation_variant.setAccessibleName("준비할 음원 선택")
+        for identifier in SUPPORTED_VARIANTS:
+            self.separation_variant.addItem(variant_label(identifier), identifier)
+        target_row.addWidget(self.separation_variant, 1)
+        right.addLayout(target_row)
+        self.separation_hint = QLabel()
+        self.separation_hint.setWordWrap(True)
+        self.separation_hint.setObjectName("muted")
+        right.addWidget(self.separation_hint)
+        self.separation_variant.currentIndexChanged.connect(self.update_separation_hint)
+        self.update_separation_hint()
         self.advanced_button = QPushButton("▸ 반주 만들기 설정")
         self.advanced_button.setCheckable(True)
         right.addWidget(self.advanced_button)
@@ -199,9 +244,16 @@ class Window(QMainWindow):
         )
         right.addWidget(advanced)
         self.models = QComboBox()
+        self.models.addItem("자동 추천 · 파트별 모델 선택", "auto")
         for key, model in MODELS.items():
             self.models.addItem(model.label, key)
         advanced_layout.addWidget(self.models)
+        model_terms = QLabel(
+            '<a href="https://github.com/jeongwoo-gobroad/Magic-Instrumental/'
+            'blob/main/docs/SEPARATION_MODELS.md">모델 비교·이용 조건</a>'
+        )
+        model_terms.setOpenExternalLinks(True)
+        advanced_layout.addWidget(model_terms)
         options = QHBoxLayout()
         self.devices = QComboBox()
         for label, value in [
@@ -219,7 +271,7 @@ class Window(QMainWindow):
         options.addWidget(self.low_memory)
         advanced_layout.addLayout(options)
         actions = QHBoxLayout()
-        self.prepare_button = QPushButton("선택한 곡의 반주 준비")
+        self.prepare_button = QPushButton("선택한 음원 준비")
         self.prepare_button.setObjectName("primary")
         self.prepare_button.clicked.connect(self.prepare)
         actions.addWidget(self.prepare_button, 1)
@@ -228,8 +280,17 @@ class Window(QMainWindow):
         self.cancel_button.clicked.connect(self.cancel_job)
         actions.addWidget(self.cancel_button)
         right.addLayout(actions)
+        self.prepare_all_button = QPushButton("모든 파트 함께 준비")
+        self.prepare_all_button.setObjectName("prepareAllVariants")
+        self.prepare_all_button.setToolTip(
+            "보컬·기타·드럼·베이스·키보드, 피아노와 신시사이저를 각각 듣거나 "
+            "뺀 반주를 함께 준비합니다. "
+            "이미 준비한 결과는 검증한 뒤 다시 사용합니다."
+        )
+        self.prepare_all_button.clicked.connect(lambda: self.prepare(all_variants=True))
+        right.addWidget(self.prepare_all_button)
         self.status = QLabel(
-            "위 목록에서 곡을 선택하고 ‘반주 준비’를 누르세요. 처음에는 다운로드가 필요합니다."
+            "곡과 준비할 음원을 선택하세요. 여러 음원은 ‘함께 준비’로 한 번에 만들 수 있습니다."
         )
         self.status.setWordWrap(True)
         self.status.setMinimumHeight(42)
@@ -239,11 +300,25 @@ class Window(QMainWindow):
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
         right.addWidget(self.progress)
-        self.current_track = QLabel("재생할 인스트루먼탈을 준비하세요")
+        self.current_track = QLabel("재생할 음원을 준비하거나 .magic 파일을 여세요")
         self.current_track.setObjectName("track")
         self.current_track.setWordWrap(True)
         right.addWidget(self.separator())
         right.addWidget(self.current_track)
+        playback_row = QHBoxLayout()
+        playback_row.addWidget(QLabel("재생 음원"))
+        self.playback_variants = QComboBox()
+        self.playback_variants.setObjectName("playbackVariant")
+        self.playback_variants.setAccessibleName("준비된 재생 음원 선택")
+        self.playback_variants.activated.connect(self.change_variant)
+        playback_row.addWidget(self.playback_variants, 1)
+        right.addLayout(playback_row)
+        self.variant_hint = QLabel(
+            "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
+        )
+        self.variant_hint.setWordWrap(True)
+        self.variant_hint.setObjectName("muted")
+        right.addWidget(self.variant_hint)
         self.seek = QSlider(Qt.Orientation.Horizontal)
         self.seek.setRange(0, 0)
         self.seek.setAccessibleName("재생 위치")
@@ -322,7 +397,8 @@ class Window(QMainWindow):
         self.pitch.toggled.connect(self.player.setPitchCompensation)
         right.addWidget(self.pitch)
         key_row = QHBoxLayout()
-        key_row.addWidget(QLabel("반주 키"))
+        self.key_label = QLabel("반주 키")
+        key_row.addWidget(self.key_label)
         self.key = QSpinBox()
         self.key.setRange(-12, 12)
         self.key.setSuffix(" 반음")
@@ -350,7 +426,7 @@ class Window(QMainWindow):
         self.export_button.clicked.connect(self.export_audio)
         right.addWidget(self.separator())
         right.addWidget(self.export_button)
-        self.magic_button = QPushButton("태블릿으로 가져가기 · .magic 저장")
+        self.magic_button = QPushButton("PC·태블릿으로 가져가기 · .magic 저장")
         self.magic_button.setToolTip(
             "현재 반주 키, GP 전체 파트(또는 PDF)와 분석 결과를 한 파일로 저장합니다."
         )
@@ -440,6 +516,9 @@ class Window(QMainWindow):
         self.player.sourceChanged.connect(self.region_source_changed)
         self.player.durationChanged.connect(lambda _: self.refresh_region())
         self.player.seekableChanged.connect(lambda _: self.refresh_region())
+        self.player.seekableChanged.connect(
+            lambda _: self.restore_pitch_position(self.player.mediaStatus())
+        )
         self.player.errorOccurred.connect(
             lambda _, message: self.show_error(f"재생 오류: {message}")
         )
@@ -457,7 +536,14 @@ class Window(QMainWindow):
         selected = self.tracks.currentItem()
         old_path = selected.data(Qt.ItemDataRole.UserRole) if selected else None
         self.tracks.clear()
-        files = discover(self.paths.targets)
+        portable = [
+            path for path in self.paths.targets.rglob("*")
+            if path.is_file() and path.suffix.lower() == ".magic"
+        ]
+        files = sorted(
+            [*discover(self.paths.targets), *portable],
+            key=lambda path: str(path.relative_to(self.paths.targets)).casefold(),
+        )
         for path in files:
             item = QListWidgetItem(str(path.relative_to(self.paths.targets)))
             item.setData(Qt.ItemDataRole.UserRole, str(path))
@@ -471,7 +557,20 @@ class Window(QMainWindow):
             f"{len(files)}곡" if files else "음원 폴더에 파일을 넣고 새로고침하세요."
         )
 
-    def prepare(self):
+    def update_separation_hint(self, _index=None):
+        target = str(self.separation_variant.currentData()).removeprefix("no_")
+        explanations = {
+            "keys": "키보드는 피아노·오르간 등 건반 파트입니다. "
+            "전자 합성음은 ‘신시사이저’를 선택하세요.",
+            "piano": "피아노를 따로 분리합니다. 오르간 등 다른 건반도 포함하려면 "
+            "‘키보드’를 선택하세요.",
+            "synth": "실험적 분리입니다. 신스 베이스·패드·전자 타악기 등 "
+            "전자 합성음이 함께 포함될 수 있습니다.",
+        }
+        self.separation_hint.setText(explanations.get(target, ""))
+        self.separation_hint.setVisible(target in explanations)
+
+    def prepare(self, _checked=False, *, all_variants=False):
         if self.worker:
             return
         selected = self.tracks.currentItem()
@@ -479,7 +578,9 @@ class Window(QMainWindow):
             self.status.setText("음원 폴더에 파일을 넣고, 새로고침 후 곡을 선택하세요.")
             return
         source = selected.data(Qt.ItemDataRole.UserRole)
-        self.source_name = Path(source).name
+        if Path(source).suffix.lower() == ".magic":
+            self.import_magic(Path(source))
+            return
         self.pending_source = Path(source)
         args = [
             "separate",
@@ -488,14 +589,39 @@ class Window(QMainWindow):
             "--root",
             str(self.paths.root),
             "--model",
-            self.models.currentData(),
+            "auto" if all_variants else self.models.currentData(),
+            "--variant",
+            self.separation_variant.currentData(),
             "--device",
             self.devices.currentData(),
             "--events",
         ]
         if self.low_memory.isChecked():
             args.append("--low-memory")
+        if all_variants:
+            args.append("--all-variants")
+        self._prepare_restore = self.capture_variant_position()
+        self.player.pause()
         self.start_job(args)
+
+    def choose_magic(self):
+        if self.worker:
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self, ".magic 연습 파일 열기", str(self.paths.root), "Magic 연습 파일 (*.magic)"
+        )
+        if filename:
+            self.import_magic(Path(filename))
+
+    def import_magic(self, source):
+        if self.worker:
+            return
+        self._pending_magic = Path(source)
+        self._prepare_restore = self.capture_variant_position()
+        self.player.pause()
+        self.start_job([
+            "magic-import", "--input", str(source), "--root", str(self.paths.root), "--events",
+        ])
 
     def start_job(self, args):
         if self.worker:
@@ -576,6 +702,7 @@ class Window(QMainWindow):
             "gp_prepared",
             "pitch_result",
             "magic_result",
+            "magic_imported",
         ):
             self.job_result = data
         elif kind == "error":
@@ -602,6 +729,8 @@ class Window(QMainWindow):
             self.progress.setValue(100)
             if self.job_result["type"] == "result":
                 self.load_result(self.job_result)
+            elif self.job_result["type"] == "magic_imported":
+                self.load_imported(self.job_result)
             elif self.job_result["type"] == "gp_prepared":
                 self.score_panel.accept_gp(self.job_result)
                 self.status.setText("GP 파트가 준비되었습니다. 악보 사전 분석을 눌러 주세요.")
@@ -618,13 +747,54 @@ class Window(QMainWindow):
         else:
             self.progress.setValue(0)
             self.show_error(self.job_error or "처리에 실패했습니다. 아래 로그를 확인하세요.")
+        if self.cancelled or code != 0:
+            saved = self._variant_restore or self._prepare_restore
+            self._pending_variant = None
+            self._prepare_restore = None
+            self._variant_restore = saved
+            self.refresh_variant_choices()
+            if saved:
+                self.restore_variant_region()
+            else:
+                self.refresh_region()
         if self.close_pending:
             self.close()
 
     def load_result(self, result):
+        same_song = (
+            self.imported_bundle is None and self.loaded_source_hash is not None
+            and result.get("source_hash") == self.loaded_source_hash and self.base_instrumental
+        )
+        variants = result.get("variants") or {
+            "no_vocals": {
+                "id": "no_vocals", "label": variant_label("no_vocals"),
+                "target": "vocals", "mode": "without", "path": result["instrumental"],
+            }
+        }
+        self.prepared_variants = {**(self.prepared_variants if same_song else {}), **variants}
+        selected = result.get("selected_variant", "no_vocals")
+        if same_song:
+            if self.pending_source:
+                self.source_path = self.pending_source
+                self.source_name = self.pending_source.name
+                self.current_track.setText(self.source_name)
+                self.score_panel.audio = self.source_path
+            self.refresh_variant_choices()
+            self.begin_variant_switch(selected, restore=self._prepare_restore)
+            self._prepare_restore = None
+            return
         self._loading_track = True
         try:
+            self.imported_bundle = None
+            self.base_pitch_semitones = 0
+            self.loaded_source_hash = result.get("source_hash")
+            self.key_label.setText("반주 키")
+            self.selected_variant = selected
+            self._variant_restore = self._pending_variant = self._prepare_restore = None
+            if self.pending_source:
+                self.source_name = self.pending_source.name
             self._load_result(result)
+            self.refresh_variant_choices()
         finally:
             self._loading_track = False
             self.set_busy(self.worker is not None)
@@ -658,6 +828,115 @@ class Window(QMainWindow):
                 self.paths.processed / result["source_hash"] / "metronome.json"
             )
 
+    def load_imported(self, result):
+        descriptor = Path(result["bundle_path"])
+        try:
+            if descriptor.stat().st_size > 8_000_000:
+                raise ValueError("저장된 연습 파일 정보가 너무 큽니다.")
+            bundle = json.loads(descriptor.read_text(encoding="utf-8"))
+            if (bundle["format"] != "Magic-Instrumental-PC"
+                    or bundle["archive_hash"] != result["archive_hash"]):
+                raise ValueError("연습 파일의 준비 결과가 일치하지 않습니다.")
+            self._loading_track = True
+            self.count_in.cancel()
+            self.player.pause()
+            self._pending_variant = self._variant_restore = self._prepare_restore = None
+            self.imported_bundle = bundle
+            self.prepared_variants = {item["id"]: item for item in bundle["audio_variants"]}
+            self.selected_variant = bundle["default_audio_variant"]
+            selected = self.prepared_variants[self.selected_variant]
+            self.base_pitch_semitones = selected["pitch_semitones"]
+            self.key_label.setText("추가 키")
+            self.pitch_semitones = 0
+            self.key.setValue(0)
+            self.loaded_source_hash = result["archive_hash"]
+            self.source_path = self._pending_magic
+            self.source_name = bundle["title"]
+            self.pending_source = None
+            self.base_instrumental = self.output_path = Path(selected["path"])
+            self._pitch_pending = None
+            # Preferences belong to this actual archive, not its claimed recording identity.
+            preferences = descriptor.parent.parent
+            self.region.bind_track(preferences / "practice_loop.json")
+            metronome_settings = preferences / "metronome.json"
+            had_settings = metronome_settings.is_file()
+            self.metronome.bind_track(metronome_settings)
+            if not had_settings:
+                practice = bundle["practice"]
+                self.metronome.bpm.setValue(practice["bpm"])
+                self.metronome.beats.setValue(practice["beats"])
+                self.metronome.unit.setCurrentIndex(self.metronome.unit.findData(practice["unit"]))
+                self.metronome.origin.setValue(practice["origin"])
+            self.score_panel.bind_portable(bundle)
+            self.player.setSource(QUrl.fromLocalFile(str(self.output_path)))
+            self.player.setPlaybackRate(self.speed.value() / 100)
+            self.current_track.setText(self.source_name)
+            self.refresh_variant_choices()
+            self.status.setText(
+                ("캐시에서 .magic 열기 완료" if result["cached"] else ".magic 열기 완료")
+                + " · 재생 음원과 악보 파트를 골라 연습하세요."
+            )
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            self.show_error(f".magic 열기 실패: {error}")
+        finally:
+            self._loading_track = False
+            self.set_busy(self.worker is not None)
+
+    def refresh_variant_choices(self):
+        self.playback_variants.blockSignals(True)
+        self.playback_variants.clear()
+        for identifier in SUPPORTED_VARIANTS:
+            if identifier in self.prepared_variants:
+                self.playback_variants.addItem(
+                    self.prepared_variants[identifier]["label"], identifier
+                )
+        self.playback_variants.setCurrentIndex(self.playback_variants.findData(self.selected_variant))
+        self.playback_variants.blockSignals(False)
+        self.playback_variants.setEnabled(not self.worker and len(self.prepared_variants) > 1)
+        base = (
+            f"파일에 적용된 키 {self.base_pitch_semitones:+d}반음 · "
+            if self.imported_bundle else ""
+        )
+        if self.selected_variant in {"synth", "no_synth"}:
+            base += "실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. "
+        elif self.selected_variant in {"keys", "no_keys"}:
+            base += "키보드에는 피아노·오르간 등 건반 계열이 포함됩니다. "
+        self.variant_hint.setText(
+            base + "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
+        )
+
+    def capture_variant_position(self):
+        return {
+            "position": self.player.position(), "first": self.region.first.currentData(),
+            "last": self.region.last.currentData(), "enabled": self.region.enabled.isChecked(),
+        }
+
+    def change_variant(self, _index):
+        identifier = self.playback_variants.currentData()
+        if (not self.worker and identifier in self.prepared_variants
+                and identifier != self.selected_variant):
+            self.begin_variant_switch(identifier)
+
+    def begin_variant_switch(self, identifier, *, restore=None):
+        if self.worker or identifier not in self.prepared_variants:
+            return
+        item = self.prepared_variants[identifier]
+        self._variant_restore = restore or self.capture_variant_position()
+        self._pitch_position = self._variant_restore["position"]
+        self._pending_variant = identifier
+        self.refresh_variant_choices()
+        self.count_in.cancel()
+        self.player.pause()
+        args = [
+            "pitch", "--input", item["path"], "--semitones", str(self.pitch_semitones),
+            "--root", str(self.paths.root), "--events",
+        ]
+        if item.get("sha256") and item.get("frames"):
+            args.extend([
+                "--expected-sha256", item["sha256"], "--expected-frames", str(item["frames"]),
+            ])
+        self.start_job(args)
+
     def analyze_score(self, options):
         if self.worker:
             return
@@ -682,11 +961,16 @@ class Window(QMainWindow):
             self.prepare_button,
             self.tracks,
             self.refresh_button,
+            self.open_magic_button,
+            self.separation_variant,
+            self.prepare_all_button,
         ):
             widget.setEnabled(not busy)
+        self.playback_variants.setEnabled(not busy and len(self.prepared_variants) > 1)
         self.cancel_button.setEnabled(busy)
         self.export_button.setEnabled(not busy and self.output_path is not None)
         self.score_panel.set_busy(busy)
+        self.region.setEnabled(not busy)
         self.key_apply.setEnabled(not busy and self.base_instrumental is not None)
         self.key.setEnabled(not busy)
         self.key_reset.setEnabled(not busy and self.base_instrumental is not None)
@@ -729,8 +1013,7 @@ class Window(QMainWindow):
         self.count_in.cancel()
         self.player.pause()
         self._pitch_position = self.player.position()
-        self.start_job(
-            [
+        args = [
                 "pitch",
                 "--root",
                 str(self.paths.root),
@@ -740,11 +1023,20 @@ class Window(QMainWindow):
                 "--semitones",
                 str(self.key.value()),
             ]
-        )
+        item = self.prepared_variants.get(self.selected_variant, {})
+        if item.get("sha256") and item.get("frames"):
+            args.extend([
+                "--expected-sha256", item["sha256"], "--expected-frames", str(item["frames"]),
+            ])
+        self.start_job(args)
 
     def load_pitch(self, info):
         self._loading_track = True
         try:
+            if self._pending_variant is not None:
+                self.selected_variant = self._pending_variant
+                self.base_instrumental = Path(self.prepared_variants[self.selected_variant]["path"])
+                self._pending_variant = None
             self.output_path = Path(info["path"])
             self.pitch_semitones = info["semitones"]
             self.key.setValue(self.pitch_semitones)
@@ -754,10 +1046,14 @@ class Window(QMainWindow):
             self.player.setPosition(self._pitch_position)
             self.metronome.reanchor(self._pitch_position)
             self.status.setText(
-                f"반주 키 {self.pitch_semitones:+d}반음 · 재생을 눌러 이어서 연습하세요."
+                f"{variant_label(self.selected_variant)} · "
+                f"원곡 기준 키 {self.base_pitch_semitones + self.pitch_semitones:+d}반음 · "
+                "재생을 눌러 이어서 연습하세요."
             )
+            self.refresh_variant_choices()
         finally:
             self._loading_track = False
+        self.restore_pitch_position(self.player.mediaStatus())
         self.refresh_region()
 
     def reset_key(self):
@@ -765,6 +1061,8 @@ class Window(QMainWindow):
         self.change_key()
 
     def restore_pitch_position(self, status):
+        if self._loading_track or not self.player.isSeekable():
+            return
         if self._pitch_pending is not None and status in (
             QMediaPlayer.MediaStatus.LoadedMedia,
             QMediaPlayer.MediaStatus.BufferedMedia,
@@ -772,23 +1070,59 @@ class Window(QMainWindow):
             target, self._pitch_pending = self._pitch_pending, None
             self.player.setPosition(target)
             self.metronome.reanchor(target)
+        self.restore_variant_region()
+
+    def restore_variant_region(self):
+        saved = self._variant_restore
+        if (saved is None or self.worker or self._loading_track or self._pending_variant is not None
+                or self._pitch_pending is not None
+                or not self.player.isSeekable()
+                or self.player.mediaStatus() not in (
+                    QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia,
+                )):
+            return
+        self._variant_restore = None
+        self.refresh_region()
+        self._loading_track = True
+        try:
+            for combo, key in ((self.region.first, "first"), (self.region.last, "last")):
+                index = combo.findData(saved[key])
+                if index >= 0:
+                    combo.blockSignals(True)
+                    combo.setCurrentIndex(index)
+                    combo.blockSignals(False)
+            self.region.update_bounds()
+            if saved["enabled"] and self.region.enabled.isEnabled():
+                self.region.enabled.setChecked(True)
+        finally:
+            self._loading_track = False
+        self.score_panel.reset_follow()
+        self.score_panel.on_position(self.player.position())
 
     def update_export_controls(self):
         self.magic_button.setEnabled(
             not self.worker
             and self.output_path is not None
             and self.score_panel.timeline is not None
+            and self.imported_bundle is None
+        )
+        self.magic_button.setToolTip(
+            "가져온 .magic은 원래 파일 그대로 PC·웹으로 옮길 수 있습니다. "
+            "새 분리 결과나 악보 보정은 원본 곡에서 준비해 저장하세요."
+            if self.imported_bundle else "준비한 여러 음원과 악보를 한 파일에 저장합니다."
         )
 
     def export_magic(self):
-        if self.worker or not self.score_panel.timeline_path or not self.output_path:
+        if (self.worker or not self.score_panel.timeline_path or not self.output_path
+                or self.imported_bundle is not None):
             return
+        self._magic_export_ids = self._magic_export_default = None
         quality = self.magic_audio_options()
         if quality is None:
             return
         filename, _ = QFileDialog.getSaveFileName(
             self,
-            "태블릿용 연습 파일 저장",
+            "PC·태블릿용 연습 파일 저장",
             str(self.paths.root / (self.source_path.stem + ".magic")),
             "Magic 연습 파일 (*.magic)",
         )
@@ -809,6 +1143,18 @@ class Window(QMainWindow):
         audio_options = {"audio_format": audio_format}
         if bitrate:
             audio_options["mp3_bitrate_kbps"] = int(bitrate)
+        if self.prepared_variants:
+            identifiers = self._magic_export_ids or list(self.prepared_variants)
+            default = self._magic_export_default or self.selected_variant
+            if default not in identifiers:
+                default = identifiers[0]
+            audio_options.update(
+                audio_variants=[
+                    export_variant_request(self.prepared_variants[identifier])
+                    for identifier in identifiers
+                ],
+                default_audio_variant=default,
+            )
         self.player.pause()
         request = self.paths.processed / "magic-export-request.json"
         atomic_json(
@@ -837,7 +1183,7 @@ class Window(QMainWindow):
 
     def magic_audio_options(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("연습 파일 반주 음질")
+        dialog.setWindowTitle("연습 파일 음원과 음질")
         form = QFormLayout(dialog)
         description = QLabel(
             "MP3는 용량을 줄여 옮기기 편합니다. 높은 kbps를 고르면 음질과 파일 크기가 올라갑니다.\n"
@@ -856,15 +1202,69 @@ class Window(QMainWindow):
         index = quality.findData(saved)
         quality.setCurrentIndex(index if index >= 0 else quality.findData("mp3:256"))
         form.addRow("반주 음질", quality)
+        choices, first = None, None
+        if self.prepared_variants:
+            explanation = QLabel(
+                "함께 저장할 음원을 고르세요. 준비된 음원만 표시됩니다. "
+                "다른 악기도 넣으려면 먼저 ‘모든 파트 함께 준비’를 실행하세요."
+            )
+            explanation.setWordWrap(True)
+            form.addRow(explanation)
+            choices = QListWidget()
+            choices.setObjectName("magicAudioVariants")
+            choices.setAccessibleName("함께 저장할 음원")
+            choices.setMaximumHeight(190)
+            for identifier in SUPPORTED_VARIANTS:
+                if identifier in self.prepared_variants:
+                    item = QListWidgetItem(self.prepared_variants[identifier]["label"])
+                    item.setData(Qt.ItemDataRole.UserRole, identifier)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setCheckState(Qt.CheckState.Checked)
+                    choices.addItem(item)
+            form.addRow("저장할 음원", choices)
+            first = QComboBox()
+            first.setObjectName("magicDefaultVariant")
+            form.addRow("처음 재생할 음원", first)
+
+            def update_default():
+                previous = first.currentData() or self.selected_variant
+                first.clear()
+                for index in range(choices.count()):
+                    item = choices.item(index)
+                    if item.checkState() == Qt.CheckState.Checked:
+                        first.addItem(item.text(), item.data(Qt.ItemDataRole.UserRole))
+                index = first.findData(previous)
+                first.setCurrentIndex(index if index >= 0 else 0)
+
+            choices.itemChanged.connect(update_default)
+            update_default()
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.button(QDialogButtonBox.StandardButton.Save).setText("저장 위치 선택…")
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("취소")
-        buttons.accepted.connect(dialog.accept)
+
+        def accept():
+            if first is not None and first.count() == 0:
+                QMessageBox.information(
+                    dialog, "음원 선택", "함께 저장할 음원을 하나 이상 선택하세요."
+                )
+                return
+            dialog.accept()
+
+        buttons.accepted.connect(accept)
         buttons.rejected.connect(dialog.reject)
         form.addRow(buttons)
-        selected = quality.currentData() if dialog.exec() == QDialog.DialogCode.Accepted else None
+        selected = None
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected = quality.currentData()
+            if choices is not None:
+                self._magic_export_ids = [
+                    choices.item(index).data(Qt.ItemDataRole.UserRole)
+                    for index in range(choices.count())
+                    if choices.item(index).checkState() == Qt.CheckState.Checked
+                ]
+                self._magic_export_default = first.currentData()
         dialog.deleteLater()
         return selected
 
@@ -1001,7 +1401,7 @@ class Window(QMainWindow):
         self.position_changed(self.player.position())
 
     def refresh_region(self, *, busy=None):
-        if self._loading_track:
+        if self._loading_track or self._variant_restore is not None:
             return
         busy = self.worker is not None if busy is None else busy
         self.region.set_context(
@@ -1035,7 +1435,7 @@ class Window(QMainWindow):
             self.region_timer.start()
         else:
             self.region_timer.stop()
-        if reason == "enabled" and bounds:
+        if reason == "enabled" and bounds and not self._loading_track:
             self.player.pause()
             self.seek_to(bounds[0])
             self.region.save_selection()
@@ -1061,7 +1461,8 @@ class Window(QMainWindow):
             QMediaPlayer.MediaStatus.LoadingMedia,
         }:
             self._region_playing = False
-            if not self._region_transition:
+            if (not self._region_transition and not self._loading_track
+                    and self._variant_restore is None):
                 self.region.enabled.setChecked(False)
 
     def region_eof(self, generation):

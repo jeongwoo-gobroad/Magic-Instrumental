@@ -32,14 +32,22 @@ def ensure_model(
                 raise RuntimeError(
                     f"오프라인 모드: 모델 파일이 없거나 손상되었습니다: {destination}"
                 )
-            url = f"https://huggingface.co/{model.repo}/resolve/{model.revision}/{relative}"
+            base_url = model.download_base_url or (
+                f"https://huggingface.co/{model.repo}/resolve/{model.revision}"
+            )
+            url = f"{base_url.rstrip('/')}/{relative}"
             temporary = folder / f".{uuid.uuid4().hex}.download"
             try:
                 request = Request(url, headers={"User-Agent": "InstrumentalPractice/0.1"})
                 with urlopen(request, timeout=60) as response, temporary.open("wb") as output:
                     total = int(response.headers.get("Content-Length", "0"))
+                    maximum = 2 * 1024**3 if relative == model.weights else 2 * 1024**2
+                    if total < 0 or total > maximum:
+                        raise RuntimeError("모델 다운로드 크기가 허용 범위를 벗어났습니다.")
                     done = 0
                     while block := response.read(1024 * 1024):
+                        if done + len(block) > maximum:
+                            raise RuntimeError("모델 다운로드 크기가 허용 범위를 벗어났습니다.")
                         output.write(block)
                         done += len(block)
                         report(
