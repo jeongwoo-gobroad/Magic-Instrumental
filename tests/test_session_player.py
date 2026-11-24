@@ -2,8 +2,11 @@
 """Two actual browser participants, delayed commands and independent GP parts."""
 
 import asyncio
+import json
 import os
 import threading
+from contextlib import contextmanager
+from pathlib import Path
 
 import pytest
 from aiohttp import web
@@ -27,6 +30,129 @@ from tests.test_web_player import (  # noqa: F401
 
 pytestmark = pytest.mark.skipif(os.environ.get("RUN_WEB_TESTS") != "1",
                                 reason="RUN_WEB_TESTS=1 and browser runtimes required")
+
+
+def install_readiness_trace(page, participant):
+    page.evaluate("""participant => {
+      const history = [], limit = 160;
+      let discarded = 0, active = true;
+      const snapshot = () => {
+        const now = performance.now(), context = MagicPlayer.context();
+        return {
+          at: now, hidden: document.hidden, visibility: document.visibilityState,
+          focused: document.hasFocus(), simulatedHidden: window.simulatedHidden,
+          ready, loading, playing,
+          audio: {state: context?.state, time: context?.currentTime,
+            pending: audioPending, generation: audioGeneration,
+            task: !!audioTask, stretch: !!stretch,
+            resumeAllowed: window.audioResumeAllowed, resumeCalls: window.audioResumeCalls},
+          session: {role: ensemble.role, generation: ensemble.generation,
+            preparing: ensemble.preparing, wantsReady: ensemble.wantsReady,
+            prepared: ensemble.prepared, pending: !!ensemble.pending,
+            socket: ensemble.ws?.readyState, downloading: !!ensemble.downloadTask,
+            peers: ensemble.peers.map(peer => ({leader: peer.leader,
+              ready: peer.ready, connected: peer.connected})),
+            samples: ensemble.recentSamples().map(sample => ({
+              age: now - sample.sent, rtt: sample.rtt})),
+            probeAges: [...ensemble.probes.values()].map(sent => now - sent)},
+          ui: {disabled: $('sessionPrepare').disabled,
+            pressed: $('sessionPrepare').getAttribute('aria-pressed'),
+            label: $('sessionPrepare').textContent, live: $('sessionLive').textContent,
+            status: $('status').textContent,
+            fileError: $('status').classList.contains('file-error')}
+        };
+      };
+      const record = (event, message) => {
+        if (!active) return;
+        if (history.length === limit) { history.shift(); discarded++; }
+        history.push({event, ...(message ? {message: String(message).slice(0, 800)} : {}),
+          ...snapshot()});
+      };
+      const before = snapshot(), originals = new Map();
+      for (const name of ['prepare', 'error', 'unready', 'clearReady', 'syncReady']) {
+        const original = ensemble[name];
+        originals.set(name, original);
+        ensemble[name] = function (...args) {
+          record(name + ':start', name === 'error' ? args[0]?.message || args[0] : null);
+          let result;
+          try { result = original.apply(this, args); }
+          catch (error) { record(name + ':throw', error.message); throw error; }
+          if (result?.then) {
+            result.then(() => record(name + ':settled'),
+              error => record(name + ':rejected', error.message));
+          } else record(name + ':return');
+          // Observe completion without replacing the original action's promise.
+          return result;
+        };
+      }
+      const context = MagicPlayer.context();
+      const stateChanged = () => record('audio:statechange');
+      const visibilityChanged = () => record('visibilitychange');
+      const pageHidden = () => record('pagehide');
+      const pageShown = () => record('pageshow');
+      context?.addEventListener('statechange', stateChanged);
+      document.addEventListener('visibilitychange', visibilityChanged);
+      window.addEventListener('pagehide', pageHidden);
+      window.addEventListener('pageshow', pageShown);
+      record('phase:before');
+      const timer = setInterval(() => record('sample'), 500);
+      window.sessionReadinessTrace = {finish: () => {
+        record('phase:after');
+        const after = snapshot();
+        active = false; clearInterval(timer);
+        for (const [name, original] of originals) ensemble[name] = original;
+        context?.removeEventListener('statechange', stateChanged);
+        document.removeEventListener('visibilitychange', visibilityChanged);
+        window.removeEventListener('pagehide', pageHidden);
+        window.removeEventListener('pageshow', pageShown);
+        return {participant, before, after, history, discarded,
+          audioSessionEvents: (window.audioSessionEvents || []).slice(-32)};
+      }};
+    }""", participant)
+
+
+@contextmanager
+def readiness_diagnostics(participants, engine, errors):
+    for participant, page in participants:
+        install_readiness_trace(page, participant)
+    report = {"engine": engine, "phase": "prepare_after_foreground", "participants": []}
+    failure = None
+    try:
+        yield report
+    except Exception as error:
+        failure = error
+        raise
+    finally:
+        report.update(passed=failure is None, pageerrors=errors[-20:])
+        for participant, page in participants:
+            try:
+                report["participants"].append(page.evaluate("sessionReadinessTrace.finish()"))
+            except Exception as error:
+                report["participants"].append({"participant": participant,
+                                               "capture_error": str(error)[:1000]})
+        destination = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+        if destination:
+            try:
+                path = Path(destination)
+                path.mkdir(parents=True, exist_ok=True)
+                (path / f"session-readiness-{engine}.json").write_text(
+                    json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+            except OSError as error:
+                if failure is None:
+                    raise
+                report["artifact_error"] = str(error)
+        if failure is not None:
+            summary = {key: value for key, value in report.items() if key != "participants"}
+            summary["participants"] = [
+                {**{key: value for key, value in participant.items()
+                    if key in {"participant", "after", "capture_error", "discarded"}},
+                 "errors": [{key: event[key] for key in ("at", "event", "message")}
+                            for event in participant.get("history", []) if "message" in event][-8:]}
+                for participant in report["participants"]
+            ]
+            failure.add_note("Session readiness diagnostics:\n" +
+                             json.dumps(summary, ensure_ascii=False))
 
 
 @pytest.fixture(scope="module")
@@ -63,8 +189,11 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         second = browser.new_context(viewport={"width": 1180, "height": 820})
         leader, member = first.new_page(), second.new_page()
         errors = []
-        for page in (leader, member):
-            page.on("pageerror", lambda error: errors.append(str(error)))
+        participants = (("leader", leader), ("member", member))
+        for participant, page in participants:
+            page.on("pageerror", lambda error, participant=participant: errors.append(
+                {"participant": participant, "message": str(error)}
+            ))
             page.goto(web_url)
             page.locator("#ensemblePanel").evaluate("e => e.open = true")
             page.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
@@ -116,21 +245,23 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         assert member.locator("#highlightEnabled").is_checked()
         assert not leader.locator("#highlightEnabled").is_checked()
 
-        hold_resume_completion(member, "#sessionPrepare")
-        member.locator("#sessionPrepare").click()
-        member.wait_for_function("window.releaseResume !== null")
-        background_page(member)
-        member.wait_for_function("MagicPlayer.context().state === 'suspended'")
-        release_resume_after_foreground(member)
-        assert not member.evaluate("MagicEnsemble.state().prepared")
-        assert member.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
-        for page in (leader, member):
-            page.evaluate("window.audioSessionEvents = []")
-        for page in (leader, member):
-            page.locator("#sessionPrepare").click()
-        for page in (leader, member):
-            page.wait_for_function("MagicEnsemble.state().prepared")
-            assert_audio_session_order(page)
+        with readiness_diagnostics(participants, engine, errors) as diagnostic:
+            hold_resume_completion(member, "#sessionPrepare")
+            member.locator("#sessionPrepare").click()
+            member.wait_for_function("window.releaseResume !== null")
+            background_page(member)
+            member.wait_for_function("MagicPlayer.context().state === 'suspended'")
+            release_resume_after_foreground(member)
+            assert not member.evaluate("MagicEnsemble.state().prepared")
+            assert member.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
+            for page in (leader, member):
+                page.evaluate("window.audioSessionEvents = []")
+            for page in (leader, member):
+                page.locator("#sessionPrepare").click()
+            for participant, page in participants:
+                diagnostic["waiting_for"] = participant
+                page.wait_for_function("MagicEnsemble.state().prepared")
+                assert_audio_session_order(page)
         for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
             for page in (leader, member):
                 page.get_by_text("모두 준비 완료", exact=False).wait_for()
