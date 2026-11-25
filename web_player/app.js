@@ -13,6 +13,7 @@ let ready = false, loading = false, playing = false, metro = false, position = 0
 let segment = null, upcoming = null, latency = .1, independentOrigin = 0, clickUntil = 0;
 let shownPage = -1, pendingPage = -1, pageGeneration = 0, currentCue = -1, urls = new Map(), sources = new Set();
 let pageSlots = [], wantedPages = new Set(), pageLoads = new Map(), pageErrors = new Map();
+let paperViewHeight = 0;
 let followCue = -1, followTime = 0, followStamp = 0, followMotion = null;
 let token = 0, timer = null, wakeLock = null, seeking = false;
 let ensemble = null;
@@ -426,8 +427,10 @@ async function showPage(index) {
 function resizePaper() {
   if (!archive || !pageSlots.length) return;
   const paper = $('paper'), view = $('viewport');
-  const previous = pageSlots[pageAtHeight(view.scrollTop + view.clientHeight / 2 - paper.offsetTop)];
-  const fraction = previous.height ? (view.scrollTop + view.clientHeight / 2 - paper.offsetTop - previous.top) / previous.height : 0;
+  const previousHeight = paperViewHeight || view.clientHeight;
+  const previous = pageSlots[pageAtHeight(view.scrollTop + previousHeight / 2 - paper.offsetTop)];
+  const fraction = previous.height ? (view.scrollTop + previousHeight / 2 - paper.offsetTop - previous.top) / previous.height : 0;
+  paperViewHeight = view.clientHeight;
   const width = Math.max(200, view.clientWidth - 32) * Number($('zoom').value);
   const oldWidth = paper.clientWidth, oldHeight = previous.height;
   paper.style.width = width + 'px'; paper.style.minHeight = '0';
@@ -514,7 +517,7 @@ function clearScorePage() {
   paper.append(image, highlight);
   for (const slot of pageSlots) slot.element.remove();
   for (const url of urls.values()) URL.revokeObjectURL(url);
-  urls.clear(); pageSlots = []; wantedPages.clear(); pageLoads.clear(); pageErrors.clear();
+  urls.clear(); pageSlots = []; paperViewHeight = 0; wantedPages.clear(); pageLoads.clear(); pageErrors.clear();
   paper.classList.remove('continuous'); paper.removeAttribute('style');
 }
 function cancelAudioTask() {
@@ -552,7 +555,8 @@ function showAudioChoices() {
     option.textContent = variant.label; return option;
   }));
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
-  $('audioChoice').hidden = !archive || archive.audioVariants.length < 2;
+  $('audioChoice').hidden = !archive;
+  $('audioVariantCount').textContent = archive ? `파일에 저장된 음원 ${archive.audioVariants.length}개` : '';
   showAudioVariantHint();
 }
 function showAudioVariantHint() {
@@ -729,6 +733,35 @@ $('highlightEnabled').onchange = () => {
   try { localStorage.setItem('magic-measure-highlight', String($('highlightEnabled').checked)); } catch (_) {}
   showHighlight(archive?.timing.cues[cueAt(nowPosition())]);
 };
+// Move the same controls between layouts so playback and Session keep one state.
+const optionHomes = ['audioChoice', 'transportControls', 'status'].map(id => {
+  const element = $(id), home = document.createComment(id);
+  element.before(home); return {element, home};
+});
+function setOptionsVisible(visible, {persist = true} = {}) {
+  const sidebar = $('optionsSidebar'), active = document.activeElement;
+  const movedFocus = optionHomes.some(({element}) => element.contains(active));
+  const hiddenFocus = !visible && sidebar.contains(active);
+  document.body.classList.toggle('options-hidden', !visible);
+  sidebar.hidden = !visible; $('focusControls').hidden = visible;
+  for (const {element, home} of optionHomes) {
+    if (visible) home.after(element); else $('focusControls').append(element);
+  }
+  $('optionsToggle').textContent = visible ? '옵션 숨기기' : '옵션 펼치기';
+  $('optionsToggle').setAttribute('aria-expanded', String(visible));
+  if (persist) {
+    try { localStorage.setItem('magic-options-visible', String(visible)); } catch (_) {}
+  }
+  if (movedFocus) active.focus({preventScroll: true});
+  else if (hiddenFocus) $('optionsToggle').focus({preventScroll: true});
+  resizePaper();
+}
+$('optionsToggle').onclick = () => setOptionsVisible($('optionsSidebar').hidden);
+document.querySelector('.practice-links a[href="#playerControls"]').onclick = () => setOptionsVisible(true);
+let optionsVisible = true;
+try { optionsVisible = localStorage.getItem('magic-options-visible') !== 'false'; } catch (_) {}
+if (location.hash === '#ensemble' || new URLSearchParams(location.hash.slice(1)).has('join')) optionsVisible = true;
+setOptionsVisible(optionsVisible, {persist: false});
 function theme(mode) { document.documentElement.dataset.theme = mode; try { localStorage.setItem('magic-theme',mode); } catch (_) {} }
 try { theme(localStorage.getItem('magic-theme') || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')); } catch (_) { theme('light'); }
 $('theme').onclick = () => theme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
