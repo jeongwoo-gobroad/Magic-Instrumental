@@ -50,6 +50,14 @@ Windows에서는 `$env:RUN_MODEL_TESTS = '1'`을 설정한 뒤 같은 pytest 파
 - GUI 주 스레드에 모델 로딩·분리를 추가하지 마세요. Windows 취소는 Java를 포함한 자식 프로세스까지 처리합니다.
 - 사용자 동작이 달라지면 README, 사용 안내, AI 인계, CHANGELOG를 갱신합니다.
 
+### 캐시 폴더 설정과 작업 프로세스
+
+3.0.4부터 `Paths.audio_cache`와 `Paths.score_cache`를 각각 설정할 수 있습니다. 기본값은 모두 기존 `processed`이며, `Paths.processed` 자체는 UI·곡별 설정과 악보 연결 정보를 위한 고정 위치로 유지합니다. 폴더 선택은 `processed/cache-locations.json`에 원자적으로 저장하고 모든 CLI 작업 프로세스가 같은 프로젝트 루트의 설정을 읽습니다. 두 폴더의 유효성과 쓰기 가능 여부를 확인하기 전에 설정을 교체하지 마세요.
+
+음원 분리·조합·키 변경·캐시 탐색은 음원 폴더를, 악보 분석·OMR 중간 파일·GP 표시·전체 파트 준비는 악보 분석 폴더를 사용합니다. 가져온 `.magic`은 무결성 검증된 하나의 묶음으로 음원 폴더에 유지합니다. 현재 열린 파일과 새 작업의 저장 위치를 구분하고, 경로 저장만으로 기존 파일을 이동·삭제·재분석하지 않습니다. 설정 경로와 실제 파일 경로는 개인 정보이므로 공개 테스트 결과·배포물에 포함하지 마세요.
+
+변경 검증에는 임시 디렉토리에서의 폴더 저장·재실행, 실제 작업 프로세스의 저장 위치, 잘못된 폴더/쓰기 실패 시 기존 설정 유지, 기존 `processed` 캐시 재사용을 포함합니다. GUI에서는 폴더 선택·직접 입력·기본 위치·저장하지 않고 닫기와 실제 상단 재생 선택란의 0/1/여러 음원 상태를 확인하세요. 체크박스 개수와 실제 저장된 모델 출력 개수가 같다고 가정하지 마세요.
+
 
 ## 분리 옵션 CLI
 
@@ -99,7 +107,7 @@ Install the development requirements into the existing external venv, then run `
 
 `tests/test_web_update.py` exercises the service-worker lifecycle with actual browser registrations and multiple builds: an active verified worker can change while the open document stays intact, and applying an update explicitly loads the new document. Cover safe-apply guards during file/audio preparation, playback, metronome use and Session connection/membership; offline application of a prepared build; failed network/integrity checks; and independent worker scopes. Existing pre-2.4.8 documents have no update controls, so keep their online launch and manual refresh/reopen migration covered. Never substitute a mocked version string for a verified worker/cache lifecycle, and do not call desktop browser coverage a physical home-screen installation test.
 
-`tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies, including several checked and prepared audio choices. Use `--desktop-only` when browser runtimes are unavailable; this updates only the native screenshots and is not browser validation. The variants/follow browser tests also save current sidebar-layout evidence when `MAGIC_RENDER_CHECK_DIR` is set. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.
+`tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies, including several checked and prepared audio choices. Native captures include light/dark practice views and the editable cache-folder dialog in `docs/images/cache-options.png`. Use `--desktop-only` when browser runtimes are unavailable; this updates only the native screenshots and is not browser validation. Add `--qa-dir` with a scratch path to inspect small-window light/dark layouts without adding diagnostic images to public docs. The variants/follow browser tests also save current sidebar-layout evidence when `MAGIC_RENDER_CHECK_DIR` is set. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.
 
 CI invokes `tools/run_tests.py`, which runs each test module in a fresh process with a four-minute bound and faulthandler traces after one minute. This isolates native Qt multimedia lifetimes across unrelated modules. A failed or timed-out module is recorded while the remaining isolated modules still run; any recorded failure makes the overall run fail. This preserves every gate and provides complete diagnostics instead of hiding later browser checks behind an earlier failure. Opt-in long-running real-model experiments should use their documented direct pytest invocation instead.
 

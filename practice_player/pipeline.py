@@ -14,6 +14,7 @@ from filelock import FileLock
 
 from .audio import decode, inspect_audio
 from .cache import Result, cached_result, hash_file, read_cache, result_from_cache
+from .cache_locations import ensure_cache_directory
 from .config import MODELS, Paths, Settings
 from .variants import (
     SUPPORTED_VARIANTS,
@@ -151,6 +152,7 @@ def process(
     prepare_all: bool = False,
     variant_ids: tuple[str, ...] | None = None,
 ) -> Result:
+    paths.require_cache_locations()
     supported = supported_variants(settings.model)
     if prepare_all and variant_ids is not None:
         raise ValueError("전체 준비와 선택한 음원 목록을 함께 지정할 수 없습니다.")
@@ -170,9 +172,10 @@ def process(
     if not source.is_file():
         raise ValueError(f"파일이 아닙니다: {source}")
     paths.create()
+    ensure_cache_directory(paths.audio_cache)
     report("파일 내용 SHA-256 확인 중…", None)
     source_hash = hash_file(source)
-    track = paths.processed / source_hash
+    track = paths.audio_cache / source_hash
     if track.is_symlink():
         raise ValueError("캐시 경로의 바로가기·심볼릭 링크는 사용할 수 없습니다.")
     track.mkdir(exist_ok=True)

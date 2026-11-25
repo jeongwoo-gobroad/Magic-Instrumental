@@ -159,7 +159,8 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert page.locator("#audioChoice").is_visible()
     assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 2개"
     assert page.locator("#audioVariant").is_enabled()
-    assert "저장된 음원만" in page.locator("#audioVariantHint").inner_text()
+    assert "이 파일에 저장된 음원만" in page.locator("#audioVariantScope").inner_text()
+    assert "audioVariantScope" in page.locator("#audioVariant").get_attribute("aria-describedby")
     assert page.locator("#audioVariant option").evaluate_all(
         "options => options.map(option => option.value)"
     ) == ["no_vocals", "guitar"]
@@ -188,6 +189,8 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert page.locator("#optionsSidebar").is_hidden()
     assert page.locator("#optionsToggle").get_attribute("aria-expanded") == "false"
     assert page.locator("#focusControls #audioVariant").is_visible()
+    assert page.locator("#focusControls #audioVariantCount").is_visible()
+    assert page.locator("#focusControls #audioVariantScope").is_visible()
     assert page.locator("#focusControls #play").is_visible()
     assert page.evaluate("MagicPlayer.state().playing")
     assert page.evaluate("MagicPlayer.state().position >= beforeHidePosition")
@@ -451,7 +454,11 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     assert page.locator("#audioVariant").input_value() == "guitar"
     assert page.locator("#audioVariant").is_disabled()
     assert page.locator("#play").is_enabled()
-    assert "저장된 음원이 1개" in page.locator("#audioVariantHint").inner_text()
+    assert "저장된 음원이 1개" in page.locator("#audioVariantScope").inner_text()
+    assert "바로 재생" in page.locator("#audioVariantScope").inner_text()
+    page.locator("#audioChoiceHelp summary").click()
+    assert "체크한 음원 준비" in page.locator("#audioChoiceHelp p").inner_text()
+    assert ".magic 저장" in page.locator("#audioChoiceHelp p").inner_text()
     page.locator("#optionsToggle").focus()
     page.locator("#optionsToggle").press("Enter")
     assert page.locator("#optionsSidebar").is_hidden()
@@ -481,6 +488,7 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     page.locator("#optionsToggle").click()
     assert page.locator("#optionsSidebar").is_hidden()
     assert page.locator("#focusControls #audioVariant").input_value() == "guitar"
+    assert page.locator("#focusControls #audioChoiceHelp summary").is_visible()
     page.locator("#optionsToggle").click()
     assert page.locator("#optionsSidebar").is_visible()
     assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
@@ -519,6 +527,7 @@ def test_audio_choices_follow_current_file_and_pending_selection(page, variant_f
     page.wait_for_function("typeof window.releaseVariantRead === 'function'")
     assert page.locator("#audioVariant").is_disabled()
     assert page.locator("#audioChoice").get_attribute("aria-busy") == "true"
+    assert "준비 중" in page.locator("#audioVariantScope").inner_text()
     assert choices.count() == 2
     assert page.evaluate("MagicPlayer.state().audioVariant") == "no_vocals"
     assert page.evaluate("window.decodeCalls") == 1
@@ -526,6 +535,7 @@ def test_audio_choices_follow_current_file_and_pending_selection(page, variant_f
     page.wait_for_function("!MagicPlayer.state().loading")
     assert page.locator("#audioVariant").is_enabled()
     assert page.locator("#audioChoice").get_attribute("aria-busy") == "false"
+    assert "이 파일에 저장된 음원만" in page.locator("#audioVariantScope").inner_text()
     assert page.evaluate("MagicPlayer.state().audioVariant") == "guitar"
     assert page.evaluate("MagicPlayer.state().position") == 5
     assert not page.evaluate("MagicPlayer.state().playing")
@@ -543,6 +553,7 @@ def test_audio_choices_follow_current_file_and_pending_selection(page, variant_f
     assert page.locator("#audioVariant").is_disabled()
     assert choices.count() == 0
     assert page.locator("#audioVariantCount").inner_text() == ""
+    assert page.locator("#audioVariantScope").inner_text() == ""
     assert page.locator("#audioVariantHint").inner_text() == ""
     open_study(page, variant_files["pdf_wav"])
     assert choices.count() == 2

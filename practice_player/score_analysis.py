@@ -21,6 +21,7 @@ from defusedxml.common import DefusedXmlException
 from filelock import FileLock
 
 from .cache import hash_file
+from .cache_locations import ensure_cache_directory
 from .config import Paths
 from .omr_runtime import executable as managed_executable
 from .omr_runtime import managed_ready, managed_root, omr_environment
@@ -692,6 +693,8 @@ def analyze_score(
 ) -> Path:
     from pypdf import PdfReader
 
+    paths.require_cache_locations()
+    ensure_cache_directory(paths.score_cache)
     audio, pdf = audio.resolve(strict=True), pdf.resolve(strict=True)
     reader = PdfReader(pdf)
     if reader.is_encrypted or not 1 <= len(reader.pages) <= 200:
@@ -713,7 +716,7 @@ def analyze_score(
         )
     if musicxml is not None:
         musicxml = musicxml.resolve(strict=True)
-    folder = paths.processed / audio_hash / "scores" / pdf_hash
+    folder = paths.score_cache / audio_hash / "scores" / pdf_hash
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".analysis.lock"), timeout=3600):
         pdf_options = dict(bpm=bpm, lead_in=lead_in, route_override=route_override,

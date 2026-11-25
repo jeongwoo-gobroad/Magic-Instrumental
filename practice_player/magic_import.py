@@ -17,6 +17,7 @@ from pathlib import Path
 
 from filelock import FileLock
 
+from .cache_locations import ensure_cache_directory
 from .config import Paths
 from .variants import (
     ALL_VARIANTS,
@@ -921,6 +922,7 @@ def _publish(stage, final):
 
 def import_magic(source: Path, paths: Paths, report=lambda *_: None) -> dict:
     """Import v1–v5 into an archive-hash namespace, preserving existing imports on failure."""
+    paths.require_cache_locations()
     source = Path(source).resolve(strict=True)
     _require(
         source.is_file() and 22 <= source.stat().st_size <= MAX_ARCHIVE,
@@ -928,8 +930,8 @@ def import_magic(source: Path, paths: Paths, report=lambda *_: None) -> dict:
     )
     report("연습 파일 원본 확인 중…", None)
     archive_hash = _digest(source, MAX_ARCHIVE)
-    root = Path(paths.root).resolve(strict=True)
-    base = _safe_directory(root, f"processed/imported-magic/{archive_hash}")
+    root = ensure_cache_directory(paths.audio_cache).resolve(strict=True)
+    base = _safe_directory(root, f"imported-magic/{archive_hash}")
     final = base / f"v{IMPORT_VERSION}"
     lock = base / ".import.lock"
     _require(not lock.is_symlink(), "연습 파일 잠금 경로가 올바르지 않습니다.")

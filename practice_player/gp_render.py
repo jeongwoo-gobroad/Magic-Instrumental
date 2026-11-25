@@ -14,6 +14,7 @@ from defusedxml import ElementTree as SafeXML
 from filelock import FileLock
 
 from .cache import hash_file
+from .cache_locations import ensure_cache_directory
 from .guitar_pro import GP_VERSION, list_tracks, node, read_gp
 from .score import atomic_json
 
@@ -256,6 +257,8 @@ def flatten_svg(svg):
 
 def prepare_gp(source, paths, track=1, report=lambda *_: None):
     """Return verified display assets and track names; no audio alignment yet."""
+    paths.require_cache_locations()
+    ensure_cache_directory(paths.score_cache)
     source = Path(source).resolve(strict=True)
     digest = hash_file(source)
     settings = {
@@ -266,7 +269,7 @@ def prepare_gp(source, paths, track=1, report=lambda *_: None):
         "verovio": VEROVIO_VERSION,
     }
     key = sha256(json.dumps(settings, sort_keys=True).encode()).hexdigest()[:20]
-    folder = paths.processed / "gp-scores" / digest / key
+    folder = paths.score_cache / "gp-scores" / digest / key
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".render.lock"), timeout=120):
         manifest = folder / "display.json"

@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
@@ -162,6 +162,25 @@ class Settings:
 @dataclass(frozen=True)
 class Paths:
     root: Path = ROOT
+    audio_cache: Path = field(init=False)
+    score_cache: Path = field(init=False)
+    cache_location_error: str = field(init=False, repr=False, compare=False)
+    cache_location_revision: tuple | None = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self):
+        from .cache_locations import read_cache_locations
+
+        object.__setattr__(self, "root", Path(self.root))
+        audio, score, error, revision = read_cache_locations(self.root)
+        object.__setattr__(self, "audio_cache", audio)
+        object.__setattr__(self, "score_cache", score)
+        object.__setattr__(self, "cache_location_error", error)
+        object.__setattr__(self, "cache_location_revision", revision)
+
+    def require_cache_locations(self) -> None:
+        from .cache_locations import require_current_locations
+
+        require_current_locations(self)
 
     @property
     def targets(self) -> Path:
