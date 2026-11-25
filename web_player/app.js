@@ -551,12 +551,17 @@ async function decodeVariant(selected, variant) {
 }
 const AUDIO_TARGET_LABELS = {vocals: '보컬', guitar: '기타', drums: '드럼', bass: '베이스', keys: '키보드', piano: '피아노', synth: '신시사이저'};
 function audioChoiceLabel(variant) {
-  return variant.targets ? `${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')} 없는 반주` : variant.label;
+  return variant.targets ? `(${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')}) 없는 반주` : variant.label;
 }
 function updateAudioChoiceState(available = ready) {
   const count = archive?.audioVariants.length || 0;
   const busy = loading || !!ensemble?.busy || !!ensemble?.downloadTask;
   $('audioVariant').disabled = !available || busy || count < 2;
+  const hasOriginal = archive?.audioVariants.some(variant => variant.id === 'original');
+  const isOriginal = archive?.activeAudioVariant.id === 'original';
+  $('audioOriginal').hidden = !hasOriginal;
+  $('audioOriginal').disabled = !available || busy || isOriginal;
+  $('audioOriginal').textContent = isOriginal ? '원곡 선택됨' : '원곡 선택';
   $('audioChoice').setAttribute('aria-busy', String(busy));
   const single = ensemble?.role ? '저장된 음원이 1개입니다. 이 음원으로 합주합니다.' :
     '저장된 음원이 1개입니다. 바로 재생할 수 있습니다.';
@@ -568,13 +573,26 @@ function updateAudioChoiceState(available = ready) {
 }
 function showAudioChoices() {
   const choices = archive?.audioVariants || [];
-  $('audioVariant').replaceChildren(...choices.map(variant => {
-    const option = document.createElement('option'); option.value = variant.id;
-    option.textContent = audioChoiceLabel(variant); return option;
-  }));
+  const groups = [];
+  for (const [mode, label] of [['original', '원곡'], ['without', '악기 없는 반주'], ['stem', '악기만 듣기']]) {
+    const variants = choices.filter(variant => variant.mode === mode);
+    if (!variants.length) continue;
+    const group = document.createElement('optgroup'); group.label = label;
+    for (const variant of variants) {
+      const option = document.createElement('option'); option.value = variant.id;
+      option.textContent = audioChoiceLabel(variant); group.append(option);
+    }
+    groups.push(group);
+  }
+  $('audioVariant').replaceChildren(...groups);
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
   $('audioChoice').hidden = choices.length === 0;
   $('audioVariantCount').textContent = choices.length ? `파일에 저장된 음원 ${choices.length}개` : '';
+  const hasOriginal = choices.some(variant => variant.id === 'original');
+  $('audioBundleSummary').textContent = !choices.length ? '' : hasOriginal ? choices.length > 1 ?
+    `원곡 + 분리 음원 ${choices.length - 1}개 · 한 파일에 함께 담겨 있습니다.` :
+    '원곡이 담긴 연습 파일입니다.' : '분리 음원이 담긴 연습 파일입니다.';
+  $('audioOriginalNotice').hidden = !choices.length || hasOriginal;
   $('audioChoiceHelp').open = false;
   $('audioCombinationNotice').hidden = choices.some(variant => variant.targets) || choices.filter(variant => variant.mode === 'without').length < 2;
   showAudioVariantHint(); updateAudioChoiceState();
@@ -695,6 +713,7 @@ for (let n = -12; n <= 12; n++) { const option = document.createElement('option'
 $('key').value = 0;
 for (const id of ['file', 'sessionFile']) $(id).onchange = event => openFile(event.target.files[0]);
 $('audioVariant').onchange = () => selectAudioVariant($('audioVariant').value).catch(fail);
+$('audioOriginal').onclick = () => selectAudioVariant('original').catch(fail);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
 $('seek').oninput = () => { seeking = true; };

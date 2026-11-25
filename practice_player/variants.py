@@ -64,7 +64,7 @@ def variant_label(variant_id: str) -> str:
         return "원곡 그대로"
     if is_combination(variant_id):
         targets = " + ".join(TARGET_LABELS[target] for target in removal_targets(variant_id))
-        return f"{targets} 없는 반주"
+        return f"({targets}) 없는 반주"
     target = TARGET_LABELS[variant_target(variant_id)]
     return f"{target} 없는 반주" if variant_mode(variant_id) == "without" else f"{target}만 듣기"
 

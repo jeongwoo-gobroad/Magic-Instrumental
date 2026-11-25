@@ -73,6 +73,8 @@ python main.py magic-import --input practice.magic
 
 조합은 `no_vocals_guitar`처럼 제거 대상을 고정 순서(보컬·기타·드럼·베이스·키보드·피아노·신시사이저)로 연결한 ID를 명시합니다. CLI의 `--variants`는 명시한 항목만 요청하며 개별 ID 선택만으로 새 조합 추론을 추가하지 않습니다. GUI는 없는 반주를 두 개 이상 체크하면 해당 조합 ID도 명시적으로 추가합니다. 같은 모델을 원곡에서 한 번 실행하는 개별 준비와 달리, 새 조합은 앞 단계 잔여음원을 입력으로 추가 추론할 수 있습니다. 완성 조합은 별도 서명과 원곡 해시로 캐시합니다.
 
+3.0.5의 일반 GUI `.magic` 저장은 `include_original: true`를 요청해 원곡 하나와 선택한 분리 음원을 함께 담습니다. 원곡은 실제 요청 `audio`에서 모델 실행 없이 준비하고, 분리 음원들과 동일한 키·공통 음량·시간 기준·음질을 적용합니다. 분리 음원을 모두 해제한 원곡 전용 파일도 허용합니다. 이 플래그를 생략한 기존 API 요청의 정확한 선택 목록과 형식 1~5 호환성은 유지합니다. 같은 곡의 캐시는 기존처럼 원본 전체 SHA-256을 기준으로 모으며, 가져온 `.magic`의 선언 해시로 일반 분리 캐시를 채우지 않습니다. 조합의 표시 이름은 `(보컬 + 기타) 없는 반주`처럼 제거 대상 전체를 괄호로 묶습니다. [요청 및 저장 계약](docs/MAGIC_FORMAT.md)을 함께 확인하세요.
+
 ## 의존성 갱신
 
 직접 의존성은 `requirements.txt`, 플랫폼 전체 잠금은 `requirements-macos.lock.txt`와 `requirements-windows.lock.txt`, Windows CUDA wheel은 `requirements-cuda.txt`입니다. 개발 도구는 `requirements-dev.txt`입니다. Python/uv 버전과 uv 배포물 SHA-256은 `installers/runtime.json`에 고정합니다. 최신 버전 문자열만 교체하지 말고 양쪽 플랫폼 wheel 제공 여부와 실제 설치를 확인하세요.

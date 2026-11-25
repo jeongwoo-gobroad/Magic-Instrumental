@@ -1382,7 +1382,8 @@ class Window(QMainWindow):
         for identifier in ALL_VARIANTS:
             if identifier in self.prepared_variants:
                 self.playback_variants.addItem(
-                    self.prepared_variants[identifier]["label"], identifier
+                    (variant_label(identifier) if is_combination(identifier)
+                     else self.prepared_variants[identifier]["label"]), identifier
                 )
         self.playback_variants.setCurrentIndex(self.playback_variants.findData(self.selected_variant))
         self.playback_variants.setPlaceholderText(
@@ -1667,7 +1668,8 @@ class Window(QMainWindow):
         self.magic_button.setToolTip(
             "가져온 .magic은 원래 파일 그대로 PC·웹으로 옮길 수 있습니다. "
             "새 분리 결과나 악보 보정은 원본 곡에서 준비해 저장하세요."
-            if self.imported_bundle else "준비한 여러 음원과 악보를 한 파일에 저장합니다."
+            if self.imported_bundle else
+            "원곡과 선택한 분리 음원, 악보를 .magic 파일 하나에 함께 저장합니다."
         )
 
     def export_magic(self):
@@ -1700,7 +1702,7 @@ class Window(QMainWindow):
         from .score import atomic_json
 
         audio_format, _, bitrate = quality.partition(":")
-        audio_options = {"audio_format": audio_format}
+        audio_options = {"audio_format": audio_format, "include_original": True}
         if bitrate:
             audio_options["mp3_bitrate_kbps"] = int(bitrate)
         if self.prepared_variants:
@@ -1712,6 +1714,7 @@ class Window(QMainWindow):
                 audio_variants=[
                     export_variant_request(self.prepared_variants[identifier])
                     for identifier in identifiers
+                    if identifier in self.prepared_variants
                 ],
                 default_audio_variant=default,
             )
@@ -1743,17 +1746,107 @@ class Window(QMainWindow):
 
     def magic_audio_options(self):
         dialog = QDialog(self)
-        dialog.setWindowTitle("연습 파일 음원과 음질")
-        form = QFormLayout(dialog)
+        dialog.setWindowTitle("한 곡을 .magic 파일 하나로 저장")
+        dialog.resize(560, min(620, self.screen().availableGeometry().height() - 60))
+        layout = QVBoxLayout(dialog)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        form = QFormLayout(content)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        scroll.setWidget(content)
+        layout.addWidget(scroll)
         description = QLabel(
-            "MP3는 용량을 줄여 옮기기 편합니다. 높은 kbps를 고르면 음질과 파일 크기가 올라갑니다.\n"
-            "WAV는 압축 손실 없이 저장하지만 파일이 큽니다."
+            "원곡은 항상 포함합니다. 같은 곡에서 준비한 분리 음원을 함께 골라 담으세요. "
+            "PC와 웹에서 파일 하나를 열고 재생 음원을 바꿀 수 있습니다."
         )
         description.setWordWrap(True)
         form.addRow(description)
+        choices, first = None, None
+        if self.prepared_variants:
+            summary = QLabel()
+            summary.setObjectName("magicBundleSummary")
+            summary.setWordWrap(True)
+            form.addRow(summary)
+            actions = QHBoxLayout()
+            select_all = QPushButton("전체 선택")
+            select_all.setObjectName("magicSelectAllVariants")
+            clear = QPushButton("선택 해제")
+            clear.setObjectName("magicClearVariants")
+            for button in (select_all, clear):
+                button.setToolTip("함께 담을 분리 음원만 변경합니다. 원곡은 항상 포함합니다.")
+                actions.addWidget(button)
+            actions.addStretch(1)
+            form.addRow("함께 담을 분리 음원", actions)
+            choices = QListWidget()
+            choices.setObjectName("magicAudioVariants")
+            choices.setAccessibleName("함께 저장할 음원")
+            choices.setMinimumHeight(128)
+            choices.setMaximumHeight(190)
+            choices.setWordWrap(True)
+            for identifier in ("original", *(i for i in ALL_VARIANTS if i != "original")):
+                if identifier == "original" or identifier in self.prepared_variants:
+                    label = ("원곡 · 항상 포함" if identifier == "original"
+                             else variant_label(identifier) if is_combination(identifier)
+                             else self.prepared_variants[identifier]["label"])
+                    item = QListWidgetItem(label)
+                    item.setData(Qt.ItemDataRole.UserRole, identifier)
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setCheckState(Qt.CheckState.Checked)
+                    if identifier == "original":
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                        item.setToolTip("원곡도 다른 음원과 같은 키·음질로 저장합니다.")
+                    choices.addItem(item)
+            form.addRow(choices)
+            first = QComboBox()
+            first.setObjectName("magicDefaultVariant")
+            first.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            first.setMinimumContentsLength(12)
+            form.addRow("처음 재생할 음원", first)
+
+            def update_default():
+                previous = first.currentData() or self.selected_variant
+                # 원곡은 목록 조작 방식과 관계없이 한 번만 포함합니다.
+                choices.blockSignals(True)
+                choices.item(0).setCheckState(Qt.CheckState.Checked)
+                choices.blockSignals(False)
+                first.clear()
+                for index in range(choices.count()):
+                    item = choices.item(index)
+                    if item.checkState() == Qt.CheckState.Checked:
+                        identifier = item.data(Qt.ItemDataRole.UserRole)
+                        first.addItem(variant_label(identifier) if identifier == "original"
+                                      else item.text(), identifier)
+                index = first.findData(previous)
+                first.setCurrentIndex(index if index >= 0 else 0)
+                selected_count = first.count() - 1
+                summary.setText(f"원곡 1개 + 분리 음원 {selected_count}개 · .magic 파일 하나")
+                select_all.setEnabled(selected_count < choices.count() - 1)
+                clear.setEnabled(selected_count > 0)
+
+            def select_variants(selected):
+                choices.blockSignals(True)
+                for index in range(1, choices.count()):
+                    choices.item(index).setCheckState(
+                        Qt.CheckState.Checked if selected else Qt.CheckState.Unchecked
+                    )
+                choices.blockSignals(False)
+                update_default()
+
+            select_all.clicked.connect(lambda: select_variants(True))
+            clear.clicked.connect(lambda: select_variants(False))
+            choices.itemChanged.connect(update_default)
+            update_default()
+            explanation = QLabel(
+                "여러 파트를 함께 뺀 반주는 ‘(보컬 + 기타) 없는 반주’처럼 표시됩니다. "
+                "목록에 없는 결과는 창을 닫고 ‘저장된 음원 불러오기’로 확인하거나 먼저 준비하세요."
+            )
+            explanation.setWordWrap(True)
+            form.addRow(explanation)
         quality = QComboBox()
         quality.setObjectName("magicAudioQuality")
-        quality.setAccessibleName("반주 음질")
+        quality.setAccessibleName("음질")
         for bitrate in (128, 192, 256, 320):
             label = f"MP3 {bitrate} kbps" + (" · 권장" if bitrate == 256 else "")
             quality.addItem(label, f"mp3:{bitrate}")
@@ -1761,44 +1854,10 @@ class Window(QMainWindow):
         saved = str(self.preferences.value("magic_export/audio_quality", "mp3:256"))
         index = quality.findData(saved)
         quality.setCurrentIndex(index if index >= 0 else quality.findData("mp3:256"))
-        form.addRow("반주 음질", quality)
-        choices, first = None, None
-        if self.prepared_variants:
-            explanation = QLabel(
-                "함께 저장할 음원을 고르세요. 준비된 음원만 표시됩니다. "
-                "여러 파트를 함께 뺀 반주는 조합 이름의 항목도 체크하세요. "
-                "조합이 없으면 ‘없는 반주’를 두 개 이상 체크해 먼저 준비하세요."
-            )
-            explanation.setWordWrap(True)
-            form.addRow(explanation)
-            choices = QListWidget()
-            choices.setObjectName("magicAudioVariants")
-            choices.setAccessibleName("함께 저장할 음원")
-            choices.setMaximumHeight(190)
-            for identifier in ALL_VARIANTS:
-                if identifier in self.prepared_variants:
-                    item = QListWidgetItem(self.prepared_variants[identifier]["label"])
-                    item.setData(Qt.ItemDataRole.UserRole, identifier)
-                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-                    item.setCheckState(Qt.CheckState.Checked)
-                    choices.addItem(item)
-            form.addRow("저장할 음원", choices)
-            first = QComboBox()
-            first.setObjectName("magicDefaultVariant")
-            form.addRow("처음 재생할 음원", first)
-
-            def update_default():
-                previous = first.currentData() or self.selected_variant
-                first.clear()
-                for index in range(choices.count()):
-                    item = choices.item(index)
-                    if item.checkState() == Qt.CheckState.Checked:
-                        first.addItem(item.text(), item.data(Qt.ItemDataRole.UserRole))
-                index = first.findData(previous)
-                first.setCurrentIndex(index if index >= 0 else 0)
-
-            choices.itemChanged.connect(update_default)
-            update_default()
+        form.addRow("음질", quality)
+        quality_hint = QLabel("MP3는 옮기기 편한 작은 파일, WAV는 압축 손실 없는 큰 파일입니다.")
+        quality_hint.setWordWrap(True)
+        form.addRow(quality_hint)
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
@@ -1815,7 +1874,7 @@ class Window(QMainWindow):
 
         buttons.accepted.connect(accept)
         buttons.rejected.connect(dialog.reject)
-        form.addRow(buttons)
+        layout.addWidget(buttons)
         selected = None
         if dialog.exec() == QDialog.DialogCode.Accepted:
             selected = quality.currentData()
