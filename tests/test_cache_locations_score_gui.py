@@ -144,8 +144,19 @@ def test_score_tools_keep_readable_rows_and_scroll_into_reach(
     window.show()
     try:
         wait_until(app, window.player.isSeekable)
+        available = None
+        actual_size = size
+        if app.platformName() not in {"offscreen", "minimal"}:
+            # Native CI desktops can be smaller than the requested large viewport.
+            available = window.screen().availableGeometry()
+            frame_size = window.frameGeometry().size() - window.size()
+            client_limit = available.size() - frame_size
+            actual_size = (min(size[0], client_limit.width()), min(size[1], client_limit.height()))
+            assert actual_size[0] >= 800 and actual_size[1] >= 600
+            window.resize(*actual_size)
+            window.move(available.topLeft())
         QTest.qWait(120)
-        assert window.width() == size[0] and window.height() == size[1]
+        assert window.size().toTuple() == actual_size
         for control in (panel.choose, panel.refresh, panel.parts, panel.analyze, panel.review):
             assert control.height() >= control.sizeHint().height()
             panel.tools.ensureWidgetVisible(control, 0, 0)
@@ -156,6 +167,11 @@ def test_score_tools_keep_readable_rows_and_scroll_into_reach(
             assert viewport.contains(bounds), (control.accessibleName(), bounds, viewport)
             assert window.rect().contains(bounds)
             assert window.childAt(bounds.center()) is control
+            if available is not None:
+                on_screen = QRect(control.mapToGlobal(QPoint()), control.size())
+                assert available.contains(on_screen), (
+                    control.accessibleName(), on_screen, available,
+                )
             assert control.isEnabled()
             if control is panel.parts:
                 QTest.mouseClick(control, Qt.MouseButton.LeftButton)
@@ -172,8 +188,9 @@ def test_score_tools_keep_readable_rows_and_scroll_into_reach(
                 QTest.mouseClick(control, Qt.MouseButton.LeftButton)
                 assert opened == ["악보 사전 분석 설정"]
         if size == (800, 600):
+            assert actual_size == size
             assert panel.tools.verticalScrollBar().maximum() > 0
-        else:
+        elif actual_size == size:
             assert panel.tools.verticalScrollBar().maximum() == 0, (
                 panel.tools.size(), panel.tools.sizeHint(), panel.tools.widget().sizeHint(),
                 panel.tools.widget().minimumSize(),
@@ -183,12 +200,17 @@ def test_score_tools_keep_readable_rows_and_scroll_into_reach(
             bounds = QRect(control.mapTo(window, QPoint()), control.size())
             assert window.rect().contains(bounds)
             assert window.childAt(bounds.center()) is control
+            if available is not None:
+                on_screen = QRect(control.mapToGlobal(QPoint()), control.size())
+                assert available.contains(on_screen), (
+                    control.accessibleName(), on_screen, available,
+                )
         assert panel.view.viewport().height() > 0
         screenshots = os.environ.get("MAGIC_RENDER_CHECK_DIR")
         if screenshots:
             directory = Path(screenshots)
             directory.mkdir(parents=True, exist_ok=True)
-            window.grab().save(str(directory / f"score-tools-{size[0]}x{size[1]}-{mode}.png"))
+            window.grab().save(str(directory / f"score-tools-{actual_size[0]}x{actual_size[1]}-{mode}.png"))
         before = panel.view.viewport().height()
         timeline = panel.timeline
         source_url, position = window.player.source(), window.player.position()
