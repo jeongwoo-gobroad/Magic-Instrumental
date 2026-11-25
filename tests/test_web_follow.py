@@ -131,6 +131,8 @@ def score_snapshot(page):
 
 @pytest.mark.parametrize("kind", ["pdf", "gp"])
 def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow_files, kind):
+    from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
     open_study(page, follow_files[kind])
     original = score_snapshot(page)["timing"]
     cues = page.evaluate("MagicPlayer.archive().timing.cues")
@@ -153,30 +155,73 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
     page.locator("#follow").check()
     wait_centered(page)
     page.locator("#viewport").hover()
+    wheel_start = page.locator("#viewport").evaluate("el => el.scrollTop")
+    assert wheel_start >= 250, "The fixture must allow the full upward wheel movement"
+    wheel_target = wheel_start - 250
     page.mouse.wheel(0, -250)
     page.wait_for_function("!document.getElementById('follow').checked")
-    page.wait_for_timeout(100)
+    # The wheel event disables follow before the browser finishes scrolling.
+    try:
+        page.wait_for_function("""expected =>
+          Math.abs(document.getElementById('viewport').scrollTop - expected) < 1
+        """, arg=wheel_target)
+    except PlaywrightTimeoutError as error:
+        actual = page.locator("#viewport").evaluate("el => el.scrollTop")
+        raise AssertionError(
+            f"Wheel movement did not finish: start={wheel_start}, "
+            f"expected={wheel_target}, actual={actual}"
+        ) from error
     manual = score_snapshot(page)
-    anchor = page.evaluate("""() => {
+    anchor_snapshot = """reference => {
       const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
       const center = rect.top + view.clientTop + view.clientHeight / 2;
-      const slot = [...document.querySelectorAll('.score-page')].find(element => {
-        const box = element.getBoundingClientRect();
-        return box.top <= center && box.bottom > center;
-      });
-      const box = slot.getBoundingClientRect();
-      return {page: slot.dataset.page, fraction: (center - box.top) / box.height};
-    }""")
-    for _ in range(2):
+      const slot = reference == null ?
+        [...document.querySelectorAll('.score-page')].find(element => {
+          const box = element.getBoundingClientRect();
+          return box.top <= center && box.bottom > center;
+        }) : document.querySelector(`.score-page[data-page="${reference}"]`);
+      const box = slot?.getBoundingClientRect(), state = MagicPlayer.state();
+      return {page: slot?.dataset.page ?? null,
+        fraction: box ? (center - box.top) / box.height : null,
+        scrollTop: view.scrollTop, scrollLeft: view.scrollLeft,
+        width: view.clientWidth, height: view.clientHeight, viewportTop: rect.top,
+        pageTop: box?.top ?? null, pageHeight: box?.height ?? null,
+        windowScrollY: window.scrollY, follow: document.getElementById('follow').checked,
+        position: state.position, playing: state.playing,
+        optionsVisible: !document.getElementById('optionsSidebar').hidden};
+    }"""
+    anchor = page.evaluate(anchor_snapshot)
+    assert anchor["page"] is not None, anchor
+    for toggle in range(2):
+        # Observe the real click immediately before the app changes its layout.
+        page.evaluate(f"""reference => {{
+          const snapshot = {anchor_snapshot};
+          window.__magicTestSidebarClick = null;
+          document.getElementById('optionsToggle').addEventListener('click', () => {{
+            window.__magicTestSidebarClick = snapshot(reference);
+          }}, {{capture: true, once: true}});
+        }}""", arg=anchor["page"])
         page.locator("#optionsToggle").click()
-        page.wait_for_function("""expected => {
-          const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
-          const slot = document.querySelector(`.score-page[data-page="${expected.page}"]`);
-          const box = slot.getBoundingClientRect();
-          const center = rect.top + view.clientTop + view.clientHeight / 2;
-          const fraction = (center - box.top) / box.height;
-          return Math.abs(fraction - expected.fraction) < .005;
-        }""", arg=anchor)
+        before_toggle = page.evaluate("window.__magicTestSidebarClick")
+        after_toggle = page.evaluate(anchor_snapshot, arg=anchor["page"])
+        try:
+            page.wait_for_function("""expected => {
+              const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
+              const slot = document.querySelector(`.score-page[data-page="${expected.page}"]`);
+              const box = slot.getBoundingClientRect();
+              const center = rect.top + view.clientTop + view.clientHeight / 2;
+              const fraction = (center - box.top) / box.height;
+              return Math.abs(fraction - expected.fraction) < .005;
+            }""", arg=anchor)
+        except PlaywrightTimeoutError as error:
+            diagnostics = {
+                "toggle": toggle + 1, "baseline": anchor, "before_handler": before_toggle,
+                "after_toggle": after_toggle,
+                "at_timeout": page.evaluate(anchor_snapshot, arg=anchor["page"]),
+            }
+            raise AssertionError(
+                f"Sidebar did not preserve the manual anchor: {json.dumps(diagnostics)}"
+            ) from error
         assert not page.locator("#follow").is_checked()
         assert page.evaluate("MagicPlayer.state().position") == before
     page.locator("#highlightEnabled").uncheck()

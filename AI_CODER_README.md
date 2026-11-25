@@ -258,6 +258,8 @@ CI uses `tools/run_tests.py` to isolate test modules into separate external-venv
 
 On macOS, browser test modules including `test_web_follow.py` add Playwright's `pw:browser` debug scope to their child process environment, preserving existing debug scopes. Native browser exits are recorded in CI logs so a `TargetClosedError` has process diagnostics. Assertions, time limits and failure handling remain the same; tests are not retried automatically. Keep centered-follow browser cases in their own module so existing audio, player and update lifecycle modules retain their per-module time bounds.
 
+The manual-anchor sidebar test waits for the real 250 px wheel movement to reach its destination before taking its baseline; Playwright's wheel call and the follow-checkbox change do not imply completed scrolling. Keep both actual toggle clicks, the `.005` fraction tolerance and original-clock/no-autoplay checks. A one-shot capture listener observes the pre-handler geometry, and failures include bounded baseline, pre-handler, post-toggle and timeout snapshots without changing app state. This removes an invalid fixed-delay precondition; it does not establish the exact cause of an earlier CI timeout without matching geometry evidence.
+
 
 ## v2.1 all-part GP and Session mode
 
