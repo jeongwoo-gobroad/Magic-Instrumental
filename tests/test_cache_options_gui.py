@@ -179,7 +179,10 @@ def test_details_button_shows_actual_paths_and_copy_open_preserve_practice(
                 assert app.clipboard().text() == str(path)
                 QTest.mouseClick(dialog.findChild(QPushButton, prefix + "Open"),
                                  Qt.MouseButton.LeftButton)
-                assert opened[-1].toLocalFile() == str(path if path.is_dir() else path.parent)
+                expected_directory = path if path.is_dir() else path.parent
+                assert opened[-1].isLocalFile()
+                # Qt uses forward slashes for local Windows URLs, unlike str(Path).
+                assert Path(opened[-1].toLocalFile()) == expected_directory
             assert not window.worker and not window.player.isPlaying()
             inspected.append(True)
         except BaseException as error:
