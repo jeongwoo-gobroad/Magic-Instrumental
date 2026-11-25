@@ -164,10 +164,11 @@ def find_cached_variants(source_hash, paths, *, source_frames=None, low_memory=F
     """Read known v3 recipes without creating paths, files or missing audio choices."""
     from .config import MODELS, Settings
 
+    paths.require_cache_locations()
     if not re.fullmatch(r"[a-f0-9]{64}", source_hash):
         raise ValueError("원곡의 캐시 식별자가 올바르지 않습니다.")
-    track = paths.processed / source_hash
-    if paths.processed.is_symlink() or track.is_symlink():
+    track = paths.audio_cache / source_hash
+    if paths.audio_cache.is_symlink() or track.is_symlink():
         return {}
     models = tuple(dict.fromkeys(("original", "leap", "sw6", "mega", *MODELS)))
     choices, priorities = {}, {}

@@ -1,13 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-only
-"""Ready-only playback choices and read-only cache locations in the real Qt window."""
+"""Cached playback choices and editable cache folders in the real Qt window."""
 
+import shutil
 from pathlib import Path
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt, QTimer
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QFileDialog, QLabel, QLineEdit, QPushButton, QScrollArea
 
 from practice_player.config import Paths, Settings
 from practice_player.gui import CacheLocationsDialog, Window
@@ -67,7 +68,10 @@ def test_empty_window_keeps_cache_details_reachable_without_enabling_audio(app, 
         assert window.rect().contains(details)
         assert window.childAt(details.center()) is window.details_button
         dialog = CacheLocationsDialog(window)
-        assert dialog.findChild(QLineEdit, "cacheRootPath").text() == str(window.paths.processed)
+        for prefix in ("audioCacheFolder", "scoreCacheFolder"):
+            field = dialog.findChild(QLineEdit, prefix + "Path")
+            assert field.text() == str(window.paths.processed) and not field.isReadOnly()
+            assert dialog.findChild(QPushButton, prefix + "Browse").isEnabled()
         for prefix in ("audioCache", "scoreCache"):
             field = dialog.findChild(QLineEdit, prefix + "Path")
             assert field.isReadOnly() and not field.text() and field.placeholderText()
@@ -84,6 +88,10 @@ def test_selector_prunes_deleted_files_and_never_offers_preparation_checkboxes(c
     assert {combo.itemData(i) for i in range(combo.count())} == {
         "no_vocals", "vocals", "original",
     }
+    assert window.playback_cache_count.text() == "캐시 3개"
+    assert window.playback_cache_count.parent() is window.playback_choice
+    window.options_toggle.setChecked(False)
+    assert window.playback_choice.isVisible() and combo.isVisible()
     window.variant_checks["no_guitar"].setChecked(True)
     combo.showPopup()
     assert combo.findData("no_guitar") == -1
@@ -97,7 +105,21 @@ def test_selector_prunes_deleted_files_and_never_offers_preparation_checkboxes(c
     combo.showPopup()
     assert combo.count() == 1 and combo.currentData() == "no_vocals"
     assert not combo.isEnabled() and "1개" in window.variant_hint.text()
+    assert window.playback_cache_count.text() == "캐시 1개"
     assert window.play_button.isEnabled()
+
+
+def test_nonempty_truncated_cache_is_not_offered_in_the_actual_dropdown(cached_window):
+    window = cached_window
+    item = window.prepared_variants["vocals"]
+    Path(item["path"]).write_bytes(b"not a complete cached audio file")
+    window.playback_variants.showPopup()
+    try:
+        assert window.playback_variants.findData("vocals") == -1
+        assert window.playback_cache_count.text() == "캐시 2개"
+        assert window.playback_variants.currentData() == "no_vocals"
+    finally:
+        window.playback_variants.hidePopup()
 
 
 def test_deleted_selection_is_rejected_before_starting_work_or_changing_playback(
@@ -153,7 +175,6 @@ def test_details_button_shows_actual_paths_and_copy_open_preserve_practice(
     wait_until(app, lambda: window.player.isSeekable() and window._pitch_pending is None)
     window.source_name = "<b>Authored study</b>"
     expected = {
-        "cacheRoot": window.paths.processed,
         "audioCache": window.base_instrumental,
         "playbackCache": window.output_path,
         "scoreCache": window.score_panel.timeline_path,
@@ -168,12 +189,14 @@ def test_details_button_shows_actual_paths_and_copy_open_preserve_practice(
         dialog = app.activeModalWidget()
         try:
             assert isinstance(dialog, CacheLocationsDialog)
+            dialog.findChild(QPushButton, "currentCacheFilesToggle").click()
             song = dialog.findChild(QLabel, "cacheCurrentSong")
             assert song.text() == window.source_name
             assert song.textFormat() == Qt.TextFormat.PlainText
             for prefix, path in expected.items():
                 field = dialog.findChild(QLineEdit, prefix + "Path")
                 assert field.isReadOnly() and field.text() == str(path)
+                dialog.findChild(QScrollArea).ensureWidgetVisible(field)
                 QTest.mouseClick(dialog.findChild(QPushButton, prefix + "Copy"),
                                  Qt.MouseButton.LeftButton)
                 assert app.clipboard().text() == str(path)
@@ -195,7 +218,7 @@ def test_details_button_shows_actual_paths_and_copy_open_preserve_practice(
     QTimer.singleShot(80, inspect)
     QTest.mouseClick(window.details_button, Qt.MouseButton.LeftButton)
     assert not errors, errors
-    assert inspected and len(opened) == 4
+    assert inspected and len(opened) == 3
     assert all(path.read_bytes() == content for path, content in original_bytes.items())
     assert (window.player.source(), window.player.position(), window.player.playbackRate(),
             window.selected_variant, window.score_panel.timeline) == before
@@ -228,3 +251,157 @@ def test_imported_archive_details_follow_actual_audio_and_selected_score_part(ap
             dialog.deleteLater()
     finally:
         dispose(window, app)
+
+
+def test_choose_and_save_cache_folders_preserves_open_practice_and_survives_restart(
+    cached_window, app, tmp_path, monkeypatch,
+):
+    window = cached_window
+    window.player.setPosition(1300)
+    window.speed.setValue(75)
+    window.theme.setCurrentIndex(window.theme.findData("light"))
+    audio_folder = tmp_path / "다른 위치" / "음원"
+    score_folder = tmp_path / "다른 위치" / "악보 분석"
+    before = (window.player.source(), window.player.position(), window.player.playbackRate(),
+              window.selected_variant, window.score_panel.timeline, window.base_instrumental)
+    existing = {path: path.read_bytes() for path in (
+        window.base_instrumental, window.score_panel.timeline_path,
+    )}
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *_: str(audio_folder))
+    dialog = CacheLocationsDialog(window)
+    dialog.show()
+    dialog.findChild(QPushButton, "audioCacheFolderBrowse").click()
+    dialog.findChild(QLineEdit, "scoreCacheFolderPath").setText(str(score_folder))
+    assert dialog.save_button.isEnabled()
+    QTest.mouseClick(dialog.save_button, Qt.MouseButton.LeftButton)
+    assert not dialog.isVisible()
+    assert window.paths.audio_cache == audio_folder.resolve()
+    assert window.paths.score_cache == score_folder.resolve()
+    assert window.score_panel.paths is window.paths
+    assert (
+        window.player.source(), window.player.position(), window.player.playbackRate(),
+        window.selected_variant, window.score_panel.timeline, window.base_instrumental,
+    ) == before
+    assert all(path.read_bytes() == content for path, content in existing.items())
+    assert not list(audio_folder.iterdir()) and not list(score_folder.iterdir())
+    window.preferences.sync()
+    restarted = Window(Paths(window.paths.root))
+    try:
+        assert restarted.paths.audio_cache == audio_folder.resolve()
+        assert restarted.paths.score_cache == score_folder.resolve()
+        assert restarted.preferences.fileName() == window.preferences.fileName()
+        assert restarted.theme.currentData() == "light"
+    finally:
+        dispose(restarted, app)
+        dialog.deleteLater()
+
+
+def test_cancel_and_invalid_destination_leave_both_cache_locations_unchanged(
+    cached_window, tmp_path,
+):
+    window = cached_window
+    before = window.paths
+    settings = before.processed / "cache-locations.json"
+    dialog = CacheLocationsDialog(window)
+    dialog.fields["audioCacheFolder"].setText(str(tmp_path / "cancelled-folder"))
+    dialog.reject()
+    assert window.paths is before and not settings.exists()
+    assert not (tmp_path / "cancelled-folder").exists()
+    dialog.deleteLater()
+    invalid = tmp_path / "a-file.txt"
+    invalid.write_text("Keep this file", encoding="utf-8")
+    dialog = CacheLocationsDialog(window)
+    dialog.show()
+    dialog.fields["audioCacheFolder"].setText(str(tmp_path / "new-audio"))
+    dialog.fields["scoreCacheFolder"].setText(str(invalid))
+    dialog.save_button.click()
+    assert dialog.isVisible() and "저장하지 못했습니다" in dialog.notice.text()
+    assert window.paths is before and window.score_panel.paths is before
+    assert not settings.exists() and invalid.read_text(encoding="utf-8") == "Keep this file"
+    dialog.reject()
+    dialog.deleteLater()
+
+
+def test_new_cache_folder_is_used_by_the_next_real_worker_and_default_can_be_restored(
+    cached_window, app, tmp_path,
+):
+    window = cached_window
+    original = window.paths.processed
+    previous_audio = window.base_instrumental
+    audio = tmp_path / "relocated audio"
+    score = tmp_path / "relocated scores"
+    window.apply_cache_locations(str(audio), str(score))
+    # Only authored fixture data is copied; changing the preference never moves files.
+    shutil.copytree(original / window.loaded_source_hash, audio / window.loaded_source_hash)
+    window.load_cached_audio()
+    wait_until(app, lambda: (
+        window.worker is None and window.base_instrumental.is_relative_to(audio)
+    ))
+    assert previous_audio.is_file()
+    assert all(Path(item["path"]).is_relative_to(audio)
+               for item in window.prepared_variants.values())
+    assert not window.player.isPlaying()
+    dialog = CacheLocationsDialog(window)
+    dialog.defaults.click()
+    assert window.paths.audio_cache == audio
+    dialog.save_button.click()
+    assert window.paths.audio_cache == original and window.paths.score_cache == original
+    assert window.base_instrumental.is_relative_to(audio)
+    assert Paths(window.paths.root).audio_cache == original
+    dialog.deleteLater()
+
+
+def test_corrupt_settings_are_repairable_from_details_without_silent_cache_work(app, tmp_path):
+    paths = Paths(tmp_path)
+    paths.create()
+    (paths.processed / "cache-locations.json").write_text("broken", encoding="utf-8")
+    window = Window(Paths(tmp_path))
+    try:
+        assert window.paths.cache_location_error
+        assert "상세 옵션" in window.status.text()
+        window.start_job(["cached-audio", "--input", "missing.wav", "--events"])
+        assert window.worker is None
+        dialog = CacheLocationsDialog(window)
+        assert dialog.save_button.isEnabled()
+        dialog.save_button.click()
+        assert not window.paths.cache_location_error
+        assert not Paths(tmp_path).cache_location_error
+        dialog.deleteLater()
+    finally:
+        dispose(window, app)
+
+
+def test_changed_cache_settings_cannot_leave_a_pending_variant_or_pause_playback(
+    cached_window, app,
+):
+    window = cached_window
+    window.player.play()
+    wait_until(app, window.player.isPlaying)
+    before = (window.player.source(), window.selected_variant, window.score_panel.timeline)
+    (window.paths.processed / "cache-locations.json").write_text("changed", encoding="utf-8")
+    window.begin_variant_switch("vocals")
+    assert window.worker is None
+    assert window._pending_variant is None and window._pending_catalog is None
+    assert window._variant_restore is None and window._prepare_restore is None
+    assert window.player.isPlaying()
+    assert (window.player.source(), window.selected_variant, window.score_panel.timeline) == before
+    assert "저장 위치" in window.status.text()
+    window.player.pause()
+
+
+def test_details_refreshes_actual_paths_after_a_worker_finishes(cached_window, app):
+    window = cached_window
+    window.begin_variant_switch("vocals")
+    assert window.worker is not None
+    dialog = CacheLocationsDialog(window)
+    dialog.show()
+    assert not dialog.fields["audioCacheFolder"].isEnabled()
+    wait_until(app, lambda: (
+        window.worker is None and window.selected_variant == "vocals"
+        and dialog.fields["audioCacheFolder"].isEnabled()
+    ))
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert dialog.findChild(QLineEdit, "audioCachePath").text() == str(window.base_instrumental)
+    assert not dialog.refresh_timer.isActive()
+    dialog.reject()
+    dialog.deleteLater()

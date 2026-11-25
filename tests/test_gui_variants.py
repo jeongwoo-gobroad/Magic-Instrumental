@@ -217,8 +217,11 @@ def test_failed_option_preparation_retains_the_loaded_song_and_practice_range(
               window.player.source(), window.score_panel.timeline)
     if failure == "corrupt-option":
         other = Path(window.prepared_variants["guitar"]["path"])
-        with other.open("ab") as stream:
-            stream.write(b"changed after preparation")
+        # Keep the size unchanged so the worker, rather than the popup, catches corruption.
+        with other.open("r+b") as stream:
+            first = stream.read(1)
+            stream.seek(0)
+            stream.write(bytes([first[0] ^ 1]))
         select_option(window.playback_variants, "guitar")
     else:
         window.models.setCurrentIndex(window.models.findData("hyperace"))

@@ -241,8 +241,9 @@ def _previous_reviewed_timeline(folder, current, source_hash):
 def load_last_timeline(
     pdf: Path, paths: Paths, source_hash: str, *, repair_pointer=True,
 ) -> tuple[Path, ScoreTimeline] | None:
+    paths.require_cache_locations()
     try:
-        folder = paths.processed / source_hash / "scores" / hash_file(pdf)
+        folder = paths.score_cache / source_hash / "scores" / hash_file(pdf)
         pointer_path = folder / "latest.json"
         pointer_bytes = pointer_path.read_bytes()
         name = json.loads(pointer_bytes)["analysis"]

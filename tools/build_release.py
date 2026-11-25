@@ -86,6 +86,7 @@ IMAGES = (
     "docs/images/desktop-light.png",
     "docs/images/update-notice.png",
     "docs/images/desktop-dark.png",
+    "docs/images/cache-options.png",
     "docs/images/mobile-player.png",
     "docs/images/session-leader.png",
     "docs/images/session-member.png",

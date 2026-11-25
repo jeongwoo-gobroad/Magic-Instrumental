@@ -11,6 +11,7 @@ from defusedxml import ElementTree as ET
 from filelock import FileLock
 
 from .cache import hash_file
+from .cache_locations import ensure_cache_directory
 from .score import ScoreTimeline, atomic_json, matching_musicxml, recover_notation_source
 from .score_geometry import LAYOUT_VERSION, detect_pdf_layout
 from .score_view import MEASURE_BOX_VERSION, SCROLL_VERSION, rendered_size, view_profile
@@ -260,13 +261,15 @@ def plan_camera(cues, end, page_sizes, bars, profile, *, keep_system=False):
 def analyze_scroll(
     audio, pdf, paths, timeline_path, profile, report=lambda *_: None, *, musicxml=None,
 ):
+    paths.require_cache_locations()
+    ensure_cache_directory(paths.score_cache)
     profile = view_profile(**profile)
     timeline_hash = hash_file(timeline_path)
     base = ScoreTimeline.load(timeline_path)
     audio_hash, pdf_hash = hash_file(audio), hash_file(pdf)
     if base.data["audio_sha256"] != audio_hash or base.data["pdf_sha256"] != pdf_hash:
         raise ValueError("음원·PDF와 기존 시간표가 다릅니다. 악보 전체 분석을 먼저 실행하세요.")
-    folder = paths.processed / audio_hash / "scores" / pdf_hash
+    folder = paths.score_cache / audio_hash / "scores" / pdf_hash
     pdf_only = base.data.get("notation_source", {}).get("method") == "pdf-geometry"
     xml = None
     if not pdf_only:

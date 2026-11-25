@@ -7,7 +7,17 @@ from collections import OrderedDict
 from copy import deepcopy
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRectF, QSize, Qt, QTimer, QUrl, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPropertyAnimation,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import QColor, QDesktopServices, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -21,6 +31,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLayout,
     QLineEdit,
     QMessageBox,
     QPushButton,
@@ -59,6 +70,21 @@ def status_area(label, name):
     area.setAccessibleName(name)
     area.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     return area
+
+
+class ScoreToolsArea(QScrollArea):
+    def eventFilter(self, watched, event):
+        handled = super().eventFilter(watched, event)
+        if watched is self.widget() and event.type() == QEvent.Type.LayoutRequest:
+            self.updateGeometry()
+        return handled
+
+    def sizeHint(self):
+        content = self.widget()
+        if content is None:
+            return super().sizeHint()
+        # 큰 창에서는 모든 도구를, 작은 창에서는 스크롤 가능한 행을 보여 준다.
+        return content.sizeHint() + QSize(2 * self.frameWidth(), 2 * self.frameWidth())
 
 
 class ScorePageLabel(QLabel):
@@ -421,8 +447,16 @@ class ScorePanel(QWidget):
         self.bpm_provider = lambda: 120
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 10, 8, 10)
-        tools = QWidget()
-        setup = QVBoxLayout(tools)
+        tools = ScoreToolsArea()
+        tools.setWidgetResizable(True)
+        tools.setFrameShape(QFrame.Shape.NoFrame)
+        tools.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        tools.setMinimumHeight(44)
+        tools.setAccessibleName("악보 준비 도구 · 작은 창에서는 이 영역을 스크롤하세요")
+        tools_content = QWidget()
+        setup = QVBoxLayout(tools_content)
+        setup.setSizeConstraint(QLayout.SizeConstraint.SetMinimumSize)
+        tools.setWidget(tools_content)
         self.tools, self.setup = tools, setup
         setup.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(tools)
@@ -626,6 +660,7 @@ class ScorePanel(QWidget):
                 pass
             self.gp_prepare_requested.emit({"gp": str(pdf), "gp-track": track})
             return
+        previous_pdf, previous_timeline = self.pdf, self.timeline_path
         try:
             self.view.load(pdf)
             self.pdf = pdf
@@ -660,9 +695,24 @@ class ScorePanel(QWidget):
             self.page.blockSignals(False)
             self.status.setText("PDF 준비 완료 · 사전 분석으로 반복 순서와 마디 시간을 계산하세요.")
             self.measure.setText("—")
-            cached = load_last_timeline(pdf, self.paths, self.source_hash)
-            if cached:
-                self.load_timeline(cached[0])
+            try:
+                cached = load_last_timeline(pdf, self.paths, self.source_hash)
+            except ValueError as error:
+                # 캐시 설정에 문제가 있어도 읽을 수 있는 악보는 그대로 보여 준다.
+                if previous_pdf == pdf and previous_timeline is not None:
+                    try:
+                        self.load_timeline(previous_timeline)
+                    except (OSError, ValueError, TypeError, KeyError):
+                        pass
+                kept = ("악보와 기존 마디 시간표를 유지합니다." if self.timeline is not None
+                        else "악보 화면을 유지합니다.")
+                self.status.setText(
+                    f"{kept} 캐시 저장 위치를 확인해 주세요.\n"
+                    f"{error} 상세 옵션에서 저장 위치를 확인한 뒤 다시 찾기를 누르세요."
+                )
+            else:
+                if cached:
+                    self.load_timeline(cached[0])
         except Exception as error:
             self.clear_score()
             self.status.setText(f"악보 읽기 실패: {error}")
@@ -810,6 +860,7 @@ class ScorePanel(QWidget):
 
     def set_busy(self, busy):
         self.busy = busy
+        self.tools.updateGeometry()
         editable = self.portable_bundle is None
         self.choose.setEnabled(not busy and editable and self.audio is not None)
         self.refresh.setEnabled(not busy and editable and self.audio is not None)
@@ -988,8 +1039,16 @@ class ScorePanel(QWidget):
             notice.setWordWrap(True)
             form.addRow(notice)
         saved = self.timeline.data.get("signature", {}) if self.timeline else {}
-        previous_xml = (recover_notation_source(self.pdf, self.paths, self.source_hash)
-                        if not self.gp_source else None)
+        try:
+            previous_xml = (recover_notation_source(self.pdf, self.paths, self.source_hash)
+                            if not self.gp_source else None)
+        except ValueError as error:
+            self.status.setText(
+                f"악보는 그대로 유지합니다. {error}\n"
+                "상세 옵션에서 저장 위치를 확인한 뒤 악보 사전 분석을 다시 누르세요."
+            )
+            dialog.deleteLater()
+            return
         if previous_xml is not None and self.timeline_path is not None:
             recognition = (self.timeline_path.parent.parent / "recognition").resolve()
             generated = {recognition / "score.mxl"}

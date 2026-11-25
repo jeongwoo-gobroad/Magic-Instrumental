@@ -8,6 +8,7 @@ from pathlib import Path
 from filelock import FileLock
 
 from .cache import hash_file
+from .cache_locations import ensure_cache_directory
 from .score import ScoreTimeline, atomic_json
 
 COLLECTION_VERSION = 1
@@ -67,6 +68,8 @@ def prepare_collection(timeline_path, paths, report=lambda *_: None):
     from .gp_render import GP_VERSION, RENDER_VERSION, native_layout
     from .score_analysis import parse_notation
 
+    paths.require_cache_locations()
+    ensure_cache_directory(paths.score_cache)
     timeline_path = Path(timeline_path)
     reference_hash = hash_file(timeline_path)
     plan = ScoreTimeline.load(timeline_path)
@@ -84,7 +87,7 @@ def prepare_collection(timeline_path, paths, report=lambda *_: None):
         "parts": [p["signature"] for p in prepared],
     }
     key = sha256(json.dumps(signature, sort_keys=True).encode()).hexdigest()
-    folder = paths.processed / "gp-collections" / signature["source"] / key
+    folder = paths.score_cache / "gp-collections" / signature["source"] / key
     folder.mkdir(parents=True, exist_ok=True)
     with FileLock(str(folder / ".collection.lock"), timeout=3600):
         manifest = folder / "collection.json"

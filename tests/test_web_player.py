@@ -7,11 +7,15 @@ Opt in: RUN_WEB_TESTS=1, install playwright's chromium and webkit browsers first
 import hashlib
 import json
 import os
+import sys
 import threading
+import time
 import zipfile
+from collections import deque
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qsl, urlsplit
 
 import numpy as np
 import pytest
@@ -23,6 +27,154 @@ from tests.test_magic_bundle import portable_study
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_WEB_TESTS") != "1", reason="RUN_WEB_TESTS=1 and browser runtimes required"
 )
+
+_SERVER_HISTORY = pytest.StashKey()
+_INSTALL_FILES = {"", "index.html", "sw.js", "manifest.webmanifest", "icon-192.png", "icon-512.png"}
+_WORKER_OBSERVER = """(() => {
+  const history = window.magicWorkerDiagnostics = [];
+  const record = (event, details = {}) => {
+    try {
+      history.push({at: Math.round(performance.now()), event, ...details});
+      if (history.length > 80) history.shift();
+    } catch (_) {}
+  };
+  const errorText = error => {
+    try { return String(error).slice(0, 1000); } catch (_) { return '?'; }
+  };
+  const worker = value => value && ({script: value.scriptURL, state: value.state});
+  const watched = new WeakSet();
+  function watch(value) {
+    if (!value || watched.has(value)) return;
+    watched.add(value);
+    record('worker', worker(value));
+    value.addEventListener('statechange', () => record('statechange', worker(value)));
+  }
+  function registration(value) {
+    if (!value) return;
+    watch(value.installing); watch(value.waiting); watch(value.active);
+    if (watched.has(value)) return;
+    watched.add(value);
+    value.addEventListener('updatefound', () => {
+      record('updatefound', {scope: value.scope}); watch(value.installing);
+    });
+  }
+  function observe(prototype, name) {
+    if (!prototype || typeof prototype[name] !== 'function') return;
+    const original = prototype[name];
+    prototype[name] = function (...args) {
+      record(name + ':start', {script: name === 'register' && typeof args[0] === 'string' ?
+        args[0] : undefined});
+      let promise;
+      try { promise = original.apply(this, args); }
+      catch (error) { record(name + ':throw', {error: errorText(error)}); throw error; }
+      // Observe settlement while returning the exact native Promise to the application.
+      promise.then(value => {
+        try { record(name + ':resolved'); registration(value); }
+        catch (error) { record('observer-error', {error: errorText(error)}); }
+      }, error => record(name + ':rejected', {error: errorText(error)}));
+      return promise;
+    };
+  }
+  if (!('serviceWorker' in navigator)) return;
+  observe(window.ServiceWorkerContainer?.prototype, 'register');
+  observe(window.ServiceWorkerRegistration?.prototype, 'update');
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    record('controllerchange', {controller: worker(navigator.serviceWorker.controller)});
+    watch(navigator.serviceWorker.controller);
+  });
+})();"""
+_WORKER_SNAPSHOT = """async () => {
+  const worker = value => value && ({script: value.scriptURL, state: value.state});
+  const bounded = promise => Promise.race([
+    promise.catch(error => ({error: error.message})),
+    new Promise(resolve => setTimeout(() => resolve({pending: true}), 1000))
+  ]);
+  const service = navigator.serviceWorker;
+  const [registrations, cached] = await Promise.all([
+    bounded(service.getRegistrations().then(items => items.map(item => ({
+      scope: item.scope, installing: worker(item.installing),
+      waiting: worker(item.waiting), active: worker(item.active)
+    })))), bounded(caches.keys())
+  ]);
+  return {url: location.origin + location.pathname, secure: window.isSecureContext,
+    readyState: document.readyState, visibility: document.visibilityState,
+    controller: worker(service.controller), registrations, cached,
+    history: window.magicWorkerDiagnostics || [],
+    documentBuild: document.querySelector('meta[name="magic-build"]')?.content,
+    checkDisabled: document.getElementById('checkUpdate')?.disabled,
+    ui: Object.fromEntries(['offline', 'updateStatus', 'appVersion'].map(id =>
+      [id, document.getElementById(id)?.textContent.slice(0, 1000)]))};
+}"""
+
+
+def diagnostic_url(url):
+    address = urlsplit(url)
+    revision = next((value for key, value in parse_qsl(address.query) if key == "rev"), None)
+    return address.path + ("?rev=" + revision[:64] if revision else "")
+
+
+class BrowserDiagnostics:
+    """Keep metadata outside the page so a closed WebKit target still leaves evidence."""
+
+    def __init__(self, page, request):
+        self.page, self.nodeid = page, request.node.nodeid
+        self.started = time.monotonic()
+        self.events, self.snapshots, self.listeners = deque(maxlen=80), {}, []
+        self.server = request.node.getparent(pytest.Module).stash.get(_SERVER_HISTORY, None)
+        self.engine = page.context.browser.browser_type.name
+        page._magic_diagnostics = self
+        page.add_init_script(_WORKER_OBSERVER)
+        for target, event in ((page, "crash"), (page, "close"),
+                              (page.context, "close"), (page.context.browser, "disconnected")):
+            label = f"{type(target).__name__}:{event}"
+            self.listen(target, event, lambda *_, label=label: self.record(label))
+        self.listen(page, "console", self.console)
+        self.listen(page, "requestfailed", self.request_failed)
+        self.listen(page, "framenavigated", lambda frame: self.record(
+            "navigation", url=diagnostic_url(frame.url),
+        ) if frame == page.main_frame else None)
+
+    def listen(self, target, event, callback):
+        target.on(event, callback)
+        self.listeners.append((target, event, callback))
+
+    def record(self, event, **details):
+        self.events.append({"at_ms": round((time.monotonic() - self.started) * 1000),
+                            "event": event, **details})
+
+    def console(self, message):
+        if message.type in {"warning", "error"}:
+            self.record("console:" + message.type, text=message.text[:1000])
+
+    def request_failed(self, request):
+        if urlsplit(request.url).path.rsplit("/", 1)[-1] in _INSTALL_FILES:
+            self.record("requestfailed", url=diagnostic_url(request.url), error=request.failure)
+
+    def snapshot(self):
+        requests = []
+        if self.server:
+            lock, history = self.server
+            with lock:
+                requests = [{**item, "at_ms": round((item["at"] - self.started) * 1000)}
+                            for item in history if item["at"] >= self.started]
+            for item in requests:
+                item.pop("at")
+        return {"test": self.nodeid, "engine": self.engine, "events": list(self.events),
+                "server": requests, "snapshots": self.snapshots}
+
+    def finish(self):
+        for target, event, callback in self.listeners:
+            target.remove_listener(event, callback)
+        directory = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+        if directory:
+            name = hashlib.sha256(self.nodeid.encode()).hexdigest()[:12]
+            target = Path(directory) / "browser-diagnostics" / f"{self.engine}-{name}.json"
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(self.snapshot(), ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+            except OSError as error:
+                print(f"Browser diagnostics could not be saved: {error}", file=sys.stderr)
 
 
 @pytest.fixture(scope="module")
@@ -69,19 +221,37 @@ def study_files(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
-def web_url():
+def web_url(request):
     root = Path(__file__).resolve().parents[1]
+    lock, history = threading.Lock(), deque(maxlen=120)
+    request.node.stash[_SERVER_HISTORY] = (lock, history)
 
     class Quiet(SimpleHTTPRequestHandler):
+        def record(self, event, **details):
+            if urlsplit(self.path).path.rsplit("/", 1)[-1] in _INSTALL_FILES:
+                with lock:
+                    history.append({"at": time.monotonic(), "event": event,
+                                    "path": diagnostic_url(self.path), **details})
+
         def do_GET(self):
-            # A CDN can still serve yesterday's unversioned HTML after a deployment.
-            if self.path == "/index.html":
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html")
-                self.end_headers()
-                self.wfile.write(b"<title>Previous player</title>")
-                return
-            super().do_GET()
+            self.record("request")
+            try:
+                # A CDN can still serve yesterday's unversioned HTML after a deployment.
+                if self.path == "/index.html":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html")
+                    self.end_headers()
+                    self.wfile.write(b"<title>Previous player</title>")
+                else:
+                    super().do_GET()
+            except Exception as error:
+                self.record("send-error", error=str(error)[:1000])
+                raise
+            else:
+                self.record("complete")
+
+        def log_request(self, code="-", size="-"):
+            self.record("response", status=code)
 
         def log_message(self, *_):
             pass
@@ -101,13 +271,21 @@ def page(request, web_url, web_browser_pool):
     # Storage, service workers and audio remain isolated in a fresh context per test.
     context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
     errors = []
+    diagnostics = None
     try:
         page = context.new_page()
+        diagnostics = BrowserDiagnostics(page, request)
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(web_url)
         yield page
     finally:
-        context.close()
+        if diagnostics:
+            diagnostics.record("fixture:context-close")
+        try:
+            context.close()
+        finally:
+            if diagnostics:
+                diagnostics.finish()
     assert errors == []
 
 
@@ -118,14 +296,22 @@ def fresh_page(request, web_url):
     with sync_playwright() as playwright:
         browser = getattr(playwright, request.param).launch()
         errors = []
+        diagnostics = None
         try:
             context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
             page = context.new_page()
+            diagnostics = BrowserDiagnostics(page, request)
             page.on("pageerror", lambda e: errors.append(str(e)))
             page.goto(web_url)
             yield page
         finally:
-            browser.close()
+            if diagnostics:
+                diagnostics.record("fixture:browser-close")
+            try:
+                browser.close()
+            finally:
+                if diagnostics:
+                    diagnostics.finish()
         assert errors == []
 
 
@@ -156,6 +342,26 @@ def add_failure_diagnostics(error, page, label, expression):
     except Exception as capture_error:
         details = {"capture_error": str(capture_error)[:1000]}
     error.add_note(label + ":\n" + json.dumps(details, ensure_ascii=False))
+    diagnostics = getattr(page, "_magic_diagnostics", None)
+    if diagnostics:
+        diagnostics.snapshots[label] = details
+        evidence = diagnostics.snapshot()
+        evidence.pop("snapshots")
+        error.add_note("Browser lifecycle and HTTP diagnostics:\n" +
+                       json.dumps(evidence, ensure_ascii=False))
+
+
+def add_worker_failure_diagnostics(error, page):
+    add_failure_diagnostics(error, page, "Initial worker diagnostics", _WORKER_SNAPSHOT)
+
+
+def wait_for_service_worker(page):
+    try:
+        page.wait_for_function("navigator.serviceWorker.controller !== null")
+        page.wait_for_function("!document.getElementById('checkUpdate').disabled")
+    except Exception as error:
+        add_worker_failure_diagnostics(error, page)
+        raise
 
 
 def hold_audio_resume(page):
@@ -262,7 +468,17 @@ def test_audio_permission_timeout_preserves_loaded_file_and_allows_play_retry(pa
     assert page.locator("#file").is_enabled() and page.locator("#play").is_enabled()
     page.evaluate("window.audioResumeAllowed = true")
     page.locator("#play").click()
-    page.wait_for_function("MagicPlayer.state().position > .2")
+    try:
+        page.wait_for_function("MagicPlayer.state().position > .2")
+    except Exception as error:
+        add_failure_diagnostics(error, page, "Audio permission retry diagnostics", """() => {
+          const context = MagicPlayer.context();
+          return {state: MagicPlayer.state(), visibility: document.visibilityState,
+            audio: {state: context?.state, time: context?.currentTime},
+            resumeCalls: window.audioResumeCalls, resumeAllowed: window.audioResumeAllowed,
+            status: document.getElementById('status')?.textContent};
+        }""")
+        raise
 
 
 def test_suspended_worklet_cleanup_does_not_block_file_replacement(page, study_files):

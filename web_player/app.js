@@ -506,8 +506,7 @@ function frame() { if (ready) showPosition(); updateDots(); updateMetroState(); 
 function setAvailable(value) {
   for (const id of ['play', 'home', 'seek', 'back', 'forward', 'loop', 'loopStart', 'loopEnd']) $(id).disabled = !value;
   for (const id of ['file', 'sessionFile']) $(id).disabled = loading;
-  $('audioVariant').disabled = !value || loading || (archive?.audioVariants.length || 0) < 2;
-  $('audioChoice').setAttribute('aria-busy', String(loading));
+  updateAudioChoiceState(value);
   $('partSelect').disabled = !value || loading;
   ensemble?.update();
 }
@@ -554,6 +553,19 @@ const AUDIO_TARGET_LABELS = {vocals: '보컬', guitar: '기타', drums: '드럼'
 function audioChoiceLabel(variant) {
   return variant.targets ? `${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')} 없는 반주` : variant.label;
 }
+function updateAudioChoiceState(available = ready) {
+  const count = archive?.audioVariants.length || 0;
+  const busy = loading || !!ensemble?.busy || !!ensemble?.downloadTask;
+  $('audioVariant').disabled = !available || busy || count < 2;
+  $('audioChoice').setAttribute('aria-busy', String(busy));
+  const single = ensemble?.role ? '저장된 음원이 1개입니다. 이 음원으로 합주합니다.' :
+    '저장된 음원이 1개입니다. 바로 재생할 수 있습니다.';
+  const progress = loading ? '음원 준비 중… 잠시 기다려 주세요.' : ensemble?.downloadTask ?
+    '공유 음원을 받고 있습니다…' : '합주에 연결하고 있습니다…';
+  const message = !count ? '' : busy ? progress : count === 1 ?
+    single : '이 파일에 저장된 음원만 선택할 수 있습니다.';
+  if ($('audioVariantScope').textContent !== message) $('audioVariantScope').textContent = message;
+}
 function showAudioChoices() {
   const choices = archive?.audioVariants || [];
   $('audioVariant').replaceChildren(...choices.map(variant => {
@@ -563,8 +575,9 @@ function showAudioChoices() {
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
   $('audioChoice').hidden = choices.length === 0;
   $('audioVariantCount').textContent = choices.length ? `파일에 저장된 음원 ${choices.length}개` : '';
+  $('audioChoiceHelp').open = false;
   $('audioCombinationNotice').hidden = choices.some(variant => variant.targets) || choices.filter(variant => variant.mode === 'without').length < 2;
-  showAudioVariantHint();
+  showAudioVariantHint(); updateAudioChoiceState();
 }
 function showAudioVariantHint() {
   const selected = archive?.activeAudioVariant, targets = selected?.targets || [selected?.target];
@@ -572,9 +585,8 @@ function showAudioVariantHint() {
   let detail = selected?.targets ? `함께 제거한 파트: ${selected.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' · ')}. ` : '';
   if (targets.includes('keys')) detail += '키보드는 피아노·오르간 등 건반 계열입니다. ';
   if (targets.includes('synth')) detail += '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ';
-  const guidance = archive.audioVariants.length === 1 ?
-    '저장된 음원이 1개입니다. 다른 음원은 PC에서 준비해 .magic에 함께 저장하세요. ' :
-    '저장된 음원만 선택할 수 있습니다. 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. ';
+  const guidance = archive.audioVariants.length === 1 ? '' :
+    '음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. ';
   $('audioVariantHint').textContent = detail + guidance + '악보 파트는 악보 화면에서 따로 고릅니다.';
 }
 async function selectAudioVariant(identifier) {

@@ -143,6 +143,8 @@ def export_magic(request, report=lambda *_: None):
     if type(bitrate) is not int or bitrate not in (128, 192, 256, 320):
         raise ValueError("MP3 음질은 128, 192, 256, 320 kbps 중에서 선택하세요.")
     variants = _requested_variants(request)
+    paths = Paths(Path(request.get("root", ROOT)))
+    paths.require_cache_locations()
 
     import pypdfium2 as pdfium
 
@@ -194,9 +196,7 @@ def export_magic(request, report=lambda *_: None):
         from .gp_render import native_layout
 
         sizes, bars, _ = native_layout(gp)
-        collection = prepare_collection(
-            timeline_path, Paths(Path(request.get("root", ROOT))), report
-        )
+        collection = prepare_collection(timeline_path, paths, report)
         for part in collection:
             for path in (Path(part["prepared"]["pdf"]), part["timing"]):
                 inputs[path] = hash_file(path)
@@ -233,9 +233,7 @@ def export_magic(request, report=lambda *_: None):
 
             for item in selected:
                 report(f"음원 음량 확인 · {item['label']}", None)
-                prepared = prepare_pitch(
-                    item["path"], Paths(Path(request.get("root", ROOT))), pitch, report
-                )
+                prepared = prepare_pitch(item["path"], paths, pitch, report)
                 if prepared not in inputs:
                     inputs[prepared] = hash_file(prepared)
                 info, maximum = _measure_peak(prepared, scratch)

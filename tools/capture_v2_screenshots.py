@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from practice_player.cache import hash_file  # noqa: E402
 from practice_player.combinations import process_combination  # noqa: E402
 from practice_player.config import Settings  # noqa: E402
-from practice_player.gui import Window, export_variant_request  # noqa: E402
+from practice_player.gui import CacheLocationsDialog, Window, export_variant_request  # noqa: E402
 from practice_player.magic_bundle import export_magic  # noqa: E402
 from practice_player.pipeline import process  # noqa: E402
 from practice_player.score_layout import analyze_scroll  # noqa: E402
@@ -34,7 +34,7 @@ def pump(app, seconds=0.2):
         time.sleep(0.01)
 
 
-def capture(*, desktop_only=False):
+def capture(*, desktop_only=False, qa_dir=None):
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
@@ -104,6 +104,35 @@ def capture(*, desktop_only=False):
         window.main_splitter.widget(0).ensureWidgetVisible(window.magic_button)
         pump(app)
         window.grab().save(str(dest / "desktop-dark.png"))
+        if qa_dir is not None:
+            qa_dir.mkdir(parents=True, exist_ok=True)
+            window.resize(800, 600)
+            for mode in ("light", "dark"):
+                window.theme.setCurrentIndex(window.theme.findData(mode))
+                window.activateWindow()
+                pump(app)
+                window.grab().save(str(qa_dir / f"desktop-small-{mode}.png"))
+        window.theme.setCurrentIndex(window.theme.findData("light"))
+        dialog = CacheLocationsDialog(window)
+        for key, name in (("audioCacheFolder", "audio-cache"),
+                          ("scoreCacheFolder", "score-cache")):
+            example = paths.root / name
+            example.mkdir()
+            dialog.fields[key].setText(str(example))
+        dialog.show()
+        dialog.activateWindow()
+        pump(app)
+        dialog.grab().save(str(dest / "cache-options.png"))
+        if qa_dir is not None:
+            dialog.resize(500, 440)
+            for mode in ("light", "dark"):
+                window.theme.setCurrentIndex(window.theme.findData(mode))
+                dialog.activateWindow()
+                pump(app)
+                dialog.grab().save(str(qa_dir / f"cache-small-{mode}.png"))
+        dialog.reject()
+        window.activateWindow()
+        pump(app)
         window.close()
         pump(app)
         if desktop_only:
@@ -140,4 +169,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--desktop-only", action="store_true",
                         help="Capture Qt screens without launching a browser")
-    capture(desktop_only=parser.parse_args().desktop_only)
+    parser.add_argument("--qa-dir", type=Path,
+                        help="Save additional small-window Qt captures outside the public images")
+    args = parser.parse_args()
+    capture(desktop_only=args.desktop_only, qa_dir=args.qa_dir)

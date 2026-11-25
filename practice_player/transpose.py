@@ -11,6 +11,7 @@ from filelock import FileLock
 
 from .audio import inspect_audio, run_ffmpeg, tempo_filter
 from .cache import hash_file
+from .cache_locations import ensure_cache_directory
 from .score import atomic_json
 
 PITCH_VERSION = 1
@@ -18,10 +19,10 @@ _MAX_MANIFEST_BYTES = 64 * 1024
 
 
 def _pitch_folder(paths, digest, semitones):
-    root = Path(paths.root).resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    paths.require_cache_locations()
+    root = ensure_cache_directory(paths.audio_cache)
     current = root
-    for name in ("processed", "pitch", digest, f"v{PITCH_VERSION}-{semitones:+d}"):
+    for name in ("pitch", digest, f"v{PITCH_VERSION}-{semitones:+d}"):
         current = current / name
         if current.is_symlink() or (current.exists() and not current.is_dir()):
             raise ValueError("키 변경 캐시 폴더의 바로가기·심볼릭 링크는 사용할 수 없습니다.")

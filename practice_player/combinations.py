@@ -13,6 +13,7 @@ from filelock import FileLock
 
 from .audio import inspect_audio
 from .cache import Result, hash_file
+from .cache_locations import ensure_cache_directory
 from .config import MODELS, Settings
 from .variants import AudioVariant, is_combination, recommended_model, removal_targets
 
@@ -108,6 +109,7 @@ def _result(directory, manifest, *, cached=True):
 def process_combination(source, identifier, model, device, low_memory, paths,
                         report=lambda *_: None, *, offline=False, processor=None):
     """Each model hears the previous residual; overlapping original estimates are never summed."""
+    paths.require_cache_locations()
     signature = combination_signature(identifier, model, low_memory)
     source = Path(source).resolve(strict=True)
     if not source.is_file():
@@ -118,9 +120,10 @@ def process_combination(source, identifier, model, device, low_memory, paths,
         processor = process
     source_hash = hash_file(source)
     paths.create()
-    track = paths.processed / source_hash
+    ensure_cache_directory(paths.audio_cache)
+    track = paths.audio_cache / source_hash
     namespace = track / "combinations-v1"
-    if any(_linked(path) for path in (paths.processed, track, namespace)):
+    if any(_linked(path) for path in (paths.audio_cache, track, namespace)):
         raise ValueError("캐시 경로의 바로가기·심볼릭 링크는 사용할 수 없습니다.")
     namespace.mkdir(parents=True, exist_ok=True)
     key = combination_cache_key(signature)
@@ -198,7 +201,7 @@ def process_combination(source, identifier, model, device, low_memory, paths,
                 encoding="utf-8",
             )
             if any(_linked(path) for path in (
-                paths.processed, track, namespace, directory,
+                paths.audio_cache, track, namespace, directory,
                 directory / "manifest.json", directory / "combined.wav",
             )):
                 raise ValueError("캐시 경로의 바로가기·심볼릭 링크는 사용할 수 없습니다.")
@@ -211,10 +214,11 @@ def process_combination(source, identifier, model, device, low_memory, paths,
 
 def find_cached_combinations(source_hash, paths, *, source_frames=None, low_memory=False):
     """Discover only current, verified recipes; never infer or create a missing combination."""
+    paths.require_cache_locations()
     if not isinstance(source_hash, str) or not _SHA.fullmatch(source_hash):
         raise ValueError("원곡의 캐시 식별자가 올바르지 않습니다.")
-    namespace = paths.processed / source_hash / "combinations-v1"
-    if any(_linked(path) for path in (paths.processed, namespace.parent, namespace)):
+    namespace = paths.audio_cache / source_hash / "combinations-v1"
+    if any(_linked(path) for path in (paths.audio_cache, namespace.parent, namespace)):
         return {}
     if not namespace.is_dir():
         return {}

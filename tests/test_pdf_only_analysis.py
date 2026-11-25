@@ -208,6 +208,7 @@ def test_pdf_gui_defaults_and_worker_arguments(pdf_study, tone, monkeypatch, sav
         jobs = []
         owner = SimpleNamespace(worker=None, paths=paths,
                                 player=SimpleNamespace(pause=lambda: None), start_job=jobs.append)
+        owner.cache_work_ready = lambda: Window.cache_work_ready(owner)
         Window.analyze_score(owner, options)
         args = parser().parse_args(jobs[0])
         expected_mode = saved_mode if saved_mode in {"audio", "tempo"} else "auto"
