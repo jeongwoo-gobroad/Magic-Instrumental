@@ -349,7 +349,7 @@ class Ensemble {
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
     $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
-    $('audioVariant').disabled = !ready || loading || this.busy || !!this.downloadTask || (archive?.audioVariants.length || 0) < 2;
+    updateAudioChoiceState();
     $('linked').disabled = active;
     for (const id of ensembleTransport) $(id).disabled = !ready || loading || member || (leader && (!this.prepared || !this.allReady() || !!this.pending));
     for (const id of ensembleSettings) $(id).disabled = loading || member || (leader && (playing || !!this.pending)) || (['loop','loopStart','loopEnd'].includes(id) && !ready);
