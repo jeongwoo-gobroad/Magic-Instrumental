@@ -6,6 +6,7 @@ import json
 import os
 import zipfile
 from copy import deepcopy
+from pathlib import Path
 
 import pytest
 
@@ -35,7 +36,21 @@ def variant_files(tmp_path_factory):
             result[f"{kind}_{codec}"] = export_magic({
                 **request, "audio_format": codec, "output": str(root / f"{kind}-{codec}.magic"),
             })
+        if kind == "pdf":
+            result["single_guitar"] = export_magic({
+                **request, "audio_format": "wav", "audio_variants": request["audio_variants"][1:],
+                "default_audio_variant": "guitar", "output": str(root / "single-guitar.magic"),
+            })
     return result
+
+
+def capture_options(page, name):
+    directory = os.environ.get("MAGIC_RENDER_CHECK_DIR")
+    if directory:
+        target = Path(directory)
+        target.mkdir(parents=True, exist_ok=True)
+        engine = page.context.browser.browser_type.name
+        page.screenshot(path=str(target / f"web-options-{engine}-{name}.png"), full_page=True)
 
 
 @pytest.fixture(scope="module")
@@ -85,6 +100,10 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert page.evaluate("MagicPlayer.archive().manifest.version") == 4
     assert page.evaluate("window.decodeCalls") == 1
     assert page.locator("#audioChoice").is_visible()
+    assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 2개"
+    assert page.locator("#audioVariant option").evaluate_all(
+        "options => options.map(option => option.value)"
+    ) == ["no_vocals", "guitar"]
     if kind == "gp":
         page.locator("#partSelect").select_option("1")
         page.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
@@ -101,6 +120,18 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     page.locator("#play").click()
     page.wait_for_function("MagicPlayer.state().position > 5.3")
     assert_tone(page, 220 * 2 ** (2 / 12))
+    page.evaluate("""() => {
+      window.originalControls = ['play', 'audioVariant', 'seek']
+        .map(id => document.getElementById(id));
+      window.beforeHidePosition = MagicPlayer.state().position;
+    }""")
+    page.locator("#optionsToggle").click()
+    assert page.locator("#optionsSidebar").is_hidden()
+    assert page.locator("#optionsToggle").get_attribute("aria-expanded") == "false"
+    assert page.locator("#focusControls #audioVariant").is_visible()
+    assert page.locator("#focusControls #play").is_visible()
+    assert page.evaluate("MagicPlayer.state().playing")
+    assert page.evaluate("MagicPlayer.state().position >= beforeHidePosition")
     page.evaluate("""() => {
       document.getElementById('audioVariant').addEventListener('change', () => {
         window.variantPosition = MagicPlayer.state().position;
@@ -125,9 +156,65 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert_tone(page, 440 * 2 ** (2 / 12))
     assert page.evaluate("window.decodeCalls") == 2
     page.evaluate("MagicPlayer.pause()")
+    if kind == "gp" and codec == "mp3":
+        capture_options(page, "desktop-collapsed")
     page.set_viewport_size({"width": 360, "height": 780})
     assert page.locator("#audioVariant").is_visible()
+    assert page.locator("#play").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    if kind == "gp" and codec == "mp3":
+        capture_options(page, "phone-collapsed")
+    page.locator('.practice-links a[href="#playerControls"]').click()
+    assert page.locator("#optionsSidebar").is_visible()
+    assert page.locator("#optionsToggle").get_attribute("aria-expanded") == "true"
+    assert page.locator("#playerControls").bounding_box()["y"] < 5
+    assert page.evaluate("""originalControls.every((control, index) =>
+      control === document.getElementById(['play', 'audioVariant', 'seek'][index]))""")
+    assert page.locator("#playerControls #play").is_visible()
+    assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
+
+
+
+def test_single_available_audio_and_options_preference_survive_reload_and_blocked_storage(
+    page, variant_files,
+):
+    open_study(page, variant_files["single_guitar"])
+    assert page.locator("#audioChoice").is_visible()
+    assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 1개"
+    assert page.locator("#audioVariant option").count() == 1
+    assert page.locator("#audioVariant").input_value() == "guitar"
+    page.locator("#optionsToggle").focus()
+    page.locator("#optionsToggle").press("Enter")
+    assert page.locator("#optionsSidebar").is_hidden()
+    assert page.locator("#optionsToggle").evaluate("el => el === document.activeElement")
+    # Complete the service-worker request before replacing its document in WebKit.
+    page.wait_for_function("navigator.serviceWorker.controller !== null")
+    page.wait_for_function("!document.getElementById('checkUpdate').disabled")
+    page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    assert page.locator("#optionsSidebar").is_hidden()
+    assert page.locator("#optionsToggle").inner_text() == "옵션 펼치기"
+    assert page.locator("#focusControls #play").is_disabled()
+    assert page.locator("#audioChoice").is_hidden()
+    page.locator("#optionsToggle").click()
+    assert page.locator("#soloFile .file-button").is_visible()
+    page.wait_for_function("!document.getElementById('checkUpdate').disabled")
+    page.add_init_script("""
+      for (const method of ['getItem', 'setItem']) {
+        Storage.prototype[method] = () => {
+          throw new DOMException('Storage blocked', 'SecurityError');
+        };
+      }
+    """)
+    page.reload()
+    page.wait_for_function("typeof MagicPlayer !== 'undefined'")
+    open_study(page, variant_files["single_guitar"])
+    page.locator("#optionsToggle").click()
+    assert page.locator("#optionsSidebar").is_hidden()
+    assert page.locator("#focusControls #audioVariant").input_value() == "guitar"
+    page.locator("#optionsToggle").click()
+    assert page.locator("#optionsSidebar").is_visible()
+    assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
 
 
 def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
@@ -253,6 +340,8 @@ def test_corrupt_unselected_audio_is_lazy_and_keeps_working_version(
                    payload=(name, bytes(payload)))
     watch_decoding(page)
     open_study(page, broken)
+    page.locator("#optionsToggle").click()
+    assert page.locator("#optionsSidebar").is_hidden()
     assert page.evaluate("window.decodeCalls") == 1
     page.evaluate("MagicPlayer.seek(5, false)")
     page.locator("#audioVariant").select_option("guitar")
@@ -263,6 +352,7 @@ def test_corrupt_unselected_audio_is_lazy_and_keeps_working_version(
     assert state["position"] == 5 and not state["playing"]
     assert page.locator("#audioVariant").input_value() == "no_vocals"
     assert page.locator("#status").get_attribute("class") == "file-error"
+    assert page.locator("#focusControls #status").is_visible()
     attach_music_probe(page)
     page.locator("#play").click()
     page.wait_for_function("MagicPlayer.state().position > 5.3")
@@ -359,6 +449,16 @@ def test_session_shared_variants_keep_identity_and_require_fresh_ready(
         member.locator("#partSelect").select_option("1")
         member.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
                                  "!document.getElementById('partSelect').disabled")
+        for participant in (leader, member):
+            participant.locator("#optionsToggle").click()
+            assert participant.locator("#optionsSidebar").is_hidden()
+            assert participant.locator("#focusControls #audioVariant").is_visible()
+        assert member.locator("#play").is_hidden()
+        assert leader.locator("#play").is_visible()
+        member.locator("#sessionRoom").click()
+        assert member.locator("#optionsSidebar").is_visible()
+        assert member.locator("#ensemblePanel").is_visible()
+        member.locator("#optionsToggle").click()
         hold_resume_completion(member, "#sessionPrepare")
         member.locator("#sessionPrepare").click()
         member.wait_for_function("window.releaseResume !== null")

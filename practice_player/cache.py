@@ -1,11 +1,18 @@
 # SPDX-License-Identifier: GPL-3.0-only
 import json
+import re
 from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 
 from .audio import inspect_audio
-from .variants import SUPPORTED_VARIANTS, AudioVariant, variant_filename, variant_target
+from .variants import (
+    SUPPORTED_VARIANTS,
+    AudioVariant,
+    recommended_model,
+    variant_filename,
+    variant_target,
+)
 
 _STEMS = {"vocals", "instrumental", "guitar", "drums", "bass", "other", "piano", "keys", "synth"}
 _OWNED_NAMES = {"_mixture.wav"} | {f"{stem}.wav" for stem in _STEMS} | {
@@ -150,3 +157,66 @@ def cached_result(
         )
     except (OSError, ValueError, KeyError, TypeError, RuntimeError):
         return None
+
+
+def find_cached_variants(source_hash, paths, *, source_frames=None, low_memory=False):
+    """Read known v3 recipes without creating paths, files or missing audio choices."""
+    from .config import MODELS, Settings
+
+    if not re.fullmatch(r"[a-f0-9]{64}", source_hash):
+        raise ValueError("원곡의 캐시 식별자가 올바르지 않습니다.")
+    track = paths.processed / source_hash
+    if paths.processed.is_symlink() or track.is_symlink():
+        return {}
+    models = tuple(dict.fromkeys(("original", "leap", "sw6", "mega", *MODELS)))
+    choices, priorities = {}, {}
+    frames = source_frames
+    for model_index, model in enumerate(models):
+        for small in (low_memory, not low_memory):
+            settings = Settings(model=model, low_memory=small)
+            directory = track / settings.cache_key
+            manifest = read_cache(directory, source_hash, settings.signature())
+            if manifest is None:
+                continue
+            try:
+                first = next(iter(manifest["variants"]))
+                result = result_from_cache(directory, manifest, first)
+            except (KeyError, TypeError, ValueError):
+                continue
+            candidate_frames = manifest["source_audio"]["frames"]
+            if frames is None:
+                frames = candidate_frames
+            elif candidate_frames != frames:
+                if source_frames is not None:
+                    continue
+                raise ValueError("저장된 음원 길이가 서로 다릅니다. 원곡에서 다시 준비하세요.")
+            for identifier, variant in result.variants.items():
+                priority = (model != recommended_model(identifier), small != low_memory,
+                            model_index)
+                if identifier not in choices or priority < priorities[identifier]:
+                    choices[identifier], priorities[identifier] = variant, priority
+    return {identifier: choices[identifier] for identifier in SUPPORTED_VARIANTS
+            if identifier in choices}
+
+
+def discover_cached_audio(source, paths, report=lambda *_: None, *, variant_id=None):
+    """Build a worker payload for verified choices without preparing or playing audio."""
+    if variant_id is not None and variant_id not in SUPPORTED_VARIANTS:
+        raise ValueError("지원하지 않는 재생 음원입니다.")
+    source = source.resolve(strict=True)
+    if not source.is_file():
+        raise ValueError(f"파일이 아닙니다: {source}")
+    report("원곡과 저장된 음원을 확인하는 중…", None)
+    source_hash = hash_file(source)
+    variants = find_cached_variants(source_hash, paths)
+    if hash_file(source) != source_hash:
+        raise RuntimeError("확인 중 원본 파일이 변경되었습니다. 저장을 마친 뒤 다시 실행하세요.")
+    selected = variant_id if variant_id in variants else next(iter(variants), None)
+    current = variants.get(selected)
+    return {
+        "source_hash": source_hash, "source_frames": current.frames if current else 0,
+        "sample_rate": current.sample_rate if current else 44100,
+        "variants": {identifier: item.to_dict() for identifier, item in variants.items()},
+        "selected_variant": selected, "instrumental": str(current.path) if current else None,
+        "cached": True, "device": "cache",
+    }

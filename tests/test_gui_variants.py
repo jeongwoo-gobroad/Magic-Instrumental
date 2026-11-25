@@ -71,7 +71,8 @@ def select_option(combo, identifier):
 
 def prepare_variant(window, app, identifier):
     window.models.setCurrentIndex(window.models.findData("auto"))
-    window.separation_variant.setCurrentIndex(window.separation_variant.findData(identifier))
+    window.select_preparation_variants(False)
+    window.variant_checks[identifier].setChecked(True)
     QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app)
     assert window.selected_variant == identifier
@@ -149,19 +150,23 @@ def test_preparing_new_same_song_variant_keeps_key_speed_position_and_loop(
         start_job(args)
 
     monkeypatch.setattr(window, "start_job", record)
+    expected = "no_vocals" if all_variants else "no_guitar"
     if all_variants:
-        window.separation_variant.setCurrentIndex(window.separation_variant.findData("no_guitar"))
-        QTest.mouseClick(window.prepare_all_button, Qt.MouseButton.LeftButton)
+        window.models.setCurrentIndex(window.models.findData("auto"))
+        QTest.mouseClick(window.select_all_variants, Qt.MouseButton.LeftButton)
+        QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
         finish(window, app)
         assert set(window.prepared_variants) == set(SUPPORTED_VARIANTS)
-        assert "--all-variants" in jobs[0] and jobs[0][jobs[0].index("--model") + 1] == "auto"
+        start, end = jobs[0].index("--variants") + 1, jobs[0].index("--device")
+        assert tuple(jobs[0][start:end]) == SUPPORTED_VARIANTS
+        assert jobs[0][jobs[0].index("--model") + 1] == "auto"
     else:
         prepare_variant(window, app, "no_guitar")
-    assert window.selected_variant == "no_guitar"
+    assert window.selected_variant == expected
     assert [job[0] for job in jobs] == ["separate", "pitch"]
     assert "--expected-sha256" in jobs[1] and "--expected-frames" in jobs[1]
     assert window.job_result["type"] == "pitch_result"
-    assert window.base_instrumental == Path(window.prepared_variants["no_guitar"]["path"])
+    assert window.base_instrumental == Path(window.prepared_variants[expected]["path"])
     assert {"no_vocals", "guitar", "no_guitar", "drums", "no_drums"} <= (
         window.prepared_variants.keys()
     )
@@ -202,7 +207,8 @@ def test_failed_option_preparation_retains_the_loaded_song_and_practice_range(
         select_option(window.playback_variants, "guitar")
     else:
         window.models.setCurrentIndex(window.models.findData("hyperace"))
-        window.separation_variant.setCurrentIndex(window.separation_variant.findData("guitar"))
+        window.select_preparation_variants(False)
+        window.variant_checks["guitar"].setChecked(True)
         QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app, error=True)
     assert (window.output_path, window.base_instrumental, window.selected_variant,
@@ -410,5 +416,222 @@ def test_imported_gp_uses_saved_pages_and_preserves_loop_across_part_and_audio_c
         assert [job[0] for job in jobs] == ["magic-import", "pitch"]
         assert all(path.read_bytes() == content for path, content in plan_bytes.items())
         assert hash_file(archive) == original_archive
+    finally:
+        dispose(window, app)
+
+
+def test_checkbox_subset_and_empty_selection_have_one_prepare_action(
+    native_window, app, monkeypatch,
+):
+    window = native_window
+    jobs, start_job = [], window.start_job
+
+    def record(args):
+        jobs.append(args)
+        start_job(args)
+
+    monkeypatch.setattr(window, "start_job", record)
+    QTest.mouseClick(window.clear_variants, Qt.MouseButton.LeftButton)
+    assert not window.prepare_button.isEnabled()
+    assert "하나 이상" in window.selection_summary.text()
+    window.prepare()
+    assert not jobs
+    window.models.setCurrentIndex(window.models.findData("auto"))
+    for identifier in ("no_guitar", "no_drums", "keys"):
+        checkbox = window.variant_checks[identifier]
+        window.controller.ensureWidgetVisible(checkbox)
+        QTest.mouseClick(checkbox, Qt.MouseButton.LeftButton)
+    assert window.checked_variants() == ["no_guitar", "no_drums", "keys"]
+    assert "3개" in window.selection_summary.text()
+    assert "키보드" in window.separation_hint.text()
+    QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
+    finish(window, app)
+    assert window.selected_variant == "no_guitar"
+    start, end = jobs[0].index("--variants") + 1, jobs[0].index("--device")
+    assert jobs[0][start:end] == ["no_guitar", "no_drums", "keys"]
+    assert [job[0] for job in jobs] == ["separate", "pitch"]
+
+
+def test_saved_audio_loads_only_actual_cache_and_empty_lookup_keeps_current_song(
+    app, tmp_path, tone, monkeypatch,
+):
+    paths = Paths(tmp_path / "project")
+    paths.create()
+    source = paths.targets / "cached.wav"
+    source.write_bytes(tone.read_bytes())
+    result = process(source, Settings("sw6"), paths, stem_runner=SixStemEngine(),
+                     variant_id="no_guitar")
+    cached_files = {path: hash_file(path) for path in result.instrumental.parent.iterdir()
+                    if path.is_file()}
+    window = Window(paths)
+    window.resize(1000, 800)
+    window.show()
+    window.audio_output.setVolume(0)
+    jobs, start_job = [], window.start_job
+
+    def record(args):
+        jobs.append(args)
+        start_job(args)
+
+    monkeypatch.setattr(window, "start_job", record)
+    try:
+        assert window.checked_variants() == ["no_vocals"]
+        assert "no_vocals" not in result.variants
+        QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
+        finish(window, app)
+        assert [job[0] for job in jobs] == ["cached-audio"]
+        assert set(window.prepared_variants) == set(result.variants)
+        assert window.playback_variants.findData("no_vocals") == -1
+        assert "캐시" in window.available_variants.text()
+        assert all(hash_file(path) == checksum for path, checksum in cached_files.items())
+        select_option(window.playback_variants, "no_guitar")
+        finish(window, app)
+        window.player.setPosition(1000)
+        before = (window.player.source(), window.source_path, window.selected_variant,
+                  dict(window.prepared_variants))
+        uncached = paths.targets / "uncached.wav"
+        uncached.write_bytes(source.read_bytes() + b"different source identity")
+        window.refresh_tracks()
+        window.tracks.setCurrentRow(1)
+        QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
+        finish(window, app)
+        assert "저장된 음원이 없습니다" in window.status.text()
+        assert (window.player.source(), window.source_path, window.selected_variant,
+                window.prepared_variants) == before
+        assert window.player.position() == 1000 and not window.player.isPlaying()
+        assert [job[0] for job in jobs] == ["cached-audio", "pitch", "cached-audio"]
+        assert not (paths.processed / hash_file(uncached)).exists()
+
+        active = dict(window.active_variant)
+        current_audio = Path(active["path"])
+        current_audio.write_bytes(current_audio.read_bytes() + b"changed cached audio")
+        window.tracks.setCurrentRow(0)
+        QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
+        finish(window, app)
+        assert not window.prepared_variants and window.playback_variants.count() == 0
+        assert window.active_variant == active and not window.magic_button.isEnabled()
+        window.key.setValue(1)
+        QTest.mouseClick(window.key_apply, Qt.MouseButton.LeftButton)
+        finish(window, app, error=True)
+        assert "변경" in window.job_error
+        assert window.pitch_semitones == 0 and window.player.source() == before[0]
+    finally:
+        dispose(window, app)
+
+
+def test_collapsed_options_keep_audio_choices_transport_and_score_state(
+    native_window, app,
+):
+    window = native_window
+    position = practice_state(window, app, key=0)
+    panel, timeline = window.score_panel, window.score_panel.timeline
+    window.resize(1000, 800)
+    window.main_splitter.setSizes([440, 540])
+    QTest.qWait(150)
+    expanded_sizes = window.main_splitter.sizes()
+    score_width = panel.width()
+    QTest.mouseClick(window.options_toggle, Qt.MouseButton.LeftButton)
+    QTest.qWait(150)
+    assert not window.controller.isVisible() and panel.width() > score_width
+    assert window.options_toggle.text() == "옵션 펼치기"
+    assert window.play_button.isVisible() and window.clock.isVisible()
+    assert window.playback_variants.isVisible() and window.playback_variants.isEnabled()
+    select_option(window.playback_variants, "guitar")
+    finish(window, app)
+    assert panel.timeline is timeline
+    assert_practice_state(window, position, key=0)
+    assert_current_measure_visible(panel)
+    QTest.mouseClick(window.options_toggle, Qt.MouseButton.LeftButton)
+    QTest.qWait(150)
+    assert window.controller.isVisible()
+    assert abs(window.main_splitter.sizes()[0] - expanded_sizes[0]) <= 2
+    QTest.mouseClick(window.options_toggle, Qt.MouseButton.LeftButton)
+    window.preferences.sync()
+    reopened = Window(window.paths)
+    reopened.resize(800, 600)
+    reopened.show()
+    try:
+        QTest.qWait(100)
+        assert not reopened.controller.isVisible()
+        assert reopened.score_panel.isVisible() and reopened.options_toggle.isVisible()
+        assert reopened.play_button.isVisible() and reopened.playback_variants.isVisible()
+        QTest.mouseClick(reopened.score_visible, Qt.MouseButton.LeftButton)
+        assert reopened.controller.isVisible() and not reopened.score_panel.isVisible()
+        assert reopened.options_toggle.isChecked()
+        QTest.mouseClick(reopened.options_toggle, Qt.MouseButton.LeftButton)
+        assert not reopened.controller.isVisible() and reopened.score_panel.isVisible()
+        assert reopened.score_visible.isChecked()
+        assert reopened.options_toggle.geometry().bottom() < reopened.height()
+    finally:
+        dispose(reopened, app)
+
+
+@pytest.mark.parametrize("outcome", ["cancelled", "failed"])
+def test_cache_model_switch_commits_catalog_only_after_success(
+    app, tmp_path, tone, fake_engine, monkeypatch, outcome,
+):
+    paths = Paths(tmp_path / "project")
+    paths.create()
+    source = paths.targets / "study.wav"
+    source.write_bytes(tone.read_bytes())
+    process(source, Settings("hyperace"), paths, runner=fake_engine)
+
+    def quieter_model(audio, output, *_args, **_kwargs):
+        samples, rate = sf.read(audio, dtype="float32")
+        sf.write(output, samples * .5, rate, subtype="FLOAT")
+        return "test"
+
+    preferred = process(source, Settings("leap"), paths, runner=quieter_model)
+    window = Window(paths)
+    window.resize(1000, 800)
+    window.show()
+    window.audio_output.setVolume(0)
+    window.models.setCurrentIndex(window.models.findData("hyperace"))
+    try:
+        QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
+        finish(window, app)
+        window.player.setPosition(1000)
+        before = (window.output_path, window.base_instrumental, window.player.source(),
+                  dict(window.prepared_variants), dict(window.active_variant))
+        assert window.active_variant["model_key"] == "hyperace"
+        assert window.active_variant["sha256"] != preferred.variants["no_vocals"].sha256
+        start_job, interrupted = window.start_job, []
+
+        def interrupt_switch(args):
+            if args[0] == "pitch" and not interrupted:
+                interrupted.append(args)
+                if outcome == "failed":
+                    target = Path(args[args.index("--input") + 1])
+                    target.write_bytes(target.read_bytes() + b"changed after cache lookup")
+                start_job(args)
+                assert window.status.isVisible() and window.progress.isVisible()
+                assert window.cancel_button.isVisible() and window.cancel_button.isEnabled()
+                if outcome == "cancelled":
+                    QTimer.singleShot(0, window.cancel_button.click)
+            else:
+                start_job(args)
+
+        monkeypatch.setattr(window, "start_job", interrupt_switch)
+        QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
+        QTest.mouseClick(window.options_toggle, Qt.MouseButton.LeftButton)
+        finish(window, app, error=outcome == "failed")
+        assert len(interrupted) == 1
+        assert (window.output_path, window.base_instrumental, window.player.source(),
+                window.prepared_variants, window.active_variant) == before
+        assert window._pending_catalog is None
+        assert window.player.position() == 1000 and not window.player.isPlaying()
+        assert window.status.isVisible() and not window.controller.isVisible()
+        if outcome == "cancelled":
+            assert "취소" in window.status.text()
+        else:
+            assert window.status.text() == window.job_error
+
+        monkeypatch.setattr(window, "start_job", start_job)
+        QTest.mouseClick(window.options_toggle, Qt.MouseButton.LeftButton)
+        window.key.setValue(1)
+        QTest.mouseClick(window.key_apply, Qt.MouseButton.LeftButton)
+        finish(window, app)
+        assert window.pitch_semitones == 1 and window.base_instrumental == before[1]
+        assert window.active_variant == before[4]
     finally:
         dispose(window, app)

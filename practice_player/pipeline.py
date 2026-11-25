@@ -149,13 +149,23 @@ def process(
     stem_runner=None,
     variant_id: str = "no_vocals",
     prepare_all: bool = False,
+    variant_ids: tuple[str, ...] | None = None,
 ) -> Result:
     supported = supported_variants(settings.model)
-    if variant_id not in supported:
+    if prepare_all and variant_ids is not None:
+        raise ValueError("전체 준비와 선택한 음원 목록을 함께 지정할 수 없습니다.")
+    if prepare_all:
+        requested = supported
+    elif variant_ids is not None:
+        requested = tuple(dict.fromkeys(variant_ids))
+    else:
+        requested = (variant_id,)
+    if not requested or variant_id not in requested:
+        raise ValueError("처음 재생할 음원을 준비할 목록에 포함하세요.")
+    if not set(requested) <= set(supported):
         raise ValueError("선택한 모델은 이 악기의 분리를 지원하지 않습니다.")
     if runner is not None and stem_runner is not None:
         raise ValueError("분리 작업 함수는 하나만 지정하세요.")
-    requested = supported if prepare_all else (variant_id,)
     source = source.resolve(strict=True)
     if not source.is_file():
         raise ValueError(f"파일이 아닙니다: {source}")

@@ -2,7 +2,7 @@
 
 Separate vocals, guitar, drums, bass or keyboards on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
 
-Current version: **3.0.0** · Mac / Windows / web player
+Current version: **3.0.1** · Mac / Windows / web player
 
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
@@ -12,7 +12,7 @@ In a small window, scroll down the left side to reach the save buttons. Drag the
 
 ## Install and open
 
-Download the [3.0.0 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.0/Magic-Instrumental-3.0.0.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [3.0.1 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.1/Magic-Instrumental-3.0.1.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -22,7 +22,7 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
-**3.0.0 adds instrument separation, multiple audio choices in one `.magic`, and native desktop `.magic` import.** Existing 2.4.x installations use the regular updater below. Centered PDF/GP following, highlighting, MP3 export and web update controls remain available. New multi-audio files require desktop/web 3.0.0 or later; older files still open.
+**3.0.1 adds checkbox batch preparation, loading verified cached audio choices, and a collapsible options sidebar on desktop and web.** Instrument separation, multiple audio choices in one `.magic`, and native desktop import from 3.0.0 remain available. Existing 2.4.x and 3.0.0 installations use the regular updater below. This interface update requires no new separation or `.magic` export.
 
 On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
 
@@ -37,7 +37,7 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 ## Your first practice session
 
 1. Put a lawfully obtained recording into `targets/`.
-2. Refresh the list, choose the song and an audio option under **준비할 음원**, then press **선택한 음원 준비**. Matching recording bytes, model and settings reuse verified cached results.
+2. Refresh the list, choose the song, check one or more audio options under **준비할 음원**, then press **체크한 음원 준비**. Matching recording bytes, model and settings reuse verified cached results.
 3. Open a PDF or GP3/GP4/GP5 score. For GP, choose the instrument **by name**; no companion PDF is required.
 4. Choose score zoom and panel width, run score pre-analysis, then review the timing.
 5. Play at 0.25–2× speed, change the instrumental key by ±12 semitones, jump by measures or repeat a selected range. Optional drum counts and the independently adjustable metronome follow the original-media clock.
@@ -111,7 +111,11 @@ Own files must derive from the identical original recording bytes and duration, 
 
 ## Audio choices and desktop import
 
-Choose vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. **모든 파트 함께 준비** prepares all 15 options using the recommended models. **재생 음원** selects a completed result. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
+Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. For example, checking both the vocal-free and guitar-free choices prepares two listening versions in one batch. **전체 선택** checks all 15 choices; **선택 해제** clears them. **체크한 음원 준비** processes the checked choices, running each needed model once.
+
+To reopen a previously prepared recording, select it and press **저장된 음원 불러오기**. This verifies saved audio without running a model. **재생 음원** lists actual available cache entries, or the included choices when a `.magic` is open. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
+
+On desktop and web, **옵션 숨기기** collapses the left options sidebar to make room for the score. Playback and audio choice controls remain available. **옵션 펼치기** restores the sidebar; each app remembers its own preference.
 
 Automatic recommendation uses **Leap Xe for vocals**, **SW six-stem for guitar/drums/bass/piano** and **MVSep Mega for keyboards/synthesizers**. Keyboards cover piano, organ and related key instruments; synthesizers are a separate experimental category that may include synth bass, pads and electronic percussion. These overlapping outputs are listening alternatives and must not be summed as disjoint stems. HyperACE and deux remain selectable. To reuse an older vocal cache, choose its original model and memory setting. A new model requires its own first calculation. [Selection evidence, conditions and model terms](docs/SEPARATION_MODELS.md). Application GPL terms do not grant model-weight permissions.
 

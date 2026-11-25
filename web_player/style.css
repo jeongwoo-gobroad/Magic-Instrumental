@@ -65,3 +65,33 @@ body[data-session] #audioChoice { order: -1; }
   .app-update { margin: 0 16px 14px; padding: 14px; flex-wrap: wrap; }
   .app-version { margin: 0 16px 14px; }
 }
+
+.workspace-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 0 24px 12px; }
+.workspace-toolbar .practice-links { margin: 0 !important; }
+.audio-choice-heading { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; }
+.audio-choice-heading label { margin: 0; }
+#audioVariantCount { color: var(--muted); }
+body.options-hidden main { grid-template-columns: minmax(0, 1fr); }
+.focus-controls { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 8px 24px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
+.focus-controls .audio-choice { grid-row: span 2; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+.focus-controls .transport { margin: 0; }
+.focus-controls #status { grid-column: 2; margin: 0; }
+body[data-session=member] .focus-controls #transportControls { display: none; }
+body[data-session=member] .focus-controls #status { align-self: center; }
+@media (min-width: 701px) {
+  #viewport { height: calc(100dvh - 321px); }
+  body.options-hidden #viewport { height: calc(100dvh - 465px); min-height: 300px; }
+  body[data-session] #viewport { height: calc(100dvh - 386px); }
+  body[data-session].options-hidden #viewport { height: calc(100dvh - 530px); min-height: 300px; }
+}
+@media (max-width: 900px) {
+  .workspace-toolbar { margin: 0 16px 12px; }
+  .focus-controls { gap: 8px 16px; }
+}
+@media (max-width: 700px) {
+  .workspace-toolbar .practice-links { gap: 4px; }
+  .workspace-toolbar .practice-links a { padding: 0 6px; }
+  .focus-controls { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .focus-controls .audio-choice { grid-row: auto; }
+  .focus-controls #status { grid-column: 1; }
+}

@@ -30,7 +30,12 @@ class Ensemble {
     }, 2000);
     $('exitSession').onclick = () => this.leave();
     $('sessionPrepare').onclick = () => this.prepare().catch(e => this.error(e));
-    $('sessionRoom').onclick = () => document.body.classList.toggle('room-open');
+    $('sessionRoom').onclick = () => {
+      const open = $('optionsSidebar').hidden || !document.body.classList.contains('room-open');
+      if (open) setOptionsVisible(true);
+      document.body.classList.toggle('room-open', open);
+      if (open) $('ensemblePanel').scrollIntoView({block: 'nearest'});
+    };
     $('sessionVolume').oninput = () => { $('volume').value = $('sessionVolume').value; $('volume').oninput(); };
     this.bindTransport(); this.update();
   }
