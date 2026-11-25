@@ -254,7 +254,7 @@ class Ensemble {
     this.update();
   }
   async share() {
-    requireMagic(this.role === 'leader' && [2, 3, 4].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
+    requireMagic(this.role === 'leader' && [2, 3, 4, 5].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
     if (this.uploading) return;
     const generation = this.generation;
     this.uploading = true; this.update(); this.status('멤버에게 공유할 파일을 서버로 보내고 있습니다…');
@@ -345,7 +345,7 @@ class Ensemble {
     $('sessionPrepare').textContent = $('ensembleReady').textContent;
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
-    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
+    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4, 5].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
     $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;

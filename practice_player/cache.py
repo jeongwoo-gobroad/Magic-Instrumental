@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .audio import inspect_audio
 from .variants import (
+    ALL_VARIANTS,
     SUPPORTED_VARIANTS,
     AudioVariant,
     recommended_model,
@@ -195,13 +196,24 @@ def find_cached_variants(source_hash, paths, *, source_frames=None, low_memory=F
                             model_index)
                 if identifier not in choices or priority < priorities[identifier]:
                     choices[identifier], priorities[identifier] = variant, priority
-    return {identifier: choices[identifier] for identifier in SUPPORTED_VARIANTS
+    from .combinations import find_cached_combinations
+
+    combined = find_cached_combinations(
+        source_hash, paths, source_frames=frames, low_memory=low_memory,
+    )
+    for identifier, variant in combined.items():
+        if frames is None:
+            frames = variant.frames
+        elif variant.frames != frames:
+            raise ValueError("저장된 음원 길이가 서로 다릅니다. 원곡에서 다시 준비하세요.")
+        choices[identifier] = variant
+    return {identifier: choices[identifier] for identifier in ALL_VARIANTS
             if identifier in choices}
 
 
 def discover_cached_audio(source, paths, report=lambda *_: None, *, variant_id=None):
     """Build a worker payload for verified choices without preparing or playing audio."""
-    if variant_id is not None and variant_id not in SUPPORTED_VARIANTS:
+    if variant_id is not None and variant_id not in ALL_VARIANTS:
         raise ValueError("지원하지 않는 재생 음원입니다.")
     source = source.resolve(strict=True)
     if not source.is_file():

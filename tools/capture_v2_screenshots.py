@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import replace
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "offscreen")
@@ -16,6 +17,7 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from practice_player.cache import hash_file  # noqa: E402
+from practice_player.combinations import process_combination  # noqa: E402
 from practice_player.config import Settings  # noqa: E402
 from practice_player.gui import Window, export_variant_request  # noqa: E402
 from practice_player.magic_bundle import export_magic  # noqa: E402
@@ -42,14 +44,22 @@ def capture(*, desktop_only=False):
     with tempfile.TemporaryDirectory(prefix="magic-public-demo-") as temporary:
         request, prepared, paths = portable_study(Path(temporary), count=32)
         selected = ("no_vocals", "no_guitar", "bass")
-        result = process(
+        processor = partial(process, stem_runner=SixStemEngine())
+        separate = processor(
             Path(request["audio"]), Settings("sw6"), paths,
-            stem_runner=SixStemEngine(), variant_id="no_guitar", variant_ids=selected,
+            variant_id="no_guitar", variant_ids=selected,
+        )
+        combined = process_combination(
+            Path(request["audio"]), "no_vocals_guitar", "sw6", "cpu", False, paths,
+            processor=processor,
+        )
+        result = replace(
+            combined, variants={**separate.variants, **combined.variants},
         )
         request.update(
             audio_variants=[export_variant_request(result.variants[item].to_dict())
-                            for item in selected],
-            default_audio_variant="no_guitar",
+                            for item in (*selected, result.selected_variant)],
+            default_audio_variant=result.selected_variant,
         )
         bundle = export_magic(request)
         app = QApplication.instance() or QApplication([])

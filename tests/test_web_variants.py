@@ -2,17 +2,26 @@
 """Real browser multi-audio selection and Session cancellation on one media clock."""
 
 import hashlib
+import io
 import json
 import os
+import shutil
+import subprocess
 import zipfile
 from copy import deepcopy
 from pathlib import Path
 
+import numpy as np
 import pytest
+import soundfile as sf
 
 from practice_player.magic_bundle import AUDIO_VARIANT_SPECS, export_magic
+from practice_player.score_analysis import analyze_score
+from practice_player.score_layout import analyze_scroll
+from practice_player.score_view import view_profile
 from tests import test_session_player as session_tests
 from tests import test_web_player as player_tests
+from tests.test_magic_bundle import portable_study
 from tests.test_magic_variants import all_variant_study, variant_study
 from tests.test_web_audio import attach_music_probe, hold_resume_completion
 from tests.test_web_player import frequency, open_study
@@ -40,6 +49,54 @@ def variant_files(tmp_path_factory):
             result["single_guitar"] = export_magic({
                 **request, "audio_format": "wav", "audio_variants": request["audio_variants"][1:],
                 "default_audio_variant": "guitar", "output": str(root / "single-guitar.magic"),
+            })
+    return result
+
+
+@pytest.fixture(scope="module")
+def combined_files(tmp_path_factory):
+    root = tmp_path_factory.mktemp("portable-combinations")
+    result = {}
+    for kind in ("pdf", "gp"):
+        directory = root / kind
+        request, prepared, paths = portable_study(directory, kind)
+        frames = sf.info(request["audio"]).frames
+        times = np.arange(frames, dtype=np.float64) / 44100
+        tones = [.12 * np.sin(2 * np.pi * frequency * times) for frequency in (220, 440, 660)]
+        source = Path(request["audio"])
+        mixed = sum(tones)
+        sf.write(source, np.column_stack([mixed, mixed]), 44100, subtype="FLOAT")
+        display = ({key: prepared[key] for key in ("pdf", "layout", "source", "signature")}
+                   if kind == "gp" else None)
+        timeline = analyze_score(
+            source, Path(request["pdf"]), paths, musicxml=Path(prepared["source"]),
+            gp_track=2, gp_display=display, mode="tempo", bpm=120,
+        )
+        request["timeline"] = str(analyze_scroll(
+            source, Path(request["pdf"]), paths, timeline, view_profile("width", 900, 700),
+        ))
+        variants = []
+        for identifier, label, targets, sound in (
+            ("no_vocals", "보컬 없는 반주", ["vocals"], tones[1] + tones[2]),
+            ("no_guitar", "기타 없는 반주", ["guitar"], tones[0] + tones[2]),
+            ("no_vocals_guitar", "보컬 + 기타 없는 반주", ["vocals", "guitar"], tones[2]),
+        ):
+            path = directory / f"{identifier}.wav"
+            sf.write(path, np.column_stack([sound, sound]), 44100, subtype="FLOAT")
+            variant = {"id": identifier, "label": label, "mode": "without",
+                       "target": targets[0] if len(targets) == 1 else None, "path": str(path)}
+            if len(targets) > 1:
+                variant["targets"] = targets
+            variants.append(variant)
+        request.update(audio_variants=variants, default_audio_variant="no_vocals_guitar")
+        for codec in ("mp3", "wav"):
+            result[f"{kind}_{codec}"] = export_magic({
+                **request, "audio_format": codec, "output": str(root / f"{kind}-{codec}.magic"),
+            })
+        if kind == "pdf":
+            result["legacy_individuals"] = export_magic({
+                **request, "audio_variants": variants[:2], "default_audio_variant": "no_vocals",
+                "audio_format": "wav", "output": str(root / "individuals.magic"),
             })
     return result
 
@@ -173,6 +230,213 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert page.locator("#playerControls #play").is_visible()
     assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
 
+
+
+
+@pytest.mark.parametrize("kind,codec", [("pdf", "mp3"), ("pdf", "wav"),
+                                        ("gp", "mp3"), ("gp", "wav")])
+def test_combined_removals_play_one_actual_mix_and_preserve_practice(
+    page, combined_files, kind, codec,
+):
+    watch_decoding(page)
+    open_study(page, combined_files[f"{kind}_{codec}"])
+    assert page.evaluate("MagicPlayer.archive().manifest.version") == 5
+    assert page.locator("#audioVariant").input_value() == "no_vocals_guitar"
+    assert page.locator('#audioVariant option[value="no_vocals_guitar"]').inner_text() == (
+        "보컬 + 기타 없는 반주"
+    )
+    assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 3개"
+    assert page.locator("#audioCombinationNotice").is_hidden()
+    assert "보컬 · 기타" in page.locator("#audioVariantHint").inner_text()
+    assert page.evaluate("window.decodeCalls") == 1
+
+    def amplitudes():
+        return page.evaluate("""() => {
+          const data = decodedAudio.getChannelData(0), rate = decodedAudio.sampleRate;
+          return [220, 440, 660].map(frequency => {
+            let real = 0, imaginary = 0;
+            for (let i = rate; i < 2 * rate; i++) {
+              const angle = 2 * Math.PI * frequency * i / rate;
+              real += data[i] * Math.cos(angle); imaginary += data[i] * Math.sin(angle);
+            }
+            return Math.hypot(real, imaginary) * 2 / rate;
+          });
+        }""")
+
+    # Both removed parts must be absent; a renamed single-removal file would fail.
+    observed = amplitudes()
+    assert observed[0] < .003 and observed[1] < .003
+    assert observed[2] == pytest.approx(.12, abs=.02)
+    select_variant(page, "no_vocals")
+    observed = amplitudes()
+    assert observed[0] < .003
+    assert observed[1:] == pytest.approx([.12, .12], abs=.02)
+    page.locator("#key").select_option("2")
+    page.locator("#speed").fill("125")
+    page.locator("#loopStart").select_option("2")
+    page.locator("#loopEnd").select_option("5")
+    page.locator("#loop").check()
+    if kind == "gp":
+        page.locator("#partSelect").select_option("1")
+        page.wait_for_function("MagicPlayer.archive().activePart.track === 1 && "
+                               "!document.getElementById('partSelect').disabled")
+    page.evaluate("MagicPlayer.seek(5, false)")
+    page.locator("#optionsToggle").click()
+    assert page.locator("#focusControls #audioVariant").is_visible()
+    select_variant(page, "no_vocals_guitar")
+    assert not page.evaluate("MagicPlayer.state().playing")
+    assert page.evaluate("MagicPlayer.state().position") == pytest.approx(5, abs=.04)
+    assert page.locator("#key").input_value() == "2"
+    assert page.locator("#speed").input_value() == "125"
+    assert page.locator("#loop").is_checked()
+    assert page.locator("#loopStart").input_value() == "2"
+    assert page.locator("#loopEnd").input_value() == "5"
+    if kind == "gp":
+        assert page.evaluate("MagicPlayer.archive().activePart.track") == 1
+    assert page.evaluate("window.decodeCalls") == 3
+    attach_music_probe(page)
+    page.locator("#play").click()
+    assert_tone(page, 660 * 2 ** (2 / 12))
+    page.evaluate("MagicPlayer.pause()")
+    page.set_viewport_size({"width": 360, "height": 780})
+    assert page.locator("#audioVariant").is_visible()
+    assert page.locator("#play").is_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    if kind == "gp" and codec == "mp3":
+        capture_options(page, "combined-phone")
+
+
+def test_legacy_individual_removals_offer_reexport_guidance_without_fabricating_mix(
+    page, combined_files,
+):
+    watch_decoding(page)
+    open_study(page, combined_files["legacy_individuals"])
+    assert page.evaluate("MagicPlayer.archive().manifest.version") == 4
+    assert page.locator("#audioVariant option").evaluate_all(
+        "options => options.map(option => option.value)"
+    ) == ["no_vocals", "no_guitar"]
+    assert page.locator("#audioCombinationNotice").is_visible()
+    assert "다시 저장" in page.locator("#audioCombinationNotice").inner_text()
+    assert page.evaluate("window.decodeCalls") == 1
+    select_variant(page, "no_guitar")
+    assert page.evaluate("window.decodeCalls") == 2
+
+
+def test_corrupt_combination_keeps_previous_individual_audio(page, combined_files, tmp_path):
+    source = combined_files["pdf_wav"]
+    with zipfile.ZipFile(source) as archive:
+        name = "audio/variants/no_vocals_guitar.wav"
+        damaged = bytearray(archive.read(name))
+    damaged[0:4] = b"BAD!"
+    target = tmp_path / "bad-combination.magic"
+
+    def choose_individual(manifest):
+        manifest["default_audio_variant"] = "no_vocals"
+        manifest["audio"] = deepcopy(manifest["audio_variants"][0]["audio"])
+
+    rewrite_bundle(source, target, choose_individual, (name, bytes(damaged)))
+    open_study(page, target)
+    page.evaluate("MagicPlayer.seek(5, false)")
+    page.locator("#audioVariant").select_option("no_vocals_guitar")
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert page.evaluate("MagicPlayer.state().ready")
+    assert page.locator("#audioVariant").input_value() == "no_vocals"
+    assert page.evaluate("MagicPlayer.state().position") == pytest.approx(5, abs=.04)
+    assert not page.locator("#play").is_disabled()
+    assert "WAV" in page.locator("#status").inner_text()
+
+
+def run_archive_reader(files):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node.js is needed for the standalone archive-reader check")
+    script = r"""
+      const fs = require('node:fs');
+      const source = fs.readFileSync(process.argv[1], 'utf8');
+      const {MagicArchive, validateWav, validateMp3} = new Function(
+        source + ';return {MagicArchive, validateWav, validateMp3};')();
+      (async () => {
+        const results = [];
+        for (const path of process.argv.slice(2)) {
+          try {
+            const archive = await new MagicArchive(new Blob([fs.readFileSync(path)])).open();
+            for (const variant of archive.audioVariants) {
+              const data = await (await archive.blob(variant.audio.path)).arrayBuffer();
+              const hashed = await crypto.subtle.digest('SHA-256', data);
+              const digest = Buffer.from(hashed).toString('hex');
+              if (digest !== archive.manifest.entries[variant.audio.path].sha256) {
+                throw Error('hash');
+              }
+              (variant.audio.codec === 'mp3' ? validateMp3 : validateWav)(data, variant.audio);
+            }
+            results.push({ok: true, version: archive.manifest.version,
+              ids: archive.audioVariants.map(v => v.id), active: archive.activeAudioVariant.id,
+              targets: archive.activeAudioVariant.targets, parts: archive.parts.length});
+          } catch (error) { results.push({ok: false, error: error.message}); }
+        }
+        process.stdout.write(JSON.stringify(results));
+      })().catch(error => { process.stderr.write(error.stack); process.exitCode = 1; });
+    """
+    result = subprocess.run(
+        [node, "-e", script, str(Path(__file__).resolve().parents[1] / "web_player/archive.js"),
+         *map(str, files)], capture_output=True, text=True, check=True, timeout=45,
+    )
+    return json.loads(result.stdout)
+
+
+def test_combined_archive_reader_checks_real_export_payloads(combined_files):
+    keys = ["pdf_wav", "pdf_mp3", "gp_wav", "gp_mp3", "legacy_individuals"]
+    results = run_archive_reader([combined_files[key] for key in keys])
+    assert all(item["ok"] for item in results), results
+    for kind, item in zip(keys[:4], results[:4]):
+        assert item["version"] == 5
+        assert item["ids"] == ["no_vocals", "no_guitar", "no_vocals_guitar"]
+        assert item["active"] == "no_vocals_guitar"
+        assert item["targets"] == ["vocals", "guitar"]
+        assert item["parts"] == (2 if kind.startswith("gp") else 1)
+        with zipfile.ZipFile(combined_files[kind]) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            for variant, expected in zip(manifest["audio_variants"],
+                                         ([0, .12, .12], [.12, 0, .12], [0, 0, .12])):
+                samples, rate = sf.read(io.BytesIO(archive.read(variant["audio"]["path"])))
+                spectrum = np.abs(np.fft.rfft(samples[rate:2 * rate, 0])) * 2 / rate
+                assert spectrum[[220, 440, 660]] == pytest.approx(expected, abs=.003)
+    assert results[-1]["version"] == 4
+    assert results[-1]["ids"] == ["no_vocals", "no_guitar"]
+
+
+def test_combined_archive_reader_rejects_ambiguous_or_inconsistent_targets(
+    combined_files, tmp_path,
+):
+    def combined(manifest):
+        return manifest["audio_variants"][2]
+
+    changes = [
+        lambda m: combined(m).pop("targets"),
+        lambda m: combined(m).update(targets=["guitar", "vocals"]),
+        lambda m: combined(m).update(targets=["vocals", "vocals"]),
+        lambda m: combined(m).update(targets=["vocals", "unknown"]),
+        lambda m: combined(m).update(targets=["vocals"]),
+        lambda m: combined(m).update(target="vocals"),
+        lambda m: combined(m).update(mode="stem"),
+        lambda m: combined(m).update(id="no_guitar_vocals"),
+        lambda m: combined(m).update(id="no_vocals_vocals"),
+        lambda m: m["audio_variants"][0].update(targets=["vocals", "guitar"]),
+        lambda m: combined(m)["audio"].update(source_sha256="0" * 64),
+        lambda m: combined(m)["audio"].update(pitch_semitones=1),
+        lambda m: m.update(version=4),
+    ]
+    files = []
+    for index, change in enumerate(changes):
+        path = tmp_path / f"invalid-combination-{index}.magic"
+        rewrite_bundle(combined_files["pdf_wav"], path, change)
+        files.append(path)
+    path = tmp_path / "false-combination-format.magic"
+    rewrite_bundle(combined_files["legacy_individuals"], path, lambda m: m.update(version=5))
+    files.append(path)
+    results = run_archive_reader(files)
+    assert len(results) == len(files)
+    assert all(not item["ok"] for item in results), results
 
 
 def test_single_available_audio_and_options_preference_survive_reload_and_blocked_storage(
@@ -492,5 +756,49 @@ def test_session_shared_variants_keep_identity_and_require_fresh_ready(
         for participant in (leader, member):
             participant.wait_for_function("MagicPlayer.state().playing", timeout=10000)
         assert_tone(member, 220)
+        browser.close()
+        assert errors == []
+
+
+@pytest.mark.parametrize("engine", ["chromium", "webkit"])
+def test_session_shares_combined_mix_and_requires_ready_after_switch(
+    engine, web_url, relay_url, combined_files,  # noqa: F811
+):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = getattr(playwright, engine).launch()
+        leader, member = [browser.new_page() for _ in range(2)]
+        errors = []
+        for participant in (leader, member):
+            participant.on("pageerror", lambda error: errors.append(str(error)))
+            participant.goto(web_url + "#ensemble")
+            participant.locator("#relayURL").evaluate("(element, value) => element.value=value",
+                                                     relay_url)
+        open_study(leader, combined_files["gp_mp3"])
+        leader.locator("#leaderMode").click()
+        leader.wait_for_function("MagicEnsemble.state().role === 'leader'")
+        assert not leader.locator("#shareFile").is_disabled()
+        leader.locator("#shareFile").click()
+        leader.wait_for_function("ensemble.shared", timeout=45000)
+        member.locator("#inviteCode").fill(leader.evaluate("MagicEnsemble.state().code"))
+        member.locator("#memberMode").click()
+        member.wait_for_function("!document.getElementById('getShared').disabled")
+        member.locator("#getShared").click()
+        member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+        assert member.locator("#audioVariant").input_value() == "no_vocals_guitar"
+        assert member.evaluate("MagicPlayer.archive().parts.length") == 2
+        select_variant(member, "no_guitar")
+        for participant in (leader, member):
+            participant.locator("#sessionPrepare").click()
+            participant.wait_for_function("MagicEnsemble.state().prepared")
+        select_variant(member, "no_vocals_guitar")
+        assert not member.evaluate("MagicEnsemble.state().prepared || ensemble.wantsReady")
+        assert leader.evaluate("MagicEnsemble.state().prepared")
+        assert leader.evaluate("ensemble.media()") == member.evaluate("ensemble.media()")
+        assert not member.evaluate("MagicPlayer.state().playing")
+        assert member.evaluate("MagicPlayer.archive().manifest.default_audio_variant") == (
+            "no_vocals_guitar"
+        )
         browser.close()
         assert errors == []
