@@ -157,6 +157,28 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
     page.wait_for_function("!document.getElementById('follow').checked")
     page.wait_for_timeout(100)
     manual = score_snapshot(page)
+    anchor = page.evaluate("""() => {
+      const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
+      const center = rect.top + view.clientTop + view.clientHeight / 2;
+      const slot = [...document.querySelectorAll('.score-page')].find(element => {
+        const box = element.getBoundingClientRect();
+        return box.top <= center && box.bottom > center;
+      });
+      const box = slot.getBoundingClientRect();
+      return {page: slot.dataset.page, fraction: (center - box.top) / box.height};
+    }""")
+    for _ in range(2):
+        page.locator("#optionsToggle").click()
+        page.wait_for_function("""expected => {
+          const view = document.getElementById('viewport'), rect = view.getBoundingClientRect();
+          const slot = document.querySelector(`.score-page[data-page="${expected.page}"]`);
+          const box = slot.getBoundingClientRect();
+          const center = rect.top + view.clientTop + view.clientHeight / 2;
+          const fraction = (center - box.top) / box.height;
+          return Math.abs(fraction - expected.fraction) < .005;
+        }""", arg=anchor)
+        assert not page.locator("#follow").is_checked()
+        assert page.evaluate("MagicPlayer.state().position") == before
     page.locator("#highlightEnabled").uncheck()
     page.locator("#follow").check()
     wait_centered(page)
@@ -177,6 +199,16 @@ def test_centers_edges_resizes_parts_and_immediately_resumes_follow(page, follow
         }
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         capture_score(page, kind, f"center-{width}")
+        original_width = page.locator("#viewport").bounding_box()["width"]
+        page.locator("#optionsToggle").click()
+        wait_centered(page)
+        assert page.locator("#viewport").bounding_box()["width"] > original_width
+        assert page.locator("#highlight").is_visible()
+        assert page.locator("#follow").is_checked()
+        assert page.evaluate("MagicPlayer.state().position") == before
+        capture_score(page, kind, f"options-collapsed-{width}")
+        page.locator("#optionsToggle").click()
+        wait_centered(page)
         if width == 768:
             geometry = page.locator("#viewport").evaluate("""el => [
               el.clientWidth, el.clientHeight, el.scrollWidth, el.scrollHeight,

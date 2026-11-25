@@ -79,7 +79,7 @@ Audiveris/영어 데이터/원본 라이선스의 버전·다운로드 SHA-256·
 
 배포 도구는 **명시한 소스 파일만** ZIP과 공개 파일 manifest에 넣습니다. 음원·악보·캐시·모델·로그·개인 Windows 설정은 넣지 않습니다. 프로젝트 폴더 전체를 압축하거나 `git add .`로 검토 없이 게시하지 마세요. ZIP에 `.command` 실행 권한을 기록합니다.
 
-릴리스 전 버전 번호와 CHANGELOG를 맞추고, Ruff·일반 테스트·실제 설치를 확인한 뒤 ZIP/manifest와 Git diff를 검토합니다. 새 태그/릴리스는 그 버전의 소스와 일치해야 합니다. GitHub Actions에는 Mac/Windows 설치 및 테스트 검증을 포함합니다. CI 통과만으로 실제 오디오 장치나 NVIDIA GPU가 검증되었다고 표현하지 마세요.
+릴리스 전 버전 번호와 CHANGELOG를 맞추고, Ruff·일반 테스트·실제 설치를 확인한 뒤 ZIP/manifest와 Git diff를 검토합니다. 데스크톱의 `practice_player.__version__`와 웹의 `web_player/template.html` 안 `magic-version`을 같은 버전으로 맞춘 뒤 `tools/build_web.py`를 실행합니다. `tests/test_release.py`가 템플릿·생성 HTML·화면 하단·서비스 워커의 버전 일치와 HTML/워커의 빌드 식별자·SHA-256 연결을 검사합니다. 새 태그/릴리스는 그 버전의 소스와 일치해야 합니다. GitHub Actions에는 Mac/Windows 설치 및 테스트 검증을 포함합니다. CI 통과만으로 실제 오디오 장치나 NVIDIA GPU가 검증되었다고 표현하지 마세요.
 
 `main`에 게시된 버전은 두 플랫폼 CI가 모두 통과한 뒤, 아직 같은 버전이 없을 때만 GitHub Release와 `v<버전>` 태그를 생성합니다. 기존 릴리스 파일은 덮어쓰지 않습니다. 릴리스에는 허용 목록 ZIP, 파일 manifest, SHA-256을 첨부합니다. 일반 패키지 검증 작업은 읽기 권한만, 릴리스 작업에만 저장소 쓰기 권한을 부여합니다. PR에서는 릴리스하지 않습니다.
 
@@ -96,7 +96,7 @@ Install the development requirements into the existing external venv, then run `
 
 `tests/test_web_update.py` exercises the service-worker lifecycle with actual browser registrations and multiple builds: an active verified worker can change while the open document stays intact, and applying an update explicitly loads the new document. Cover safe-apply guards during file/audio preparation, playback, metronome use and Session connection/membership; offline application of a prepared build; failed network/integrity checks; and independent worker scopes. Existing pre-2.4.8 documents have no update controls, so keep their online launch and manual refresh/reopen migration covered. Never substitute a mocked version string for a verified worker/cache lifecycle, and do not call desktop browser coverage a physical home-screen installation test.
 
-`tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.
+`tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies, including several checked and prepared audio choices. Use `--desktop-only` when browser runtimes are unavailable; this updates only the native screenshots and is not browser validation. The variants/follow browser tests also save current sidebar-layout evidence when `MAGIC_RENDER_CHECK_DIR` is set. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.
 
 CI invokes `tools/run_tests.py`, which runs each test module in a fresh process with a four-minute bound and faulthandler traces after one minute. This isolates native Qt multimedia lifetimes across unrelated modules. Opt-in long-running real-model experiments should use their documented direct pytest invocation instead.
 

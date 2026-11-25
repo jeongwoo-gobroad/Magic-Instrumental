@@ -103,6 +103,31 @@ def test_one_six_stem_inference_reused_across_options(tone, tmp_path):
     assert event["variants"]["original"]["mode"] == "original"
 
 
+def test_checked_residuals_are_prepared_in_one_pass_without_unchecked_mixes(tone, tmp_path):
+    engine = SixStemEngine()
+    paths, settings = Paths(tmp_path / "project"), Settings(model="sw6")
+    batch = process(
+        tone, settings, paths, stem_runner=engine, variant_id="no_guitar",
+        variant_ids=("no_guitar", "no_bass", "no_guitar"),
+    )
+    assert engine.calls == 1 and not batch.cached
+    assert {"no_guitar", "no_bass"} <= batch.variants.keys()
+    assert "no_drums" not in batch.variants and "no_piano" not in batch.variants
+    assert not (batch.instrumental.parent / "no_drums.wav").exists()
+    mixture = sf.read(batch.variants["original"].path, dtype="float32")[0]
+    for target in ("guitar", "bass"):
+        solo = sf.read(batch.variants[target].path, dtype="float32")[0]
+        residual = sf.read(batch.variants[f"no_{target}"].path, dtype="float32")[0]
+        np.testing.assert_allclose(solo + residual, mixture, atol=1e-8)
+    again = process(
+        tone, settings, paths, stem_runner=forbidden, offline=True, variant_id="no_drums",
+        variant_ids=("no_drums", "no_guitar"),
+    )
+    assert again.cached and engine.calls == 1
+    assert "no_drums" in again.variants and "no_piano" not in again.variants
+    assert again.variants["no_guitar"] == batch.variants["no_guitar"]
+
+
 def test_existing_six_stem_cache_adds_piano_choices_without_inference(tone, tmp_path):
     paths, settings, engine = Paths(tmp_path / "project"), Settings(model="sw6"), SixStemEngine()
     guitar = process(tone, settings, paths, stem_runner=engine, variant_id="no_guitar")

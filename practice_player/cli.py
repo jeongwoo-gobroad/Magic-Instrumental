@@ -26,18 +26,28 @@ def parser() -> argparse.ArgumentParser:
     group.add_argument("--all", action="store_true")
     split.add_argument("--model", choices=["auto", *MODELS], default="auto")
     split.add_argument(
-        "--variant", default="no_vocals",
+        "--variant",
         choices=SUPPORTED_VARIANTS,
         help="without/no_ 옵션은 해당 악기를 제외하고, 악기 이름은 해당 악기만 준비",
     )
-    split.add_argument(
+    choices = split.add_mutually_exclusive_group()
+    choices.add_argument(
         "--all-variants", action="store_true", help="지원하는 음원 선택지를 함께 준비"
+    )
+    choices.add_argument(
+        "--variants", nargs="+", choices=SUPPORTED_VARIANTS,
+        help="함께 준비할 음원 목록 · --variant를 생략하면 첫 항목을 선택",
     )
     split.add_argument("--device", choices=["auto", "cuda", "mps", "cpu"], default="auto")
     split.add_argument("--low-memory", action="store_true")
     split.add_argument("--offline", action="store_true")
     split.add_argument("--root", type=Path, default=ROOT)
     split.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
+    cached = sub.add_parser("cached-audio", help="이미 저장된 음원만 검증하여 불러오기")
+    cached.add_argument("--input", type=Path, required=True)
+    cached.add_argument("--root", type=Path, default=ROOT)
+    cached.add_argument("--variant", choices=SUPPORTED_VARIANTS)
+    cached.add_argument("--events", action="store_true", help=argparse.SUPPRESS)
     export = sub.add_parser("export", help="음정을 유지한 속도 변경 파일 저장")
     export.add_argument("--input", type=Path, required=True)
     export.add_argument("--output", type=Path, required=True)
@@ -87,17 +97,28 @@ def parser() -> argparse.ArgumentParser:
 
 
 def prepare_audio_options(source, model, device, low_memory, paths, report, *,
-                          variant_id="no_vocals", prepare_all=False, offline=False):
+                          variant_id=None, variant_ids=None, prepare_all=False, offline=False):
     """Choose each recommended model once, then combine only its assigned options."""
     from dataclasses import replace
 
+    from .cache import find_cached_variants, hash_file
     from .pipeline import process
     from .variants import recommended_model, supported_variants
 
-    wanted = (
-        tuple(SUPPORTED_VARIANTS) if model == "auto" else supported_variants(model)
-    ) if prepare_all else (variant_id,)
+    if prepare_all and variant_ids is not None:
+        raise ValueError("전체 준비와 선택한 음원 목록을 함께 지정할 수 없습니다.")
+    if prepare_all:
+        wanted = tuple(SUPPORTED_VARIANTS) if model == "auto" else supported_variants(model)
+    elif variant_ids is not None:
+        wanted = tuple(dict.fromkeys(variant_ids))
+    else:
+        wanted = (variant_id or "no_vocals",)
+    if not wanted or not set(wanted) <= set(SUPPORTED_VARIANTS):
+        raise ValueError("준비할 음원을 하나 이상 선택하세요.")
+    variant_id = variant_id or wanted[0]
     if variant_id not in wanted:
+        raise ValueError("처음 재생할 음원을 준비할 목록에 포함하세요.")
+    if model != "auto" and not set(wanted) <= set(supported_variants(model)):
         raise ValueError("선택한 모델이 이 음원을 지원하지 않습니다. 자동 추천을 선택하세요.")
     assignments = {
         identifier: (
@@ -109,10 +130,12 @@ def prepare_audio_options(source, model, device, low_memory, paths, report, *,
     variants, results = {}, []
     for key in dict.fromkeys(assignments.values()):
         assigned = [identifier for identifier, owner in assignments.items() if owner == key]
+        batch = {"variant_ids": tuple(assigned)} if variant_ids is not None else {}
         result = process(
             source, Settings(key, device, low_memory), paths, report, offline=offline,
             variant_id=variant_id if variant_id in assigned else assigned[0],
             prepare_all=prepare_all,
+            **batch,
         )
         if results and (
             result.source_hash != results[0].source_hash
@@ -129,6 +152,13 @@ def prepare_audio_options(source, model, device, low_memory, paths, report, *,
             for identifier, item in result.variants.items():
                 if model != "auto" or recommended_model(identifier) == key:
                     variants[identifier] = item
+    cached = find_cached_variants(
+        results[0].source_hash, paths, source_frames=results[0].source_frames,
+        low_memory=low_memory,
+    )
+    if hash_file(source) != results[0].source_hash:
+        raise RuntimeError("확인 중 원본 파일이 변경되었습니다. 저장을 마친 뒤 다시 실행하세요.")
+    variants = {**cached, **variants}
     variants = {identifier: variants[identifier] for identifier in SUPPORTED_VARIANTS
                 if identifier in variants}
     selected = variants[variant_id]
@@ -190,6 +220,17 @@ def main(argv=None) -> int:
             return run()
         if args.command == "doctor":
             return doctor()
+        if args.command == "cached-audio":
+            from .cache import discover_cached_audio
+
+            cached = discover_cached_audio(
+                args.input, Paths(args.root.resolve()), progress, variant_id=args.variant,
+            )
+            count = len(cached["variants"])
+            message = (f"저장된 음원 {count}개를 불러왔습니다." if count
+                       else "저장된 음원이 없습니다.")
+            emit("cached_audio", **cached, message=message)
+            return 0
         if args.command == "export":
             from .audio import export_tempo
 
@@ -312,7 +353,8 @@ def main(argv=None) -> int:
             try:
                 result = prepare_audio_options(
                     source, args.model, args.device, args.low_memory, paths, progress,
-                    variant_id=args.variant, prepare_all=args.all_variants, offline=args.offline,
+                    variant_id=args.variant, variant_ids=args.variants,
+                    prepare_all=args.all_variants, offline=args.offline,
                 )
                 emit("result", **result.to_dict(), message=f"준비 완료: {result.instrumental}")
             except Exception as error:

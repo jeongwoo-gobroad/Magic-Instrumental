@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Actual desktop/tablet screenshots from wholly project-authored synthetic studies."""
 
+import argparse
 import os
 import sys
 import tempfile
@@ -15,9 +16,12 @@ sys.path.insert(0, str(ROOT))
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from practice_player.cache import hash_file  # noqa: E402
-from practice_player.gui import Window  # noqa: E402
+from practice_player.config import Settings  # noqa: E402
+from practice_player.gui import Window, export_variant_request  # noqa: E402
 from practice_player.magic_bundle import export_magic  # noqa: E402
+from practice_player.pipeline import process  # noqa: E402
 from practice_player.score_layout import analyze_scroll  # noqa: E402
+from tests.test_audio_variants import SixStemEngine  # noqa: E402
 from tests.test_magic_bundle import portable_study  # noqa: E402
 
 
@@ -28,30 +32,36 @@ def pump(app, seconds=0.2):
         time.sleep(0.01)
 
 
-def capture():
+def capture(*, desktop_only=False):
     from functools import partial
     from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
     from threading import Thread
-
-    from playwright.sync_api import sync_playwright
 
     dest = ROOT / "docs/images"
     dest.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="magic-public-demo-") as temporary:
         request, prepared, paths = portable_study(Path(temporary), count=32)
+        selected = ("no_vocals", "no_guitar", "bass")
+        result = process(
+            Path(request["audio"]), Settings("sw6"), paths,
+            stem_runner=SixStemEngine(), variant_id="no_guitar", variant_ids=selected,
+        )
+        request.update(
+            audio_variants=[export_variant_request(result.variants[item].to_dict())
+                            for item in selected],
+            default_audio_variant="no_guitar",
+        )
         bundle = export_magic(request)
         app = QApplication.instance() or QApplication([])
         window = Window(paths)
         window.resize(1600, 1100)
         window.source_path = Path(request["audio"])
         window.source_name = "Practice Study · 직접 만든 연습곡"
-        window.load_result(
-            {
-                "instrumental": request["instrumental"],
-                "cached": True,
-                "source_hash": hash_file(window.source_path),
-            }
-        )
+        window.load_result(result.to_dict())
+        window.select_preparation_variants(False)
+        for identifier in selected:
+            window.variant_checks[identifier].setChecked(True)
+        window.options_toggle.setChecked(True)
         panel = window.score_panel
         panel.audio, panel.source_hash = window.source_path, hash_file(window.source_path)
         panel.accept_gp(prepared)
@@ -86,6 +96,10 @@ def capture():
         window.grab().save(str(dest / "desktop-dark.png"))
         window.close()
         pump(app)
+        if desktop_only:
+            return
+        from playwright.sync_api import sync_playwright
+
         server = ThreadingHTTPServer(
             ("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=ROOT / "web_player")
         )
@@ -113,4 +127,7 @@ def capture():
 
 
 if __name__ == "__main__":
-    capture()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--desktop-only", action="store_true",
+                        help="Capture Qt screens without launching a browser")
+    capture(desktop_only=parser.parse_args().desktop_only)

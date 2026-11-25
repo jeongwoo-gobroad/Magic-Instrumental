@@ -1,15 +1,21 @@
 # SPDX-License-Identifier: GPL-3.0-only
 """Model orchestration keeps recommended recipes and one original sample clock."""
 
+import json
+import shutil
+import subprocess
+import sys
 from dataclasses import replace
 
 import pytest
 import soundfile as sf
 
+from practice_player.cache import discover_cached_audio, hash_file
 from practice_player.cli import parser, prepare_audio_options
-from practice_player.config import Paths
-from practice_player.pipeline import Result
+from practice_player.config import ROOT, Paths, Settings
+from practice_player.pipeline import Result, process
 from practice_player.variants import SUPPORTED_VARIANTS, AudioVariant, supported_variants
+from tests.test_audio_variants import KeysSynthEngine, SixStemEngine
 
 
 @pytest.fixture
@@ -35,6 +41,7 @@ def recipes(tmp_path, monkeypatch):
         return results[settings.model]
 
     monkeypatch.setattr("practice_player.pipeline.process", run)
+    monkeypatch.setattr("practice_player.cache.hash_file", lambda _: "a" * 64)
     return calls, results
 
 
@@ -173,3 +180,232 @@ def test_explicit_vocal_model_cannot_claim_a_guitar_output(tmp_path):
 def test_keyboard_piano_synth_cli_options_are_valid(identifier):
     args = parser().parse_args(["separate", "--input", "source.wav", "--variant", identifier])
     assert args.variant == identifier and args.model == "auto"
+
+
+def test_checked_batch_groups_recipes_and_uses_first_choice_by_default(tmp_path, recipes):
+    calls, _ = recipes
+    result = prepare_audio_options(
+        tmp_path / "source.wav", "auto", "cpu", False, Paths(tmp_path), None,
+        variant_ids=("no_drums", "no_guitar", "no_vocals", "no_drums"),
+    )
+    assert [call[1].model for call in calls] == ["sw6", "leap"]
+    assert [call[4] for call in calls] == [
+        {"offline": False, "variant_id": "no_drums", "prepare_all": False,
+         "variant_ids": ("no_drums", "no_guitar")},
+        {"offline": False, "variant_id": "no_vocals", "prepare_all": False,
+         "variant_ids": ("no_vocals",)},
+    ]
+    assert result.selected_variant == "no_drums"
+    assert "no_synth" not in result.variants
+
+
+@pytest.mark.parametrize("model,selected,batch,all_options", [
+    ("auto", None, (), False),
+    ("auto", None, ("no_guitar", "unknown"), False),
+    ("auto", "no_bass", ("no_guitar",), False),
+    ("leap", None, ("no_vocals", "no_guitar"), False),
+    ("auto", None, ("no_guitar",), True),
+])
+def test_invalid_batch_fails_before_any_model(
+    tmp_path, recipes, model, selected, batch, all_options,
+):
+    calls, _ = recipes
+    with pytest.raises(ValueError):
+        prepare_audio_options(
+            tmp_path / "source.wav", model, "cpu", False, Paths(tmp_path), None,
+            variant_id=selected, variant_ids=batch, prepare_all=all_options,
+        )
+    assert not calls
+
+
+def test_batch_cli_parsing_rejects_ambiguous_all_request():
+    args = parser().parse_args([
+        "separate", "--input", "source.wav", "--variants", "guitar", "no_drums",
+    ])
+    assert args.variants == ["guitar", "no_drums"] and args.variant is None
+    with pytest.raises(SystemExit):
+        parser().parse_args([
+            "separate", "--input", "source.wav", "--variants", "guitar", "--all-variants",
+        ])
+
+
+def test_missing_cache_scan_is_read_only_and_has_no_selected_audio(tone, tmp_path):
+    paths = Paths(tmp_path / "not-created")
+    result = discover_cached_audio(tone, paths, variant_id="guitar")
+    assert result == {
+        "source_hash": hash_file(tone), "source_frames": 0, "sample_rate": 44100,
+        "variants": {}, "selected_variant": None, "instrumental": None,
+        "cached": True, "device": "cache",
+    }
+    assert not paths.root.exists()
+
+
+def test_discovery_recovers_other_models_and_memory_settings_without_writes(
+    tone, tmp_path, fake_engine,
+):
+    paths = Paths(tmp_path / "project")
+    vocals = process(tone, Settings("leap", low_memory=True), paths, runner=fake_engine)
+    guitar = process(tone, Settings("sw6"), paths, stem_runner=SixStemEngine(),
+                     variant_id="no_guitar")
+    synth = process(tone, Settings("mega", low_memory=True), paths,
+                    stem_runner=KeysSynthEngine(), variant_id="no_synth")
+    before = {path.relative_to(paths.root): path.read_bytes()
+              for path in paths.root.rglob("*") if path.is_file()}
+    renamed = tmp_path / "renamed.wav"
+    shutil.copyfile(tone, renamed)
+    result = discover_cached_audio(renamed, paths, variant_id="no_synth")
+    assert result["source_hash"] == guitar.source_hash == vocals.source_hash == synth.source_hash
+    assert result["selected_variant"] == "no_synth"
+    assert result["instrumental"] == str(synth.instrumental)
+    assert set(result["variants"]) == {
+        "vocals", "no_vocals", "guitar", "no_guitar", "drums", "bass", "piano",
+        "keys", "synth", "no_synth", "original",
+    }
+    assert result["variants"]["vocals"]["model_key"] == "leap"
+    assert result["variants"]["guitar"]["model_key"] == "sw6"
+    assert result["variants"]["keys"]["model_key"] == "mega"
+    assert result["source_frames"] == sf.info(tone).frames
+    assert all(path.relative_to(paths.root) in before for path in paths.root.rglob("*")
+               if path.is_file())
+    assert all((paths.root / path).read_bytes() == data for path, data in before.items())
+
+
+@pytest.mark.parametrize("damage", ["stem", "manifest", "signature", "missing_device"])
+def test_discovery_does_not_advertise_partial_or_stale_model_caches(
+    tone, tmp_path, fake_engine, damage,
+):
+    paths = Paths(tmp_path / "project")
+    valid = process(tone, Settings("leap"), paths, runner=fake_engine)
+    broken = process(tone, Settings("sw6"), paths, stem_runner=SixStemEngine(),
+                     variant_id="no_guitar")
+    marker = broken.instrumental.parent / "manifest.json"
+    if damage == "stem":
+        broken.variants["bass"].path.write_bytes(b"broken cached stem")
+    elif damage == "manifest":
+        marker.write_text("{}")
+    else:
+        manifest = json.loads(marker.read_text())
+        if damage == "signature":
+            manifest["signature"]["model"]["revision"] = "another-revision"
+        else:
+            manifest.pop("device")
+        marker.write_text(json.dumps(manifest))
+    result = discover_cached_audio(tone, paths, variant_id="no_guitar")
+    assert set(result["variants"]) == set(valid.variants)
+    assert result["selected_variant"] == "no_vocals"
+    assert result["instrumental"] == str(valid.instrumental)
+
+
+def test_discovery_prioritizes_recommended_model_then_normal_memory(
+    tone, tmp_path, fake_engine,
+):
+    paths = Paths(tmp_path / "project")
+    process(tone, Settings("hyperace"), paths, runner=fake_engine)
+    process(tone, Settings("leap", low_memory=True), paths, runner=fake_engine)
+    leap = process(tone, Settings("leap"), paths, runner=fake_engine)
+    original = process(tone, Settings("original"), paths, variant_id="original")
+    result = discover_cached_audio(tone, paths)
+    assert result["variants"]["no_vocals"]["path"] == str(leap.instrumental)
+    assert result["variants"]["original"]["path"] == str(original.instrumental)
+
+
+def test_preparation_includes_other_caches_but_keeps_explicit_new_model(
+    tone, tmp_path, fake_engine,
+):
+    paths = Paths(tmp_path / "project")
+    leap = process(tone, Settings("leap"), paths, runner=fake_engine)
+    hyperace = process(tone, Settings("hyperace"), paths, runner=fake_engine)
+    guitar = process(tone, Settings("sw6"), paths, stem_runner=SixStemEngine(),
+                     variant_id="no_guitar")
+    result = prepare_audio_options(
+        tone, "hyperace", "cuda", False, paths, lambda *_: None,
+        variant_ids=("no_vocals",), offline=True,
+    )
+    assert result.cached and result.instrumental == hyperace.instrumental != leap.instrumental
+    assert result.variants["no_guitar"].path == guitar.instrumental
+    assert result.variants["vocals"].model_key == "hyperace"
+
+
+def test_cached_audio_cli_and_batch_run_without_ml_imports(tone, tmp_path, fake_engine):
+    paths = Paths(tmp_path / "project")
+    process(tone, Settings("leap"), paths, runner=fake_engine)
+    process(tone, Settings("sw6"), paths, stem_runner=SixStemEngine(),
+            variant_id="no_guitar")
+    script = """
+import sys
+from practice_player.cli import main
+sys.modules['practice_player.engine'] = None
+sys.modules['torch'] = None
+sys.modules['pymss'] = None
+raise SystemExit(main(sys.argv[1:]))
+"""
+    for command in (
+        ["cached-audio", "--variant", "no_guitar"],
+        ["separate", "--device", "cuda", "--offline", "--variants", "no_guitar", "no_vocals"],
+    ):
+        completed = subprocess.run(
+            [sys.executable, "-c", script, *command, "--input", str(tone),
+             "--root", str(paths.root), "--events"],
+            cwd=ROOT, capture_output=True, encoding="utf-8", timeout=20,
+        )
+        assert completed.returncode == 0, completed.stderr
+        event = json.loads(completed.stdout.split("@@PRACTICE@@")[-1])
+        assert event["type"] == ("cached_audio" if command[0] == "cached-audio" else "result")
+        assert event["selected_variant"] == "no_guitar" and event["cached"]
+        assert {"no_vocals", "no_guitar", "original"} <= event["variants"].keys()
+
+
+def test_discovery_rechecks_input_bytes(tone, tmp_path, monkeypatch):
+    from practice_player import cache
+
+    def changed(*_args, **_kwargs):
+        with tone.open("ab") as output:
+            output.write(b"changed source")
+        return {}
+
+    monkeypatch.setattr(cache, "find_cached_variants", changed)
+    with pytest.raises(RuntimeError, match="변경"):
+        discover_cached_audio(tone, Paths(tmp_path / "project"))
+
+
+def test_preparation_rechecks_source_after_collecting_other_cached_variants(
+    tone, tmp_path, fake_engine, monkeypatch,
+):
+    from practice_player import cache
+
+    paths = Paths(tmp_path / "project")
+    cached = process(tone, Settings("leap"), paths, runner=fake_engine)
+    scan = cache.find_cached_variants
+
+    def changed(*args, **kwargs):
+        result = scan(*args, **kwargs)
+        with tone.open("ab") as output:
+            output.write(b"source changed during cache scan")
+        return result
+
+    monkeypatch.setattr(cache, "find_cached_variants", changed)
+    with pytest.raises(RuntimeError, match="변경"):
+        prepare_audio_options(
+            tone, "auto", "cuda", False, paths, lambda *_: None,
+            variant_ids=("no_vocals",), offline=True,
+        )
+    assert cached.instrumental.is_file()
+    assert not (paths.processed / hash_file(tone)).exists()
+
+
+@pytest.mark.parametrize("linked", ["processed", "track", "recipe", "audio"])
+def test_discovery_ignores_symlinked_caches(tone, tmp_path, fake_engine, linked):
+    paths = Paths(tmp_path / "project")
+    prepared = process(tone, Settings("leap"), paths, runner=fake_engine)
+    source = {
+        "processed": paths.processed,
+        "track": prepared.instrumental.parent.parent,
+        "recipe": prepared.instrumental.parent,
+        "audio": prepared.instrumental,
+    }[linked]
+    outside = tmp_path / ("outside.wav" if linked == "audio" else "outside")
+    source.rename(outside)
+    source.symlink_to(outside, target_is_directory=linked != "audio")
+    result = discover_cached_audio(tone, paths)
+    assert result["variants"] == {} and result["selected_variant"] is None
+    assert outside.exists()

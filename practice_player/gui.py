@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -46,7 +47,7 @@ from .metronome import MetronomeBar
 from .region_loop import RegionLoop
 from .score_gui import ScorePanel
 from .updates import UpdateBar, open_updater
-from .variants import SUPPORTED_VARIANTS, variant_label
+from .variants import SUPPORTED_VARIANTS, TARGET_LABELS, variant_label
 
 STYLE = """
 QWidget { background: #11151d; color: #e7edf7; font-size: 14px; }
@@ -125,9 +126,11 @@ class Window(QMainWindow):
         self.loaded_source_hash = None
         self.prepared_variants = {}
         self.selected_variant = "no_vocals"
+        self.active_variant = {}
         self.imported_bundle = None
         self.base_pitch_semitones = 0
         self._pending_variant = None
+        self._pending_catalog = None
         self._variant_restore = None
         self._pending_magic = None
         self._prepare_restore = None
@@ -190,7 +193,7 @@ class Window(QMainWindow):
         self.tracks.setWordWrap(True)
         self.tracks.setTextElideMode(Qt.TextElideMode.ElideNone)
         self.tracks.setMinimumHeight(105)
-        self.tracks.setMaximumHeight(420)
+        self.tracks.setMaximumHeight(160)
         self.tracks.itemDoubleClicked.connect(lambda _: self.prepare())
         left.addWidget(self.tracks, 1)
         self.track_count = QLabel()
@@ -209,27 +212,76 @@ class Window(QMainWindow):
         self.open_magic_button = QPushButton(".magic 연습 파일 열기")
         self.open_magic_button.setObjectName("openMagicFile")
         self.open_magic_button.clicked.connect(self.choose_magic)
-        left.addWidget(self.open_magic_button)
+        load_actions = QHBoxLayout()
+        load_actions.addWidget(self.open_magic_button)
+        self.cached_audio_button = QPushButton("저장된 음원 불러오기")
+        self.cached_audio_button.setObjectName("loadCachedAudio")
+        self.cached_audio_button.setToolTip(
+            "선택한 곡의 저장된 결과를 확인합니다. "
+            "새 분리 계산 없이 재생할 음원을 고를 수 있습니다."
+        )
+        self.cached_audio_button.clicked.connect(self.load_cached_audio)
+        load_actions.addWidget(self.cached_audio_button)
+        left.addLayout(load_actions)
         splitter.addWidget(library)
         panel = QWidget()
         right = QVBoxLayout(panel)
         right.setContentsMargins(6, 0, 0, 0)
         right.setSpacing(7)
-        target_row = QHBoxLayout()
-        target_row.addWidget(QLabel("준비할 음원"))
-        self.separation_variant = QComboBox()
-        self.separation_variant.setObjectName("separationVariant")
-        self.separation_variant.setAccessibleName("준비할 음원 선택")
-        for identifier in SUPPORTED_VARIANTS:
-            self.separation_variant.addItem(variant_label(identifier), identifier)
-        target_row.addWidget(self.separation_variant, 1)
-        right.addLayout(target_row)
+        right.addWidget(QLabel("준비할 음원 · 여러 개 체크할 수 있습니다"))
+        selection_actions = QHBoxLayout()
+        self.select_all_variants = QPushButton("전체 선택")
+        self.select_all_variants.setObjectName("selectAllVariants")
+        self.select_all_variants.clicked.connect(lambda: self.select_preparation_variants(True))
+        self.clear_variants = QPushButton("선택 해제")
+        self.clear_variants.setObjectName("clearVariants")
+        self.clear_variants.clicked.connect(lambda: self.select_preparation_variants(False))
+        selection_actions.addWidget(self.select_all_variants)
+        selection_actions.addWidget(self.clear_variants)
+        selection_actions.addStretch()
+        right.addLayout(selection_actions)
+        self.selection_summary = QLabel()
+        self.selection_summary.setObjectName("muted")
+        self.selection_summary.setWordWrap(True)
+        right.addWidget(self.selection_summary)
+        actions = QHBoxLayout()
+        self.prepare_button = QPushButton("체크한 음원 준비")
+        self.prepare_button.setObjectName("primary")
+        self.prepare_button.clicked.connect(self.prepare)
+        actions.addWidget(self.prepare_button, 1)
+        self.cancel_button = QPushButton("취소")
+        self.cancel_button.setEnabled(False)
+        self.cancel_button.clicked.connect(self.cancel_job)
+        right.addLayout(actions)
+        choices = QGridLayout()
+        choices.setHorizontalSpacing(16)
+        choices.setVerticalSpacing(3)
+        choices.addWidget(QLabel("파트"), 0, 0)
+        choices.addWidget(QLabel("없는 반주"), 0, 1)
+        choices.addWidget(QLabel("만 듣기"), 0, 2)
+        self.variant_checks = {}
+        for row, (target, label) in enumerate(TARGET_LABELS.items(), 1):
+            choices.addWidget(QLabel(label), row, 0)
+            for column, identifier in enumerate((f"no_{target}", target), 1):
+                checkbox = QCheckBox("선택")
+                checkbox.setObjectName(f"separation_{identifier}")
+                checkbox.setAccessibleName(variant_label(identifier))
+                checkbox.setToolTip(variant_label(identifier))
+                checkbox.setChecked(identifier == "no_vocals")
+                self.variant_checks[identifier] = checkbox
+                choices.addWidget(checkbox, row, column)
+        original = QCheckBox("원곡 그대로")
+        original.setObjectName("separation_original")
+        self.variant_checks["original"] = original
+        choices.addWidget(original, len(TARGET_LABELS) + 1, 0, 1, 3)
+        choices.setColumnStretch(3, 1)
+        right.addLayout(choices)
         self.separation_hint = QLabel()
         self.separation_hint.setWordWrap(True)
         self.separation_hint.setObjectName("muted")
         right.addWidget(self.separation_hint)
-        self.separation_variant.currentIndexChanged.connect(self.update_separation_hint)
-        self.update_separation_hint()
+        for checkbox in self.variant_checks.values():
+            checkbox.toggled.connect(self.update_preparation_selection)
         self.advanced_button = QPushButton("▸ 반주 만들기 설정")
         self.advanced_button.setCheckable(True)
         right.addWidget(self.advanced_button)
@@ -270,49 +322,33 @@ class Window(QMainWindow):
         )
         options.addWidget(self.low_memory)
         advanced_layout.addLayout(options)
-        actions = QHBoxLayout()
-        self.prepare_button = QPushButton("선택한 음원 준비")
-        self.prepare_button.setObjectName("primary")
-        self.prepare_button.clicked.connect(self.prepare)
-        actions.addWidget(self.prepare_button, 1)
-        self.cancel_button = QPushButton("취소")
-        self.cancel_button.setEnabled(False)
-        self.cancel_button.clicked.connect(self.cancel_job)
-        actions.addWidget(self.cancel_button)
-        right.addLayout(actions)
-        self.prepare_all_button = QPushButton("모든 파트 함께 준비")
-        self.prepare_all_button.setObjectName("prepareAllVariants")
-        self.prepare_all_button.setToolTip(
-            "보컬·기타·드럼·베이스·키보드, 피아노와 신시사이저를 각각 듣거나 "
-            "뺀 반주를 함께 준비합니다. "
-            "이미 준비한 결과는 검증한 뒤 다시 사용합니다."
-        )
-        self.prepare_all_button.clicked.connect(lambda: self.prepare(all_variants=True))
-        right.addWidget(self.prepare_all_button)
+        self.update_preparation_selection()
         self.status = QLabel(
-            "곡과 준비할 음원을 선택하세요. 여러 음원은 ‘함께 준비’로 한 번에 만들 수 있습니다."
+            "필요한 음원을 체크해 함께 준비하세요. 이전 결과는 ‘저장된 음원 불러오기’로 엽니다."
         )
         self.status.setWordWrap(True)
-        self.status.setMinimumHeight(42)
         self.status.setObjectName("muted")
-        right.addWidget(self.status)
+        self.status_slot = QVBoxLayout()
+        self.status_slot.addWidget(self.status)
+        right.addLayout(self.status_slot)
         self.progress = QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
-        right.addWidget(self.progress)
+        self.progress.setMaximumWidth(150)
         self.current_track = QLabel("재생할 음원을 준비하거나 .magic 파일을 여세요")
         self.current_track.setObjectName("track")
         self.current_track.setWordWrap(True)
         right.addWidget(self.separator())
         right.addWidget(self.current_track)
-        playback_row = QHBoxLayout()
-        playback_row.addWidget(QLabel("재생 음원"))
         self.playback_variants = QComboBox()
         self.playback_variants.setObjectName("playbackVariant")
         self.playback_variants.setAccessibleName("준비된 재생 음원 선택")
+        self.playback_variants.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        self.playback_variants.setMinimumContentsLength(10)
+        self.playback_variants.setPlaceholderText("준비된 음원 없음")
         self.playback_variants.activated.connect(self.change_variant)
-        playback_row.addWidget(self.playback_variants, 1)
-        right.addLayout(playback_row)
         self.variant_hint = QLabel(
             "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
         )
@@ -326,12 +362,10 @@ class Window(QMainWindow):
         right.addWidget(self.seek)
         self.clock = QLabel("00:00 / 00:00")
         self.clock.setObjectName("muted")
-        right.addWidget(self.clock)
         controls = QHBoxLayout()
         self.play_button = QPushButton("재생")
         self.play_button.clicked.connect(self.toggle_play)
         self.play_button.setEnabled(False)
-        controls.addWidget(self.play_button)
         stop = QPushButton("처음으로")
         stop.clicked.connect(lambda: self.seek_to(0))
         controls.addWidget(stop)
@@ -454,10 +488,11 @@ class Window(QMainWindow):
         layout.addWidget(logs_toggle)
         layout.addWidget(self.logs)
         self.logs.setVisible(False)
-        controller = QScrollArea()
-        controller.setWidgetResizable(True)
-        controller.setWidget(root)
-        controller.setMinimumWidth(410)
+        self.controller = QScrollArea()
+        self.controller.setObjectName("optionsPanel")
+        self.controller.setWidgetResizable(True)
+        self.controller.setWidget(root)
+        self.controller.setMinimumWidth(410)
         self.score_panel = ScorePanel(self.paths, preferences=self.preferences)
         self.score_panel.attach_player(self.player)
         self.score_panel.setMinimumWidth(300)
@@ -469,15 +504,14 @@ class Window(QMainWindow):
         self.score_panel.timeline_changed.connect(self.update_export_controls)
         self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.main_splitter.setChildrenCollapsible(False)
-        self.main_splitter.addWidget(controller)
+        self.main_splitter.addWidget(self.controller)
         self.main_splitter.addWidget(self.score_panel)
         self.main_splitter.setSizes([650, 850])
         saved = self.preferences.value("splitter")
         if saved is not None:
             self.main_splitter.restoreState(saved)
-        self.main_splitter.splitterMoved.connect(
-            lambda *_: self.preferences.setValue("splitter", self.main_splitter.saveState())
-        )
+        self._expanded_splitter_state = self.main_splitter.saveState()
+        self.main_splitter.splitterMoved.connect(self.save_splitter_layout)
         self.score_panel.bpm_provider = lambda: self.metronome.bpm.value()
         container = QWidget()
         outer = QVBoxLayout(container)
@@ -487,12 +521,37 @@ class Window(QMainWindow):
         self.update_bar.update_requested.connect(self.begin_update)
         outer.addWidget(self.update_bar)
         outer.addWidget(self.metronome)
-        self.score_visible = QCheckBox("악보 표시 · 가운데 경계를 드래그하여 너비 조절")
+        display_controls = QHBoxLayout()
+        self.options_toggle = QPushButton("옵션 숨기기")
+        self.options_toggle.setObjectName("toggleOptions")
+        self.options_toggle.setCheckable(True)
+        self.options_toggle.setChecked(self.preferences.value("options_visible", True, type=bool))
+        self.options_toggle.toggled.connect(self.set_options_visible)
+        display_controls.addWidget(self.options_toggle)
+        self.score_visible = QCheckBox("악보 표시")
+        self.score_visible.setToolTip("가운데 경계를 드래그하면 옵션과 악보의 너비를 조절합니다.")
         self.score_visible.setChecked(self.preferences.value("score_visible", True, type=bool))
+        if not self.options_toggle.isChecked() and not self.score_visible.isChecked():
+            self.score_visible.setChecked(True)
         self.score_panel.setVisible(self.score_visible.isChecked())
-        self.score_visible.toggled.connect(self.score_panel.setVisible)
-        outer.addWidget(self.score_visible)
+        self.score_visible.toggled.connect(self.set_score_visible)
+        display_controls.addWidget(self.score_visible)
+        display_controls.addWidget(QLabel("재생 음원"))
+        display_controls.addWidget(self.playback_variants, 1)
+        self.available_variants = QLabel("음원 없음")
+        self.available_variants.setObjectName("muted")
+        display_controls.addWidget(self.available_variants)
+        display_controls.addWidget(self.play_button)
+        display_controls.addWidget(self.clock)
+        outer.addLayout(display_controls)
+        self.feedback_bar = QWidget()
+        self.feedback_row = QHBoxLayout(self.feedback_bar)
+        self.feedback_row.setContentsMargins(0, 0, 0, 0)
+        self.feedback_row.addWidget(self.progress)
+        self.feedback_row.addWidget(self.cancel_button)
+        outer.addWidget(self.feedback_bar)
         outer.addWidget(self.main_splitter, 1)
+        self.set_options_visible(self.options_toggle.isChecked())
         self.support = QLabel(
             '버그 및 개선 사항 제보: '
             '<a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a>'
@@ -504,6 +563,41 @@ class Window(QMainWindow):
         self.setCentralWidget(container)
         self.update_measure_controls()
         self.apply_theme()
+
+    def save_splitter_layout(self, *_):
+        if not self.controller.isHidden() and not self.score_panel.isHidden():
+            self._expanded_splitter_state = self.main_splitter.saveState()
+            self.preferences.setValue("splitter", self._expanded_splitter_state)
+
+    def set_options_visible(self, visible):
+        if not visible:
+            self.save_splitter_layout()
+            if not self.score_visible.isChecked():
+                self.score_visible.setChecked(True)
+        self.controller.setVisible(visible)
+        if visible:
+            self.main_splitter.restoreState(self._expanded_splitter_state)
+        self.options_toggle.setText("옵션 숨기기" if visible else "옵션 펼치기")
+        self.options_toggle.setAccessibleName(self.options_toggle.text())
+        self.preferences.setValue("options_visible", visible)
+        self.update_feedback_location()
+
+    def update_feedback_location(self):
+        global_status = not self.options_toggle.isChecked() or self.worker is not None
+        destination = self.feedback_row if global_status else self.status_slot
+        if destination.indexOf(self.status) < 0:
+            destination.insertWidget(0, self.status, 1)
+        self.feedback_bar.setVisible(global_status)
+
+    def set_score_visible(self, visible):
+        if not visible:
+            self.save_splitter_layout()
+            if not self.options_toggle.isChecked():
+                self.options_toggle.setChecked(True)
+        self.score_panel.setVisible(visible)
+        if visible and self.options_toggle.isChecked():
+            self.main_splitter.restoreState(self._expanded_splitter_state)
+        self.preferences.setValue("score_visible", visible)
 
     def connect_player(self):
         self.player.mediaStatusChanged.connect(self.restore_pitch_position)
@@ -557,8 +651,25 @@ class Window(QMainWindow):
             f"{len(files)}곡" if files else "음원 폴더에 파일을 넣고 새로고침하세요."
         )
 
-    def update_separation_hint(self, _index=None):
-        target = str(self.separation_variant.currentData()).removeprefix("no_")
+    def checked_variants(self):
+        return [identifier for identifier in SUPPORTED_VARIANTS
+                if self.variant_checks[identifier].isChecked()]
+
+    def select_preparation_variants(self, selected):
+        for checkbox in self.variant_checks.values():
+            checkbox.blockSignals(True)
+            checkbox.setChecked(selected)
+            checkbox.blockSignals(False)
+        self.update_preparation_selection()
+
+    def update_preparation_selection(self, *_):
+        selected = self.checked_variants()
+        self.selection_summary.setText(
+            f"{len(selected)}개 선택 · 각 항목을 별도 재생 음원으로 준비합니다."
+            if selected else "준비할 음원을 하나 이상 체크하세요."
+        )
+        self.prepare_button.setEnabled(not self.worker and bool(selected))
+        targets = {identifier.removeprefix("no_") for identifier in selected}
         explanations = {
             "keys": "키보드는 피아노·오르간 등 건반 파트입니다. "
             "전자 합성음은 ‘신시사이저’를 선택하세요.",
@@ -567,10 +678,11 @@ class Window(QMainWindow):
             "synth": "실험적 분리입니다. 신스 베이스·패드·전자 타악기 등 "
             "전자 합성음이 함께 포함될 수 있습니다.",
         }
-        self.separation_hint.setText(explanations.get(target, ""))
-        self.separation_hint.setVisible(target in explanations)
+        hint = " ".join(message for target, message in explanations.items() if target in targets)
+        self.separation_hint.setText(hint)
+        self.separation_hint.setVisible(bool(hint))
 
-    def prepare(self, _checked=False, *, all_variants=False):
+    def prepare(self, _checked=False):
         if self.worker:
             return
         selected = self.tracks.currentItem()
@@ -581,7 +693,14 @@ class Window(QMainWindow):
         if Path(source).suffix.lower() == ".magic":
             self.import_magic(Path(source))
             return
+        variants = self.checked_variants()
+        if not variants:
+            self.status.setText("준비할 음원을 하나 이상 체크하세요.")
+            return
         self.pending_source = Path(source)
+        selected_variant = (
+            self.selected_variant if self.selected_variant in variants else variants[0]
+        )
         args = [
             "separate",
             "--input",
@@ -589,20 +708,39 @@ class Window(QMainWindow):
             "--root",
             str(self.paths.root),
             "--model",
-            "auto" if all_variants else self.models.currentData(),
+            self.models.currentData(),
             "--variant",
-            self.separation_variant.currentData(),
+            selected_variant,
+            "--variants",
+            *variants,
             "--device",
             self.devices.currentData(),
             "--events",
         ]
         if self.low_memory.isChecked():
             args.append("--low-memory")
-        if all_variants:
-            args.append("--all-variants")
         self._prepare_restore = self.capture_variant_position()
         self.player.pause()
         self.start_job(args)
+
+    def load_cached_audio(self):
+        if self.worker:
+            return
+        selected = self.tracks.currentItem()
+        if not selected:
+            self.status.setText("저장된 음원을 불러올 곡을 먼저 선택하세요.")
+            return
+        source = Path(selected.data(Qt.ItemDataRole.UserRole))
+        if source.suffix.lower() == ".magic":
+            self.import_magic(source)
+            return
+        self.pending_source = source
+        self._prepare_restore = self.capture_variant_position()
+        self.player.pause()
+        self.start_job([
+            "cached-audio", "--input", str(source), "--root", str(self.paths.root),
+            "--variant", self.selected_variant, "--events",
+        ])
 
     def choose_magic(self):
         if self.worker:
@@ -703,6 +841,7 @@ class Window(QMainWindow):
             "pitch_result",
             "magic_result",
             "magic_imported",
+            "cached_audio",
         ):
             self.job_result = data
         elif kind == "error":
@@ -727,8 +866,22 @@ class Window(QMainWindow):
             self.status.setText("작업을 취소했습니다. 완료된 캐시는 유지됩니다.")
         elif code == 0 and self.job_result:
             self.progress.setValue(100)
-            if self.job_result["type"] == "result":
-                self.load_result(self.job_result)
+            if self.job_result["type"] in {"result", "cached_audio"}:
+                if self.job_result["type"] == "cached_audio" and not self.job_result["variants"]:
+                    self._variant_restore = self._prepare_restore if self.output_path else None
+                    self._prepare_restore = None
+                    self.pending_source = None
+                    if (self.imported_bundle is None
+                            and self.job_result["source_hash"] == self.loaded_source_hash):
+                        self.prepared_variants = {}
+                        self.refresh_variant_choices()
+                        self.update_export_controls()
+                    self.restore_variant_region()
+                    self.status.setText(
+                        "이 곡에 저장된 음원이 없습니다. 필요한 항목을 체크해 먼저 준비하세요."
+                    )
+                else:
+                    self.load_result(self.job_result)
             elif self.job_result["type"] == "magic_imported":
                 self.load_imported(self.job_result)
             elif self.job_result["type"] == "gp_prepared":
@@ -750,6 +903,7 @@ class Window(QMainWindow):
         if self.cancelled or code != 0:
             saved = self._variant_restore or self._prepare_restore
             self._pending_variant = None
+            self._pending_catalog = None
             self._prepare_restore = None
             self._variant_restore = saved
             self.refresh_variant_choices()
@@ -771,7 +925,6 @@ class Window(QMainWindow):
                 "target": "vocals", "mode": "without", "path": result["instrumental"],
             }
         }
-        self.prepared_variants = {**(self.prepared_variants if same_song else {}), **variants}
         selected = result.get("selected_variant", "no_vocals")
         if same_song:
             if self.pending_source:
@@ -779,8 +932,7 @@ class Window(QMainWindow):
                 self.source_name = self.pending_source.name
                 self.current_track.setText(self.source_name)
                 self.score_panel.audio = self.source_path
-            self.refresh_variant_choices()
-            self.begin_variant_switch(selected, restore=self._prepare_restore)
+            self.begin_variant_switch(selected, restore=self._prepare_restore, catalog=variants)
             self._prepare_restore = None
             return
         self._loading_track = True
@@ -790,6 +942,9 @@ class Window(QMainWindow):
             self.loaded_source_hash = result.get("source_hash")
             self.key_label.setText("반주 키")
             self.selected_variant = selected
+            self.prepared_variants = variants
+            self.active_variant = variants[selected]
+            self._pending_catalog = None
             self._variant_restore = self._pending_variant = self._prepare_restore = None
             if self.pending_source:
                 self.source_name = self.pending_source.name
@@ -841,10 +996,12 @@ class Window(QMainWindow):
             self.count_in.cancel()
             self.player.pause()
             self._pending_variant = self._variant_restore = self._prepare_restore = None
+            self._pending_catalog = None
             self.imported_bundle = bundle
             self.prepared_variants = {item["id"]: item for item in bundle["audio_variants"]}
             self.selected_variant = bundle["default_audio_variant"]
             selected = self.prepared_variants[self.selected_variant]
+            self.active_variant = selected
             self.base_pitch_semitones = selected["pitch_semitones"]
             self.key_label.setText("추가 키")
             self.pitch_semitones = 0
@@ -893,6 +1050,16 @@ class Window(QMainWindow):
         self.playback_variants.setCurrentIndex(self.playback_variants.findData(self.selected_variant))
         self.playback_variants.blockSignals(False)
         self.playback_variants.setEnabled(not self.worker and len(self.prepared_variants) > 1)
+        origin = ".magic에 저장된 음원" if self.imported_bundle else "캐시에 준비된 음원"
+        source = ".magic" if self.imported_bundle else "캐시"
+        self.available_variants.setText(
+            f"{source} {len(self.prepared_variants)}개"
+            if self.prepared_variants else "음원 없음"
+        )
+        self.available_variants.setToolTip(origin)
+        self.playback_variants.setToolTip(
+            f"{self.source_name}\n{origin}만 표시합니다." if self.prepared_variants else ""
+        )
         base = (
             f"파일에 적용된 키 {self.base_pitch_semitones:+d}반음 · "
             if self.imported_bundle else ""
@@ -917,10 +1084,13 @@ class Window(QMainWindow):
                 and identifier != self.selected_variant):
             self.begin_variant_switch(identifier)
 
-    def begin_variant_switch(self, identifier, *, restore=None):
-        if self.worker or identifier not in self.prepared_variants:
+    def begin_variant_switch(self, identifier, *, restore=None, catalog=None):
+        candidates = self.prepared_variants if catalog is None else catalog
+        if self.worker or identifier not in candidates:
             return
-        item = self.prepared_variants[identifier]
+        item = candidates[identifier]
+        # A cancelled model change must leave the old audio and its identity together.
+        self._pending_catalog = catalog
         self._variant_restore = restore or self.capture_variant_position()
         self._pitch_position = self._variant_restore["position"]
         self._pending_variant = identifier
@@ -958,16 +1128,21 @@ class Window(QMainWindow):
             self.models,
             self.devices,
             self.low_memory,
-            self.prepare_button,
             self.tracks,
             self.refresh_button,
             self.open_magic_button,
-            self.separation_variant,
-            self.prepare_all_button,
+            self.cached_audio_button,
+            self.select_all_variants,
+            self.clear_variants,
+            *self.variant_checks.values(),
         ):
             widget.setEnabled(not busy)
+        self.prepare_button.setEnabled(not busy and bool(self.checked_variants()))
         self.playback_variants.setEnabled(not busy and len(self.prepared_variants) > 1)
         self.cancel_button.setEnabled(busy)
+        self.cancel_button.setVisible(busy)
+        self.progress.setVisible(busy)
+        self.update_feedback_location()
         self.export_button.setEnabled(not busy and self.output_path is not None)
         self.score_panel.set_busy(busy)
         self.region.setEnabled(not busy)
@@ -1023,7 +1198,7 @@ class Window(QMainWindow):
                 "--semitones",
                 str(self.key.value()),
             ]
-        item = self.prepared_variants.get(self.selected_variant, {})
+        item = self.active_variant
         if item.get("sha256") and item.get("frames"):
             args.extend([
                 "--expected-sha256", item["sha256"], "--expected-frames", str(item["frames"]),
@@ -1034,8 +1209,12 @@ class Window(QMainWindow):
         self._loading_track = True
         try:
             if self._pending_variant is not None:
+                if self._pending_catalog is not None:
+                    self.prepared_variants = self._pending_catalog
+                    self._pending_catalog = None
                 self.selected_variant = self._pending_variant
-                self.base_instrumental = Path(self.prepared_variants[self.selected_variant]["path"])
+                self.active_variant = self.prepared_variants[self.selected_variant]
+                self.base_instrumental = Path(self.active_variant["path"])
                 self._pending_variant = None
             self.output_path = Path(info["path"])
             self.pitch_semitones = info["semitones"]
@@ -1105,6 +1284,7 @@ class Window(QMainWindow):
             and self.output_path is not None
             and self.score_panel.timeline is not None
             and self.imported_bundle is None
+            and bool(self.prepared_variants)
         )
         self.magic_button.setToolTip(
             "가져온 .magic은 원래 파일 그대로 PC·웹으로 옮길 수 있습니다. "
@@ -1114,7 +1294,7 @@ class Window(QMainWindow):
 
     def export_magic(self):
         if (self.worker or not self.score_panel.timeline_path or not self.output_path
-                or self.imported_bundle is not None):
+                or self.imported_bundle is not None or not self.prepared_variants):
             return
         self._magic_export_ids = self._magic_export_default = None
         quality = self.magic_audio_options()
@@ -1206,7 +1386,7 @@ class Window(QMainWindow):
         if self.prepared_variants:
             explanation = QLabel(
                 "함께 저장할 음원을 고르세요. 준비된 음원만 표시됩니다. "
-                "다른 악기도 넣으려면 먼저 ‘모든 파트 함께 준비’를 실행하세요."
+                "다른 악기도 넣으려면 해당 항목을 체크해 ‘체크한 음원 준비’를 실행하세요."
             )
             explanation.setWordWrap(True)
             form.addRow(explanation)
@@ -1585,7 +1765,9 @@ class Window(QMainWindow):
         # separate stop can deadlock with native renderer teardown on Windows.
         # Clear media before releasing the click sound sources as well.
         self.player.setSource(QUrl())
-        self.preferences.setValue("splitter", self.main_splitter.saveState())
+        self.save_splitter_layout()
+        self.preferences.setValue("splitter", self._expanded_splitter_state)
+        self.preferences.setValue("options_visible", self.options_toggle.isChecked())
         self.preferences.setValue("score_visible", self.score_visible.isChecked())
         self.preferences.setValue("window_width", self.width())
         self.preferences.setValue("window_height", self.height())
