@@ -13,6 +13,27 @@ import pytest
 import soundfile as sf
 
 
+def _browser_diagnostics(nodeid):
+    module = Path(nodeid.partition("::")[0]).name
+    return os.environ.get("RUN_WEB_TESTS") == "1" and (
+        module.startswith("test_web_") or module == "test_session_player.py"
+    )
+
+
+def pytest_runtest_logstart(nodeid, location):
+    if _browser_diagnostics(nodeid):
+        print(f"\nStarting {nodeid}", file=sys.stderr, flush=True)
+
+
+def pytest_runtest_logreport(report):
+    # Keep the failure visible even if later native cleanup reaches the module bound.
+    if report.failed or _browser_diagnostics(report.nodeid):
+        print(f"\n{report.nodeid} [{report.when}] {report.outcome} "
+              f"({report.duration:.2f}s)", file=sys.stderr, flush=True)
+    if report.failed:
+        print(report.longrepr, file=sys.stderr, flush=True)
+
+
 @pytest.fixture(scope="module")
 def web_browser_pool():
     from playwright.sync_api import sync_playwright

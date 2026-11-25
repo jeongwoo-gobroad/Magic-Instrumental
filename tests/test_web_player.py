@@ -111,6 +111,24 @@ def page(request, web_url, web_browser_pool):
     assert errors == []
 
 
+@pytest.fixture(params=["chromium", "webkit"])
+def fresh_page(request, web_url):
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        browser = getattr(playwright, request.param).launch()
+        errors = []
+        try:
+            context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
+            page = context.new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(web_url)
+            yield page
+        finally:
+            browser.close()
+        assert errors == []
+
+
 def open_study(page, path):
     page.locator("#file").set_input_files(path)
     page.wait_for_function("!MagicPlayer.state().loading", timeout=45000)

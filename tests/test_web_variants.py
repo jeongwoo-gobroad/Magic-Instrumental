@@ -26,7 +26,7 @@ from tests.test_magic_variants import all_variant_study, variant_study
 from tests.test_web_audio import attach_music_probe, hold_resume_completion
 from tests.test_web_player import frequency, open_study
 
-page = player_tests.page
+page = player_tests.fresh_page
 web_url = player_tests.web_url
 relay_url = session_tests.relay_url
 

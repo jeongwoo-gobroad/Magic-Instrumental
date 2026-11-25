@@ -76,7 +76,8 @@ def install_readiness_trace(page, participant):
           ui: {disabled: $('sessionPrepare').disabled,
             pressed: $('sessionPrepare').getAttribute('aria-pressed'),
             label: $('sessionPrepare').textContent, live: $('sessionLive').textContent,
-            status: $('status').textContent,
+            readiness: $('sessionReadiness').textContent,
+            bannerHidden: $('sessionBanner').hidden, status: $('status').textContent,
             playDisabled: $('play').disabled, playLabel: $('play').textContent,
             fileStatus: $('sessionFileStatus').textContent,
             downloadDisabled: $('getShared').disabled,
@@ -286,19 +287,31 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
                 diagnostic["waiting_for"] = participant
                 page.wait_for_function("MagicEnsemble.state().prepared")
                 assert_audio_session_order(page)
-        for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
-            for page in (leader, member):
-                page.get_by_text("모두 준비 완료", exact=False).wait_for()
-            participant.locator("#sessionPrepare").click()
-            other = member if participant == leader else leader
-            expect(other.locator("#sessionReadiness")).to_have_text(
-                f"준비 대기 중인 참가자 · {waiting_for}"
-            )
-            assert other.locator("#sessionPrepare").get_attribute("aria-pressed") == "true"
-            assert participant.locator("#sessionPrepare").get_attribute("aria-pressed") == "false"
-            assert leader.locator("#play").is_disabled()
-            participant.locator("#sessionPrepare").click()
-        leader.wait_for_function("!document.getElementById('play').disabled")
+        with readiness_diagnostics(
+            participants, engine, errors, "ready-toggle-roundtrip"
+        ) as diagnostic:
+            for participant, waiting_for in ((leader, "리더"), (member, "멤버")):
+                for page in (leader, member):
+                    observer = "leader" if page == leader else "member"
+                    diagnostic["waiting_for"] = f"{observer} all ready before {waiting_for} toggle"
+                    page.get_by_text("모두 준비 완료", exact=False).wait_for()
+                diagnostic["waiting_for"] = f"{waiting_for} cancel readiness"
+                participant.locator("#sessionPrepare").click()
+                other = member if participant == leader else leader
+                diagnostic["waiting_for"] = f"other participant sees {waiting_for} unready"
+                expect(other.locator("#sessionReadiness")).to_have_text(
+                    f"준비 대기 중인 참가자 · {waiting_for}"
+                )
+                diagnostic["waiting_for"] = f"readiness controls after {waiting_for} cancellation"
+                assert other.locator("#sessionPrepare").get_attribute("aria-pressed") == "true"
+                assert participant.locator("#sessionPrepare").get_attribute(
+                    "aria-pressed"
+                ) == "false"
+                assert leader.locator("#play").is_disabled()
+                diagnostic["waiting_for"] = f"{waiting_for} prepare again"
+                participant.locator("#sessionPrepare").click()
+            diagnostic["waiting_for"] = "leader play enabled after both readiness toggles"
+            leader.wait_for_function("!document.getElementById('play').disabled")
         leader.locator("#play").click()
         leader.wait_for_function("MagicEnsemble.state().pending")
         assert not member.evaluate("MagicPlayer.state().playing")
