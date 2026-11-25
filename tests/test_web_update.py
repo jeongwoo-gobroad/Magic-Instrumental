@@ -4,6 +4,7 @@
 import asyncio
 import base64
 import hashlib
+import json
 import mimetypes
 import os
 import re
@@ -182,12 +183,42 @@ def document_build(page):
     return page.locator('meta[name="magic-build"]').get_attribute("content")
 
 
-def wait_for_initial_install(page, build):
-    page.wait_for_function("navigator.serviceWorker.controller !== null")
-    page.wait_for_function("!document.getElementById('checkUpdate').disabled")
-    assert document_build(page) == build["build"]
-    assert build["version"] in page.locator("#appVersion").inner_text()
-    assert page.locator("#appUpdate").is_hidden()
+def wait_for_initial_install(page, build, server):
+    try:
+        page.wait_for_function("navigator.serviceWorker.controller !== null")
+        page.wait_for_function("!document.getElementById('checkUpdate').disabled")
+        assert document_build(page) == build["build"]
+        assert build["version"] in page.locator("#appVersion").inner_text()
+        assert page.locator("#appUpdate").is_hidden()
+    except Exception as error:
+        player_tests.add_failure_diagnostics(
+            error, page, "Initial worker diagnostics", """async () => {
+          const worker = value => value && ({script: value.scriptURL, state: value.state});
+          const bounded = promise => Promise.race([
+            promise.catch(error => ({error: error.message})),
+            new Promise(resolve => setTimeout(() => resolve({pending: true}), 1000))
+          ]);
+          const service = navigator.serviceWorker;
+          const [registrations, cached] = await Promise.all([
+            bounded(service.getRegistrations().then(items => items.map(item => ({
+              scope: item.scope, installing: worker(item.installing),
+              waiting: worker(item.waiting), active: worker(item.active)
+            })))), bounded(caches.keys())
+          ]);
+          return {url: location.href, secure: window.isSecureContext,
+            readyState: document.readyState, visibility: document.visibilityState,
+            controller: worker(service.controller), registrations, cached,
+            documentBuild: document.querySelector('meta[name="magic-build"]')?.content,
+            checkDisabled: document.getElementById('checkUpdate')?.disabled,
+            ui: Object.fromEntries(['offline', 'updateStatus', 'appVersion'].map(id =>
+              [id, document.getElementById(id)?.textContent.slice(0, 1000)]))};
+        }""")
+        with server.lock:
+            details = {"expected": {"version": build["version"], "build": build["build"]},
+                       "releases": dict(server.releases), "corrupt": sorted(server.corrupt),
+                       "requests": list(server.requests[-40:])}
+        error.add_note("Update server diagnostics:\n" + json.dumps(details, ensure_ascii=False))
+        raise
 
 
 def check_for_update(page, build):
@@ -248,7 +279,7 @@ def verify_landing_layout(page):
 
 def test_update_keeps_playing_until_explicit_offline_apply(page, update_server, study_files):
     old, new = update_server.builds["old"], update_server.builds["new"]
-    wait_for_initial_install(page, old)
+    wait_for_initial_install(page, old, update_server)
     open_study(page, study_files["gp"])
     page.locator("#play").click()
     page.wait_for_function("MagicPlayer.state().position > .2")
@@ -286,7 +317,7 @@ def test_update_keeps_playing_until_explicit_offline_apply(page, update_server, 
 
 def test_failed_integrity_keeps_previous_offline_player_and_retries(page, update_server):
     old, new = update_server.builds["old"], update_server.builds["new"]
-    wait_for_initial_install(page, old)
+    wait_for_initial_install(page, old, update_server)
     previous_caches = page.evaluate("caches.keys()")
     update_server.publish("new", corrupt=True)
     page.locator("#checkUpdate").click()
@@ -316,12 +347,12 @@ def test_failed_integrity_keeps_previous_offline_player_and_retries(page, update
 
 def test_other_tab_and_scope_survive_update_activation(page, update_server):
     old, new = update_server.builds["old"], update_server.builds["new"]
-    wait_for_initial_install(page, old)
+    wait_for_initial_install(page, old, update_server)
     second, other = page.context.new_page(), page.context.new_page()
     second.goto(update_server.origin + "/player/")
     other.goto(update_server.origin + "/other/")
-    wait_for_initial_install(second, old)
-    wait_for_initial_install(other, old)
+    wait_for_initial_install(second, old, update_server)
+    wait_for_initial_install(other, old, update_server)
     page.evaluate("window.originalUpdateTab = true")
     await_keys = page.evaluate("""async () => {
       await caches.open('magic-v2-legacy-sentinel');
@@ -373,7 +404,7 @@ def test_session_pending_audio_and_late_play_block_apply(
     page, update_server, update_relay_url, study_files,
 ):
     old, new = update_server.builds["old"], update_server.builds["new"]
-    wait_for_initial_install(page, old)
+    wait_for_initial_install(page, old, update_server)
     update_server.publish("new")
     check_for_update(page, new)
     page.evaluate("""() => {

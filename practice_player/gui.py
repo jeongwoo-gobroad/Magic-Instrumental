@@ -47,7 +47,15 @@ from .metronome import MetronomeBar
 from .region_loop import RegionLoop
 from .score_gui import ScorePanel
 from .updates import UpdateBar, open_updater
-from .variants import SUPPORTED_VARIANTS, TARGET_LABELS, variant_label
+from .variants import (
+    ALL_VARIANTS,
+    SUPPORTED_VARIANTS,
+    TARGET_LABELS,
+    canonical_combination,
+    is_combination,
+    removal_targets,
+    variant_label,
+)
 
 STYLE = """
 QWidget { background: #11151d; color: #e7edf7; font-size: 14px; }
@@ -88,6 +96,8 @@ def time_label(milliseconds: int) -> str:
 
 def export_variant_request(item):
     request = {key: item[key] for key in ("id", "label", "mode", "target", "path")}
+    if "targets" in item:
+        request["targets"] = list(item["targets"])
     # Keep the prepared cache identity; a later export must not bless changed bytes.
     if all(key in item for key in ("sha256", "source_hash", "frames")):
         request.update(
@@ -347,6 +357,7 @@ class Window(QMainWindow):
             QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
         )
         self.playback_variants.setMinimumContentsLength(10)
+        self.playback_variants.setMaximumWidth(300)
         self.playback_variants.setPlaceholderText("준비된 음원 없음")
         self.playback_variants.activated.connect(self.change_variant)
         self.variant_hint = QLabel(
@@ -359,11 +370,13 @@ class Window(QMainWindow):
         self.seek.setRange(0, 0)
         self.seek.setAccessibleName("재생 위치")
         self.seek.sliderReleased.connect(lambda: self.seek_to(self.seek.value()))
-        right.addWidget(self.seek)
         self.clock = QLabel("00:00 / 00:00")
         self.clock.setObjectName("muted")
         controls = QHBoxLayout()
         self.play_button = QPushButton("재생")
+        self.play_button.setObjectName("primary")
+        self.play_button.setMinimumSize(92, 40)
+        self.play_button.setToolTip("음원을 재생하거나 일시정지합니다.")
         self.play_button.clicked.connect(self.toggle_play)
         self.play_button.setEnabled(False)
         stop = QPushButton("처음으로")
@@ -521,13 +534,11 @@ class Window(QMainWindow):
         self.update_bar.update_requested.connect(self.begin_update)
         outer.addWidget(self.update_bar)
         outer.addWidget(self.metronome)
-        display_controls = QHBoxLayout()
         self.options_toggle = QPushButton("옵션 숨기기")
         self.options_toggle.setObjectName("toggleOptions")
         self.options_toggle.setCheckable(True)
         self.options_toggle.setChecked(self.preferences.value("options_visible", True, type=bool))
         self.options_toggle.toggled.connect(self.set_options_visible)
-        display_controls.addWidget(self.options_toggle)
         self.score_visible = QCheckBox("악보 표시")
         self.score_visible.setToolTip("가운데 경계를 드래그하면 옵션과 악보의 너비를 조절합니다.")
         self.score_visible.setChecked(self.preferences.value("score_visible", True, type=bool))
@@ -535,15 +546,23 @@ class Window(QMainWindow):
             self.score_visible.setChecked(True)
         self.score_panel.setVisible(self.score_visible.isChecked())
         self.score_visible.toggled.connect(self.set_score_visible)
-        display_controls.addWidget(self.score_visible)
-        display_controls.addWidget(QLabel("재생 음원"))
-        display_controls.addWidget(self.playback_variants, 1)
         self.available_variants = QLabel("음원 없음")
         self.available_variants.setObjectName("muted")
-        display_controls.addWidget(self.available_variants)
-        display_controls.addWidget(self.play_button)
-        display_controls.addWidget(self.clock)
-        outer.addLayout(display_controls)
+        right.insertWidget(right.indexOf(self.variant_hint), self.available_variants)
+        # Keep the transport together, outside the scrollable and foldable options.
+        self.transport_bar = QWidget()
+        self.transport_bar.setObjectName("playbackTransport")
+        transport = QHBoxLayout(self.transport_bar)
+        transport.setContentsMargins(0, 0, 0, 0)
+        transport.setSpacing(8)
+        transport.addWidget(self.play_button)
+        transport.addWidget(self.seek, 2)
+        transport.addWidget(self.clock)
+        transport.addWidget(QLabel("재생 음원"))
+        transport.addWidget(self.playback_variants, 1)
+        transport.addWidget(self.options_toggle)
+        transport.addWidget(self.score_visible)
+        outer.addWidget(self.transport_bar)
         self.feedback_bar = QWidget()
         self.feedback_row = QHBoxLayout(self.feedback_bar)
         self.feedback_row.setContentsMargins(0, 0, 0, 0)
@@ -664,10 +683,17 @@ class Window(QMainWindow):
 
     def update_preparation_selection(self, *_):
         selected = self.checked_variants()
-        self.selection_summary.setText(
-            f"{len(selected)}개 선택 · 각 항목을 별도 재생 음원으로 준비합니다."
-            if selected else "준비할 음원을 하나 이상 체크하세요."
-        )
+        combination = canonical_combination(selected)
+        if combination:
+            summary = (
+                f"{len(selected)}개 선택 · {variant_label(combination)}도 함께 준비합니다. "
+                "각 항목과 함께 제거한 조합을 따로 골라 재생할 수 있습니다."
+            )
+        elif selected:
+            summary = f"{len(selected)}개 선택 · 각 항목을 별도 재생 음원으로 준비합니다."
+        else:
+            summary = "준비할 음원을 하나 이상 체크하세요."
+        self.selection_summary.setText(summary)
         self.prepare_button.setEnabled(not self.worker and bool(selected))
         targets = {identifier.removeprefix("no_") for identifier in selected}
         explanations = {
@@ -698,7 +724,10 @@ class Window(QMainWindow):
             self.status.setText("준비할 음원을 하나 이상 체크하세요.")
             return
         self.pending_source = Path(source)
-        selected_variant = (
+        combination = canonical_combination(variants)
+        if combination:
+            variants.append(combination)
+        selected_variant = combination or (
             self.selected_variant if self.selected_variant in variants else variants[0]
         )
         args = [
@@ -1042,7 +1071,7 @@ class Window(QMainWindow):
     def refresh_variant_choices(self):
         self.playback_variants.blockSignals(True)
         self.playback_variants.clear()
-        for identifier in SUPPORTED_VARIANTS:
+        for identifier in ALL_VARIANTS:
             if identifier in self.prepared_variants:
                 self.playback_variants.addItem(
                     self.prepared_variants[identifier]["label"], identifier
@@ -1058,15 +1087,22 @@ class Window(QMainWindow):
         )
         self.available_variants.setToolTip(origin)
         self.playback_variants.setToolTip(
-            f"{self.source_name}\n{origin}만 표시합니다." if self.prepared_variants else ""
+            f"{variant_label(self.selected_variant)}\n{self.source_name}\n{origin}만 표시합니다."
+            if self.selected_variant in self.prepared_variants else ""
         )
         base = (
             f"파일에 적용된 키 {self.base_pitch_semitones:+d}반음 · "
             if self.imported_bundle else ""
         )
-        if self.selected_variant in {"synth", "no_synth"}:
+        targets = removal_targets(self.selected_variant)
+        if is_combination(self.selected_variant):
+            base += (
+                f"{variant_label(self.selected_variant)} · "
+                "선택한 파트를 함께 제거한 음원입니다. "
+            )
+        if self.selected_variant in {"synth", "no_synth"} or "synth" in targets:
             base += "실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. "
-        elif self.selected_variant in {"keys", "no_keys"}:
+        elif self.selected_variant in {"keys", "no_keys"} or "keys" in targets:
             base += "키보드에는 피아노·오르간 등 건반 계열이 포함됩니다. "
         self.variant_hint.setText(
             base + "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
@@ -1386,7 +1422,8 @@ class Window(QMainWindow):
         if self.prepared_variants:
             explanation = QLabel(
                 "함께 저장할 음원을 고르세요. 준비된 음원만 표시됩니다. "
-                "다른 악기도 넣으려면 해당 항목을 체크해 ‘체크한 음원 준비’를 실행하세요."
+                "여러 파트를 함께 뺀 반주는 조합 이름의 항목도 체크하세요. "
+                "조합이 없으면 ‘없는 반주’를 두 개 이상 체크해 먼저 준비하세요."
             )
             explanation.setWordWrap(True)
             form.addRow(explanation)
@@ -1394,7 +1431,7 @@ class Window(QMainWindow):
             choices.setObjectName("magicAudioVariants")
             choices.setAccessibleName("함께 저장할 음원")
             choices.setMaximumHeight(190)
-            for identifier in SUPPORTED_VARIANTS:
+            for identifier in ALL_VARIANTS:
                 if identifier in self.prepared_variants:
                     item = QListWidgetItem(self.prepared_variants[identifier]["label"])
                     item.setData(Qt.ItemDataRole.UserRole, identifier)

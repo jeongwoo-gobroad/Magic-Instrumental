@@ -18,6 +18,12 @@ from pathlib import Path
 from filelock import FileLock
 
 from .config import Paths
+from .variants import (
+    ALL_VARIANTS,
+    MAX_PORTABLE_VARIANTS,
+    is_combination,
+    validate_variant_identity,
+)
 
 IMPORT_VERSION = 1
 MAX_ARCHIVE = 1024 * 1024 * 1024
@@ -27,8 +33,7 @@ MAX_TIMING = 8_000_000
 _SHA = re.compile(r"[a-f0-9]{64}\Z")
 _MEMBER = re.compile(
     r"(?:manifest\.json|timeline\.json|audio/instrumental\.(?:wav|mp3)|"
-    r"audio/variants/(?:no_vocals|vocals|no_guitar|guitar|no_drums|drums|no_bass|bass|"
-    r"no_piano|piano|no_keys|keys|no_synth|synth|original)\.(?:wav|mp3)|"
+    r"audio/variants/(?:" + "|".join(ALL_VARIANTS) + r")\.(?:wav|mp3)|"
     r"score/source\.(?:pdf|gp3|gp4|gp5)|pages/[0-9]{4}\.png|"
     r"parts/[0-9]{2}/(?:timeline\.json|pages/[0-9]{4}\.png))\Z"
 )
@@ -133,7 +138,7 @@ def _read_zip(path):
             not disk
             and not central_disk
             and disk_count == count
-            and 5 <= count <= 1100
+            and 5 <= count <= 1200
             and size <= 300000
             and start + size == tail_start + end,
             "분할·ZIP64 또는 손상된 연습 파일은 지원하지 않습니다.",
@@ -255,7 +260,7 @@ def _audio_descriptor(audio, version, identifier=None):
                 isinstance(audio["source_sha256"], str) and _SHA.fullmatch(audio["source_sha256"]),
                 "원곡 식별 정보가 올바르지 않습니다.",
             )
-    if version == 4:
+    if version >= 4:
         codec = audio.get("codec")
         _require(
             codec in ("wav", "mp3") and audio.get("path") == f"audio/variants/{identifier}.{codec}",
@@ -297,7 +302,7 @@ def _validate_manifest(manifest, entries):
     _require(
         manifest.get("format") == "Magic-Instrumental"
         and type(version) is int
-        and version in (1, 2, 3, 4),
+        and version in (1, 2, 3, 4, 5),
         "이 .magic 버전은 지원하지 않습니다. 앱을 업데이트해 주세요.",
     )
     _require(
@@ -308,30 +313,24 @@ def _validate_manifest(manifest, entries):
     )
     audio, score = manifest.get("audio"), manifest.get("score")
     _audio_descriptor(audio, version, manifest.get("default_audio_variant"))
-    if version == 4:
+    if version >= 4:
         _require(
             _number(manifest.get("audio_gain"), 0, 1) and manifest["audio_gain"] > 0,
             "저장된 음원들의 공통 볼륨 정보가 올바르지 않습니다.",
         )
         variants = manifest.get("audio_variants")
         _require(
-            isinstance(variants, list) and 1 <= len(variants) <= len(_VARIANTS),
+            isinstance(variants, list)
+            and 1 <= len(variants) <= (MAX_PORTABLE_VARIANTS if version == 5 else len(_VARIANTS)),
             "재생 음원 목록이 올바르지 않습니다.",
         )
         seen = set()
         for variant in variants:
             _require(isinstance(variant, dict), "재생 음원 정보가 올바르지 않습니다.")
             identifier = variant.get("id")
+            validate_variant_identity(variant, allow_combinations=version == 5)
             _require(
-                isinstance(identifier, str)
-                and identifier in _VARIANTS
-                and identifier not in seen
-                and isinstance(variant.get("label"), str)
-                and bool(variant["label"].strip())
-                and len(variant["label"]) <= 100
-                and "target" in variant
-                and (variant.get("mode"), variant["target"]) == _VARIANTS[identifier],
-                "재생 음원 이름·악기·분리 방식이 올바르지 않습니다.",
+                identifier not in seen, "재생 음원 선택이 중복되었습니다.",
             )
             seen.add(identifier)
             _audio_descriptor(variant.get("audio"), version, identifier)
@@ -350,6 +349,8 @@ def _validate_manifest(manifest, entries):
                 "재생 음원들의 원곡·길이·키가 일치하지 않습니다.",
             )
         default = manifest.get("default_audio_variant")
+        _require(version != 5 or any(is_combination(item) for item in seen),
+                 "조합 연습 파일에 조합된 음원이 없습니다.")
         selected = next((item for item in variants if item["id"] == default), None)
         _require(
             selected is not None and selected["audio"] == audio,
@@ -418,7 +419,7 @@ def _validate_manifest(manifest, entries):
             "timeline": "timeline.json",
         }
     ]
-    if version == 2 or (version in (3, 4) and score["kind"] == "gp"):
+    if version == 2 or (version in (3, 4, 5) and score["kind"] == "gp"):
         parts = manifest.get("parts")
         basis = manifest.get("timing_basis")
         _require(
@@ -455,7 +456,7 @@ def _validate_manifest(manifest, entries):
             expected.add(part["timeline"])
             total += len(part["pages"])
         _require(track in seen and total <= 1000, "기준 파트가 없거나 전체 페이지가 너무 많습니다.")
-    elif version in (3, 4):
+    elif version in (3, 4, 5):
         _require(
             "parts" not in manifest and "timing_basis" not in manifest,
             "PDF 파트 정보가 올바르지 않습니다.",
@@ -635,7 +636,7 @@ def _inspect_audio(path, audio, version):
         if audio.get("codec") == "mp3":
             _validate_mp3(data, audio)
         else:
-            _validate_wav(data, audio, strict=version == 4)
+            _validate_wav(data, audio, strict=version >= 4)
     from .audio import inspect_audio
 
     info = inspect_audio(path, scan=True)
@@ -798,7 +799,7 @@ def load_imported(bundle_path: Path) -> dict:
         inventory.get("version") == IMPORT_VERSION
         and inventory.get("archive_hash") == folder.parent.name
         and isinstance(records, dict)
-        and 6 <= len(records) <= 1166
+        and 6 <= len(records) <= 1266
         and "bundle.json" in records,
         "가져온 연습 파일 검증 목록이 올바르지 않습니다.",
     )
@@ -831,7 +832,7 @@ def load_imported(bundle_path: Path) -> dict:
                 not (Path(current) / name).is_symlink(), "가져온 연습 파일 캐시에 링크가 있습니다."
             )
         actual.update((Path(current) / name).relative_to(folder).as_posix() for name in files)
-        _require(len(actual) <= 1167, "가져온 연습 파일 캐시 구성 요소가 너무 많습니다.")
+        _require(len(actual) <= 1267, "가져온 연습 파일 캐시 구성 요소가 너무 많습니다.")
     _require(
         actual == set(records) | {"cache-manifest.json"},
         "가져온 연습 파일 캐시 구성이 일치하지 않습니다.",
@@ -847,7 +848,7 @@ def load_imported(bundle_path: Path) -> dict:
     variants, parts = bundle.get("audio_variants"), bundle.get("parts")
     _require(
         isinstance(variants, list)
-        and 1 <= len(variants) <= len(_VARIANTS)
+        and 1 <= len(variants) <= MAX_PORTABLE_VARIANTS
         and isinstance(parts, list)
         and 1 <= len(parts) <= 64,
         "가져온 연습 파일의 파트·음원 목록이 올바르지 않습니다.",
@@ -866,6 +867,7 @@ def load_imported(bundle_path: Path) -> dict:
 
     for variant in variants:
         _require(isinstance(variant, dict), "가져온 재생 음원 정보가 올바르지 않습니다.")
+        validate_variant_identity(variant, allow_combinations=bundle.get("archive_version") == 5)
         record = checked_path(variant.get("path"))
         _require(
             variant.get("sha256") == record["sha256"] and variant.get("bytes") == record["bytes"],
@@ -918,7 +920,7 @@ def _publish(stage, final):
 
 
 def import_magic(source: Path, paths: Paths, report=lambda *_: None) -> dict:
-    """Import v1–v4 into an archive-hash namespace, preserving existing imports on failure."""
+    """Import v1–v5 into an archive-hash namespace, preserving existing imports on failure."""
     source = Path(source).resolve(strict=True)
     _require(
         source.is_file() and 22 <= source.stat().st_size <= MAX_ARCHIVE,
@@ -985,6 +987,8 @@ def import_magic(source: Path, paths: Paths, report=lambda *_: None) -> dict:
                 report(f"재생 음원 검증 · {variant['label']}", None)
                 info = _inspect_audio(stage / "assets" / audio["path"], audio, manifest["version"])
                 descriptor = {key: variant[key] for key in ("id", "label", "mode", "target")}
+                if "targets" in variant:
+                    descriptor["targets"] = list(variant["targets"])
                 descriptor.update(info)
                 descriptor.update(
                     path=str(final / "assets" / audio["path"]),
@@ -1061,7 +1065,7 @@ def import_magic(source: Path, paths: Paths, report=lambda *_: None) -> dict:
                 "archive_hash": archive_hash,
                 "title": manifest["title"],
                 "original_source_sha256": manifest["audio"].get("source_sha256"),
-                "audio_gain": manifest["audio_gain"] if manifest["version"] == 4 else 1,
+                "audio_gain": manifest["audio_gain"] if manifest["version"] >= 4 else 1,
                 "default_audio_variant": default,
                 "default_part": track,
                 "portable_timing_sha256": timing_hash,

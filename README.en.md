@@ -2,17 +2,17 @@
 
 Separate vocals, guitar, drums, bass or keyboards on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
 
-Current version: **3.0.1** · Mac / Windows / web player
+Current version: **3.0.2** · Mac / Windows / web player
 
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
 ![Desktop app with a project-authored GP study](docs/images/desktop-light.png)
 
-In a small window, scroll down the left side to reach the save buttons. Drag the divider to widen the score. When preparing an original PDF/GP, press **준비 도구 접기** in the score panel to hide the setup controls and make the page taller, then press it again to restore them. Imported `.magic` scores automatically use compact controls with part selection visible. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
+The large **재생** (Play) button is on the left of the fixed transport row at the top, beside seek, the clock and the audio selector. The restart button remains in the left panel. The whole row stays visible when the options sidebar is scrolled or hidden. In a small window, scroll down the left side to reach the save buttons. Drag the divider to widen the score. When preparing an original PDF/GP, press **준비 도구 접기** in the score panel to hide the setup controls and make the page taller, then press it again to restore them. Imported `.magic` scores automatically use compact controls with part selection visible. On a phone, open your .magic file first, then tap **재생 조절로** for playback controls or **악보로** for the score.
 
 ## Install and open
 
-Download the [3.0.1 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.1/Magic-Instrumental-3.0.1.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [3.0.2 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.2/Magic-Instrumental-3.0.2.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -22,7 +22,9 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
-**3.0.1 adds checkbox batch preparation, loading verified cached audio choices, and a collapsible options sidebar on desktop and web.** Instrument separation, multiple audio choices in one `.magic`, and native desktop import from 3.0.0 remain available. Existing 2.4.x and 3.0.0 installations use the regular updater below. This interface update requires no new separation or `.magic` export.
+**3.0.2 restores a prominent fixed Play control and creates actual combinations with several parts removed.** Check two or more **없는 반주** (without this part) options to prepare the individual versions plus one combined backing track. For example, vocals and guitar also produce **보컬 + 기타 없는 반주**, selected initially. The combination is cached and can be included as one audio choice in a `.magic` file. Sequential separation needs extra processing the first time; a verified completed combination can be reused. Existing 2.4.x and 3.0.x installations use the regular updater below.
+
+Old recordings, scores, reviewed timings and `.magic` files stay usable. An older file containing only separate vocal-removed and guitar-removed versions has no jointly removed track. Prepare that combination from the original recording, then export a new `.magic` including it; score reanalysis is unnecessary. Files containing combined tracks require desktop/web player **3.0.2 or later**.
 
 On Windows, the key controls become available as soon as the first instrumental is ready. Cancelling an analysis or separation also stops its helper processes. Completed instrumentals remain available on the next launch.
 
@@ -47,7 +49,7 @@ Applied desktop key changes are included in the exported audio. The web player c
 
 **New exports use MP3 at 256 kbps by default.** The **연습 파일 음원과 음질** dialog also offers MP3 at 128, 192 or 320 kbps, and **WAV · 무손실** (lossless WAV). The desktop remembers your confirmed choice for the next export. MP3 reduces the embedded accompaniment size; the reduction in the whole `.magic` depends on the score pages and other contents. Playback still decodes the audio, so a smaller file does not guarantee lower memory use.
 
-Existing `.magic` files containing WAV remain playable and are never converted automatically. Use **web player 3.0.0 or later** for MP3 and WAV bundles. Follow the [web update steps below](#home-screen-installation-and-web-updates), then check the footer version before choosing your file.
+Existing `.magic` files containing WAV remain playable and are never converted automatically. Use **web player 3.0.2 or later** for files containing combined removal tracks; older MP3/WAV formats remain supported. Follow the [web update steps below](#home-screen-installation-and-web-updates), then check the footer version before choosing your file.
 
 **Measure highlighting is on by default.** PDF and GP scores show a green outline and light translucent fill over the whole current measure. Use **마디 강조** (measure highlight) on the desktop or web player to hide it immediately or show the current measure again without reanalysis. The desktop app and each web browser remember their own choice across songs and parts, including Session use.
 
@@ -111,7 +113,7 @@ Own files must derive from the identical original recording bytes and duration, 
 
 ## Audio choices and desktop import
 
-Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. For example, checking both the vocal-free and guitar-free choices prepares two listening versions in one batch. **전체 선택** checks all 15 choices; **선택 해제** clears them. **체크한 음원 준비** processes the checked choices, running each needed model once.
+Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. Checking both the vocal-free and guitar-free choices prepares both individual versions and one actual vocal-and-guitar-free backing track, selected initially. **전체 선택** checks all 15 base choices and also prepares their complete removal combination; **선택 해제** clears them. Each new combination removes targets from successive residuals, so it can require extra model runs. Verified completed choices and combinations are reused.
 
 To reopen a previously prepared recording, select it and press **저장된 음원 불러오기**. This verifies saved audio without running a model. **재생 음원** lists actual available cache entries, or the included choices when a `.magic` is open. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
 
@@ -121,7 +123,7 @@ Automatic recommendation uses **Leap Xe for vocals**, **SW six-stem for guitar/d
 
 Use **.magic 연습 파일 열기** on desktop, or place the file in `targets`. Desktop validates and caches the actual archive, then displays its stored pages/timings without recognition or inference. Choose included audio and GP parts independently. Applied export pitch is already baked in; **추가 키** starts at zero. Imported score reanalysis, timing edits and creating a new `.magic` require returning to the original project. The imported file can be transferred unchanged; current audio can be exported as WAV/FLAC.
 
-A version 4 export stores shared scores/timing once and each checked audio option separately, with MP3 256 kbps as the default. The web player decodes the active option on demand. Switching pauses at the same position. In Session each participant may choose a different mix of the same original recording; changing audio cancels that participant's readiness and requires Ready again.
+Exports store shared scores/timing once and each checked audio option separately, with MP3 256 kbps as the default. Files with a combined removal use format 5; files with only base choices keep format 4. The web player decodes the active option on demand. Switching pauses at the same position. In Session each participant may choose a different mix of the same original recording; changing audio cancels that participant's readiness and requires Ready again.
 
 ## Rights and attribution
 

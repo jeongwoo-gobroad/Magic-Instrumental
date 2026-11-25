@@ -56,11 +56,14 @@ Windows에서는 `$env:RUN_MODEL_TESTS = '1'`을 설정한 뒤 같은 pytest 파
 ```sh
 python main.py separate --input targets/example.wav --model auto --variant no_guitar
 python main.py separate --input targets/example.wav --model auto --all-variants
+python main.py separate --input targets/example.wav --model auto --variants no_vocals no_guitar no_vocals_guitar --variant no_vocals_guitar
 python main.py separate --input targets/example.wav --model hyperace --variant no_vocals --offline
 python main.py magic-import --input practice.magic
 ```
 
-옵션은 `no_vocals`, `vocals`, `no_guitar`, `guitar`, `no_drums`, `drums`, `no_bass`, `bass`, `no_keys`, `keys`, `no_piano`, `piano`, `no_synth`, `synth`, `original`입니다. `keys`는 건반 계열, `piano`는 피아노, `synth`는 실험적인 전자 합성음 분리이며 서로 겹칠 수 있습니다. 자동 추천은 Leap·SW·Mega를 파트별로 선택합니다. `--events` 결과는 기존 `instrumental` 경로와 함께 `selected_variant`, `variants`, 원본 frame/rate 정보를 제공합니다. `instrumental`은 호환성을 위해 유지한 이름이며 현재 선택한 음원의 경로입니다. 모델별 출력·캐시 변경과 실제 검증 범위는 [모델 문서](docs/SEPARATION_MODELS.md), 저장 계약은 [형식 문서](docs/MAGIC_FORMAT.md)를 확인하세요.
+기본 옵션은 `no_vocals`, `vocals`, `no_guitar`, `guitar`, `no_drums`, `drums`, `no_bass`, `bass`, `no_keys`, `keys`, `no_piano`, `piano`, `no_synth`, `synth`, `original`입니다. `keys`는 건반 계열, `piano`는 피아노, `synth`는 실험적인 전자 합성음 분리이며 서로 겹칠 수 있습니다. 자동 추천은 Leap·SW·Mega를 파트별로 선택합니다. `--events` 결과는 기존 `instrumental` 경로와 함께 `selected_variant`, `variants`, 원본 frame/rate 정보를 제공합니다. `instrumental`은 호환성을 위해 유지한 이름이며 현재 선택한 음원의 경로입니다. 모델별 출력·캐시 변경과 실제 검증 범위는 [모델 문서](docs/SEPARATION_MODELS.md), 저장 계약은 [형식 문서](docs/MAGIC_FORMAT.md)를 확인하세요.
+
+조합은 `no_vocals_guitar`처럼 제거 대상을 고정 순서(보컬·기타·드럼·베이스·키보드·피아노·신시사이저)로 연결한 ID를 명시합니다. CLI의 `--variants`는 명시한 항목만 요청하며 개별 ID 선택만으로 새 조합 추론을 추가하지 않습니다. GUI는 없는 반주를 두 개 이상 체크하면 해당 조합 ID도 명시적으로 추가합니다. 같은 모델을 원곡에서 한 번 실행하는 개별 준비와 달리, 새 조합은 앞 단계 잔여음원을 입력으로 추가 추론할 수 있습니다. 완성 조합은 별도 서명과 원곡 해시로 캐시합니다.
 
 ## 의존성 갱신
 
@@ -98,7 +101,7 @@ Install the development requirements into the existing external venv, then run `
 
 `tools/capture_v2_screenshots.py` captures current Qt and web interfaces using original synthetic studies, including several checked and prepared audio choices. Use `--desktop-only` when browser runtimes are unavailable; this updates only the native screenshots and is not browser validation. The variants/follow browser tests also save current sidebar-layout evidence when `MAGIC_RENDER_CHECK_DIR` is set. `tools/build_release.py` explicitly allows the reviewed screenshots, web files and vendor pins. The deployment branch is `mobile-player`; only the static root is intended for public hosting. Runtime user songs, `.magic` archives, score source paths and diagnostics must stay excluded.
 
-CI invokes `tools/run_tests.py`, which runs each test module in a fresh process with a four-minute bound and faulthandler traces after one minute. This isolates native Qt multimedia lifetimes across unrelated modules. Opt-in long-running real-model experiments should use their documented direct pytest invocation instead.
+CI invokes `tools/run_tests.py`, which runs each test module in a fresh process with a four-minute bound and faulthandler traces after one minute. This isolates native Qt multimedia lifetimes across unrelated modules. A failed or timed-out module is recorded while the remaining isolated modules still run; any recorded failure makes the overall run fail. This preserves every gate and provides complete diagnostics instead of hiding later browser checks behind an earlier failure. Opt-in long-running real-model experiments should use their documented direct pytest invocation instead.
 
 
 Session tests use `relay/requirements.txt` through the developer requirements; end-user desktop dependencies remain unchanged. Run `RUN_WEB_TESTS=1 python -m pytest -q tests/test_session_player.py` for two-client scheduling, role-specific views, shared files and independent GP parts. Server operation is documented separately in [SESSION_SERVER.md](docs/SESSION_SERVER.md). `tools/capture_session_screenshots.py` captures both actual roles using authored fixtures. Update the versioned direct download in `landing/index.html` when releasing; deploy that page only after the linked release exists.

@@ -17,8 +17,9 @@ from .cache import hash_file
 from .config import ROOT, Paths
 from .gp_collection import portable_timing, prepare_collection
 from .score import ScoreTimeline
+from .variants import MAX_PORTABLE_VARIANTS, is_combination, validate_variant_identity
 
-MAGIC_VERSION = 4
+MAGIC_VERSION = 5
 MAX_AUDIO_BYTES = 512 * 1024 * 1024
 MAX_BUNDLE_BYTES = 1024 * 1024 * 1024
 FLOAT_FORMAT = "aformat=sample_fmts=flt:sample_rates=44100:channel_layouts=stereo"
@@ -40,27 +41,17 @@ def json_bytes(data):
 
 
 def variant_identity(item):
-    """The fixed option IDs are also the only permitted audio path components."""
-    if not isinstance(item, dict):
-        raise ValueError("저장할 음원 선택 정보가 올바르지 않습니다.")
-    identifier, label = item.get("id"), item.get("label")
-    if (
-        any(key not in item for key in ("id", "label", "mode", "target"))
-        or not isinstance(identifier, str) or identifier not in AUDIO_VARIANT_SPECS
-        or not isinstance(label, str) or not label.strip() or len(label) > 100
-        or (item.get("mode"), item.get("target")) != AUDIO_VARIANT_SPECS[identifier]
-    ):
-        raise ValueError("저장할 음원 이름·악기·분리 방식이 올바르지 않습니다.")
-    return {key: item[key] for key in ("id", "label", "mode", "target")}
+    """Only canonical single or combined IDs may become audio path components."""
+    return validate_variant_identity(item)
 
 
 def _requested_variants(request):
     if "audio_variants" not in request:
         return None
     supplied = request["audio_variants"]
-    if not isinstance(supplied, list) or not 1 <= len(supplied) <= len(AUDIO_VARIANT_SPECS):
+    if not isinstance(supplied, list) or not 1 <= len(supplied) <= MAX_PORTABLE_VARIANTS:
         raise ValueError(
-            f"저장할 음원을 1개 이상 선택하세요. 최대 {len(AUDIO_VARIANT_SPECS)}개까지 지원합니다."
+            f"저장할 음원을 1개 이상 선택하세요. 최대 {MAX_PORTABLE_VARIANTS}개까지 지원합니다."
         )
     variants, identifiers = [], set()
     for item in supplied:
@@ -370,7 +361,8 @@ def export_magic(request, report=lambda *_: None):
                 })
             manifest = {
                 "format": "Magic-Instrumental",
-                "version": MAGIC_VERSION if variants is not None else (
+                "version": (MAGIC_VERSION if any(is_combination(item["id"]) for item in variants)
+                            else 4) if variants is not None else (
                     3 if audio_format == "mp3" else (2 if gp else 1)
                 ),
                 "title": str(request.get("title") or audio.stem)[:200],

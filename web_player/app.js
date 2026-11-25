@@ -541,28 +541,35 @@ async function decodeVariant(selected, variant) {
   const mp3 = audio.codec === 'mp3';
   const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
   if (mp3) validateMp3(data, audio);
-  else if (selected.manifest.version === 4) validateWav(data, audio);
+  else if ([4, 5].includes(selected.manifest.version)) validateWav(data, audio);
   let decoded;
   try { decoded = await deadline(audioContext().decodeAudioData(data), 60000, '음원을 읽지 못했습니다. 다시 선택해 주세요.'); }
   catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
-  if (mp3 || selected.manifest.version === 4) requireMagic(decoded.sampleRate === audio.sample_rate && decoded.length === audio.frames && decoded.numberOfChannels === 2, mp3 ? mp3Error : '음원의 원본 샘플 수·채널 정보가 일치하지 않습니다.');
+  if (mp3 || [4, 5].includes(selected.manifest.version)) requireMagic(decoded.sampleRate === audio.sample_rate && decoded.length === audio.frames && decoded.numberOfChannels === 2, mp3 ? mp3Error : '음원의 원본 샘플 수·채널 정보가 일치하지 않습니다.');
   else requireMagic(Math.abs(decoded.duration - audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
   return decoded;
+}
+const AUDIO_TARGET_LABELS = {vocals: '보컬', guitar: '기타', drums: '드럼', bass: '베이스', keys: '키보드', piano: '피아노', synth: '신시사이저'};
+function audioChoiceLabel(variant) {
+  return variant.targets ? `${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')} 없는 반주` : variant.label;
 }
 function showAudioChoices() {
   $('audioVariant').replaceChildren(...(archive?.audioVariants || []).map(variant => {
     const option = document.createElement('option'); option.value = variant.id;
-    option.textContent = variant.label; return option;
+    option.textContent = audioChoiceLabel(variant); return option;
   }));
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
   $('audioChoice').hidden = !archive;
   $('audioVariantCount').textContent = archive ? `파일에 저장된 음원 ${archive.audioVariants.length}개` : '';
+  const choices = archive?.audioVariants || [];
+  $('audioCombinationNotice').hidden = choices.some(variant => variant.targets) || choices.filter(variant => variant.mode === 'without').length < 2;
   showAudioVariantHint();
 }
 function showAudioVariantHint() {
-  const target = archive?.activeAudioVariant.target;
-  const detail = target === 'keys' ? '키보드는 피아노·오르간 등 건반 계열입니다. ' :
-    target === 'synth' ? '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ' : '';
+  const selected = archive?.activeAudioVariant, targets = selected?.targets || [selected?.target];
+  let detail = selected?.targets ? `함께 제거한 파트: ${selected.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' · ')}. ` : '';
+  if (targets.includes('keys')) detail += '키보드는 피아노·오르간 등 건반 계열입니다. ';
+  if (targets.includes('synth')) detail += '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ';
   $('audioVariantHint').textContent = detail + '음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.';
 }
 async function selectAudioVariant(identifier) {
@@ -571,7 +578,7 @@ async function selectAudioVariant(identifier) {
   const previous = selected.activeAudioVariant;
   audioGeneration++; ensemble?.unready(); pause(); cancelAudioTask();
   const saved = position;
-  loading = true; setAvailable(false); setStatus(`${variant.label} 음원을 준비하고 있습니다…`);
+  loading = true; setAvailable(false); setStatus(`${audioChoiceLabel(variant)} 음원을 준비하고 있습니다…`);
   try {
     const decoded = await decodeVariant(selected, variant);
     if (archive !== selected || generation !== selectionGeneration) return;
@@ -580,7 +587,7 @@ async function selectAudioVariant(identifier) {
     $('audioVariant').value = variant.id;
     duration = decoded.duration; position = clamp(saved, 0, duration); segment = upcoming = null;
     updateKey(); showPosition(); showAudioVariantHint();
-    setStatus(`${variant.label} · 현재 위치를 유지했습니다. ${ensemble?.role ? '합주 준비를 다시 눌러 주세요.' : '재생을 눌러 이어서 연습하세요.'}`);
+    setStatus(`${audioChoiceLabel(variant)} · 현재 위치를 유지했습니다. ${ensemble?.role ? '합주 준비를 다시 눌러 주세요.' : '재생을 눌러 이어서 연습하세요.'}`);
   } catch (error) {
     if (archive !== selected || generation !== selectionGeneration) return;
     selected.activeAudioVariant = previous; $('audioVariant').value = previous.id;

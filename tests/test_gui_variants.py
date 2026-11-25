@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 import soundfile as sf
-from PySide6.QtCore import QCoreApplication, QEvent, Qt, QTimer
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt, QTimer, QUrl
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from practice_player.cache import hash_file
+from practice_player.combinations import process_combination
 from practice_player.config import Paths, Settings
 from practice_player.gui import Window
 from practice_player.magic_bundle import export_magic
@@ -26,7 +27,8 @@ from practice_player.magic_import import import_magic, load_imported
 from practice_player.page_images import PageImages
 from practice_player.pipeline import process
 from practice_player.score import ScoreTimeline
-from practice_player.variants import SUPPORTED_VARIANTS
+from practice_player.variants import SUPPORTED_VARIANTS, canonical_combination
+from tests.test_audio_combinations import SequentialTestEngine
 from tests.test_audio_variants import KeysSynthEngine, SixStemEngine
 from tests.test_gui import wait_until
 from tests.test_magic_bundle import portable_study
@@ -76,6 +78,18 @@ def prepare_variant(window, app, identifier):
     QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app)
     assert window.selected_variant == identifier
+
+
+def seed_combination(window, identifier):
+    engine = SequentialTestEngine()
+
+    def synthetic_process(source, settings, paths, report, **options):
+        return process(source, settings, paths, report, stem_runner=engine, **options)
+
+    return process_combination(
+        window.source_path, identifier, "auto", "cpu", False, window.paths,
+        processor=synthetic_process,
+    )
 
 
 def practice_state(window, app, *, key=2):
@@ -150,15 +164,16 @@ def test_preparing_new_same_song_variant_keeps_key_speed_position_and_loop(
         start_job(args)
 
     monkeypatch.setattr(window, "start_job", record)
-    expected = "no_vocals" if all_variants else "no_guitar"
+    expected = canonical_combination(SUPPORTED_VARIANTS) if all_variants else "no_guitar"
     if all_variants:
+        seed_combination(window, expected)
         window.models.setCurrentIndex(window.models.findData("auto"))
         QTest.mouseClick(window.select_all_variants, Qt.MouseButton.LeftButton)
         QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
         finish(window, app)
-        assert set(window.prepared_variants) == set(SUPPORTED_VARIANTS)
+        assert set(window.prepared_variants) == {*SUPPORTED_VARIANTS, expected}
         start, end = jobs[0].index("--variants") + 1, jobs[0].index("--device")
-        assert tuple(jobs[0][start:end]) == SUPPORTED_VARIANTS
+        assert tuple(jobs[0][start:end]) == (*SUPPORTED_VARIANTS, expected)
         assert jobs[0][jobs[0].index("--model") + 1] == "auto"
     else:
         prepare_variant(window, app, "no_guitar")
@@ -424,6 +439,7 @@ def test_checkbox_subset_and_empty_selection_have_one_prepare_action(
     native_window, app, monkeypatch,
 ):
     window = native_window
+    seed_combination(window, "no_guitar_drums")
     jobs, start_job = [], window.start_job
 
     def record(args):
@@ -443,13 +459,106 @@ def test_checkbox_subset_and_empty_selection_have_one_prepare_action(
         QTest.mouseClick(checkbox, Qt.MouseButton.LeftButton)
     assert window.checked_variants() == ["no_guitar", "no_drums", "keys"]
     assert "3개" in window.selection_summary.text()
+    assert "기타 + 드럼 없는 반주" in window.selection_summary.text()
     assert "키보드" in window.separation_hint.text()
     QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app)
-    assert window.selected_variant == "no_guitar"
+    assert window.selected_variant == "no_guitar_drums"
     start, end = jobs[0].index("--variants") + 1, jobs[0].index("--device")
-    assert jobs[0][start:end] == ["no_guitar", "no_drums", "keys"]
+    assert jobs[0][start:end] == ["no_guitar", "no_drums", "keys", "no_guitar_drums"]
     assert [job[0] for job in jobs] == ["separate", "pitch"]
+
+
+def test_combined_checkboxes_export_and_reopen_as_one_real_audio_choice(
+    native_window, app, tmp_path, monkeypatch,
+):
+    window = native_window
+    identifier = "no_vocals_guitar"
+    seed_combination(window, identifier)
+    position = practice_state(window, app)
+    timeline = window.score_panel.timeline_path.read_bytes()
+    source_hash = hash_file(window.source_path)
+    window.models.setCurrentIndex(window.models.findData("auto"))
+    window.select_preparation_variants(False)
+    window.variant_checks["no_vocals"].setChecked(True)
+    window.variant_checks["no_guitar"].setChecked(True)
+    assert "보컬 + 기타 없는 반주" in window.selection_summary.text()
+    QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
+    finish(window, app)
+    assert window.selected_variant == identifier
+    assert window.playback_variants.currentText() == "보컬 + 기타 없는 반주"
+    assert window.active_variant["targets"] == ["vocals", "guitar"]
+    assert_practice_state(window, position)
+    QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
+    finish(window, app)
+    assert window.selected_variant == identifier
+    assert_practice_state(window, position)
+
+    output = tmp_path / "combined.magic"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_: (str(output), "Magic"))
+    errors = []
+
+    def choose():
+        dialog = app.activeModalWidget()
+        try:
+            choices = dialog.findChild(QListWidget, "magicAudioVariants")
+            first = dialog.findChild(QComboBox, "magicDefaultVariant")
+            assert first.currentData() == identifier
+            found = False
+            for index in range(choices.count()):
+                item = choices.item(index)
+                item_id = item.data(Qt.ItemDataRole.UserRole)
+                if item_id == identifier:
+                    found = True
+                    assert item.text() == "보컬 + 기타 없는 반주"
+                item.setCheckState(
+                    Qt.CheckState.Checked if item_id in {"no_vocals", "no_guitar", identifier}
+                    else Qt.CheckState.Unchecked
+                )
+            assert found and first.currentData() == identifier
+            QTest.mouseClick(
+                dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save),
+                Qt.MouseButton.LeftButton,
+            )
+        except Exception as error:
+            errors.append(str(error))
+            dialog.reject()
+
+    QTimer.singleShot(0, choose)
+    QTest.mouseClick(window.magic_button, Qt.MouseButton.LeftButton)
+    assert not errors
+    finish(window, app)
+    assert source_hash == hash_file(window.source_path)
+    assert timeline == window.score_panel.timeline_path.read_bytes()
+    with zipfile.ZipFile(output) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["version"] == 5 and manifest["default_audio_variant"] == identifier
+    combined = next(item for item in manifest["audio_variants"] if item["id"] == identifier)
+    assert combined["targets"] == ["vocals", "guitar"]
+    assert combined["audio"] == manifest["audio"]
+    assert combined["audio"]["pitch_semitones"] == 2
+    assert combined["audio"]["source_sha256"] == source_hash
+
+    reader = Window(Paths(tmp_path / "reader"))
+    reader.resize(1000, 800)
+    reader.show()
+    reader.audio_output.setVolume(0)
+    try:
+        reader.import_magic(output)
+        finish(reader, app)
+        assert reader.selected_variant == identifier
+        assert reader.playback_variants.count() == 3
+        assert reader.playback_variants.currentText() == "보컬 + 기타 없는 반주"
+        assert reader.active_variant["targets"] == ["vocals", "guitar"]
+        assert reader.base_pitch_semitones == 2 and reader.key.value() == 0
+        assert not reader.player.isPlaying()
+        select_option(reader.playback_variants, "no_guitar")
+        finish(reader, app)
+        select_option(reader.playback_variants, identifier)
+        finish(reader, app)
+        assert reader.selected_variant == identifier and not reader.player.isPlaying()
+    finally:
+        dispose(reader, app)
 
 
 def test_saved_audio_loads_only_actual_cache_and_empty_lookup_keeps_current_song(
@@ -564,6 +673,71 @@ def test_collapsed_options_keep_audio_choices_transport_and_score_state(
         assert reopened.options_toggle.geometry().bottom() < reopened.height()
     finally:
         dispose(reopened, app)
+
+
+@pytest.mark.parametrize("size,theme", [
+    ((800, 560), "dark"), ((800, 600), "light"), ((1366, 768), "dark"),
+])
+def test_play_seek_and_clock_remain_reachable_with_options_scrolled_or_hidden(
+    app, tmp_path, tone, size, theme,
+):
+    window = Window(Paths(tmp_path / "transport"))
+    window.resize(*size)
+    window.theme.setCurrentIndex(window.theme.findData(theme))
+    window.output_path = tone
+    window.player.setSource(QUrl.fromLocalFile(str(tone)))
+    window.audio_output.setVolume(0)
+    window.set_busy(False)
+    window.show()
+    try:
+        wait_until(app, lambda: window.player.isSeekable() and window.player.duration() > 0)
+        available = None
+        if app.platformName() not in {"offscreen", "minimal"}:
+            # Native CI desktops can be smaller than the requested notebook viewport.
+            available = window.screen().availableGeometry()
+            frame_size = window.frameGeometry().size() - window.size()
+            client_limit = available.size() - frame_size
+            size = (min(size[0], client_limit.width()), min(size[1], client_limit.height()))
+            assert size[0] >= 800 and size[1] >= 560
+            window.resize(*size)
+            window.move(available.topLeft())
+        window.available_variants.setText(".magic 15개")
+        window.playback_variants.addItem("보컬·기타·드럼 없는 반주 — 저장된 연습 음원")
+        window.controller.verticalScrollBar().setValue(
+            window.controller.verticalScrollBar().maximum()
+        )
+        for expanded in (True, False, True):
+            window.options_toggle.setChecked(expanded)
+            QTest.qWait(50)
+            assert window.size().toTuple() == size
+            rectangles = {}
+            for name in ("play_button", "seek", "clock", "playback_variants", "options_toggle"):
+                widget = getattr(window, name)
+                rectangle = QRect(widget.mapTo(window, QPoint()), widget.size())
+                rectangles[name] = rectangle
+                assert widget.isVisible() and widget.width() > 0 and widget.height() > 0
+                assert window.rect().contains(rectangle), (name, rectangle, window.rect())
+                assert widget.visibleRegion().contains(widget.rect()), name
+                assert window.childAt(rectangle.center()) is widget, name
+                if available is not None:
+                    on_screen = QRect(widget.mapToGlobal(QPoint()), widget.size())
+                    assert available.contains(on_screen), (name, on_screen, available)
+            play, seek = rectangles["play_button"], rectangles["seek"]
+            assert play.right() < seek.left()
+            assert play.top() <= seek.center().y() <= play.bottom()
+            assert play.width() >= 92 and play.height() >= 40
+            assert seek.width() >= 120
+            assert window.playback_variants.width() >= 130
+            assert window.play_button.isEnabled() and window.play_button.text() == "재생"
+            window.seek_to(0)
+            QTest.mouseClick(window.play_button, Qt.MouseButton.LeftButton)
+            wait_until(app, lambda: window.player.isPlaying() and window.player.position() > 50)
+            assert window.play_button.text() == "일시정지"
+            QTest.mouseClick(window.play_button, Qt.MouseButton.LeftButton)
+            wait_until(app, lambda: not window.player.isPlaying())
+            assert window.play_button.text() == "재생"
+    finally:
+        dispose(window, app)
 
 
 @pytest.mark.parametrize("outcome", ["cancelled", "failed"])
