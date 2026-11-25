@@ -2,6 +2,7 @@
 import os
 import shutil
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "windows" if sys.platform == "win32" else "offscreen")
@@ -10,6 +11,23 @@ os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 import numpy as np
 import pytest
 import soundfile as sf
+
+
+@pytest.fixture(scope="module")
+def web_browser_pool():
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright, ExitStack() as cleanup:
+        browsers = {}
+
+        def browser_for_engine(engine):
+            if engine not in browsers:
+                browser = getattr(playwright, engine).launch()
+                browsers[engine] = browser
+                cleanup.callback(browser.close)
+            return browsers[engine]
+
+        yield browser_for_engine
 
 
 @pytest.fixture
