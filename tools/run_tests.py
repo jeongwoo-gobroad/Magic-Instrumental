@@ -9,6 +9,7 @@ from pathlib import Path
 
 def main():
     root = Path(__file__).resolve().parents[1]
+    failures = []
     for module in sorted((root / "tests").glob("test_*.py")):
         print(f"\nTesting {module.name} in a fresh process", flush=True)
         child_env = None
@@ -36,10 +37,13 @@ def main():
             )
         except subprocess.TimeoutExpired:
             print(f"Timed out: {module.name}. Review the faulthandler trace above.", flush=True)
-            return 1
+            failures.append(module.name)
+            continue
         if result.returncode:
-            return result.returncode
-    return 0
+            failures.append(module.name)
+    if failures:
+        print("\nFailed test modules: " + ", ".join(failures), flush=True)
+    return int(bool(failures))
 
 
 if __name__ == "__main__":

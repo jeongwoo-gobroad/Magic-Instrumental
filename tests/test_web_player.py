@@ -132,6 +132,14 @@ def choose_file(page, payload, button="#soloFile .file-button"):
     chooser.set_files(payload)
 
 
+def add_failure_diagnostics(error, page, label, expression):
+    try:
+        details = page.evaluate(expression)
+    except Exception as capture_error:
+        details = {"capture_error": str(capture_error)[:1000]}
+    error.add_note(label + ":\n" + json.dumps(details, ensure_ascii=False))
+
+
 def hold_audio_resume(page):
     # A native picker does not promise an audio-unlocking gesture on return.
     # Leave the real decoder intact and model resume() waiting for permission.
@@ -148,13 +156,32 @@ def hold_audio_resume(page):
 
 
 def wait_for_file_without_audio(page):
-    page.wait_for_function("MagicPlayer.state().ready || window.audioResumeCalls > 0",
-                           timeout=45000)
-    assert page.evaluate("window.audioResumeCalls") == 0, page.evaluate("""() => ({
-      state: MagicPlayer.state(), disabled: document.getElementById('file').disabled,
-      status: document.getElementById('status').textContent
-    })""")
-    assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+    try:
+        page.wait_for_function("MagicPlayer.state().ready || window.audioResumeCalls > 0",
+                               timeout=45000)
+        assert page.evaluate("window.audioResumeCalls") == 0, page.evaluate("""() => ({
+          state: MagicPlayer.state(), disabled: document.getElementById('file').disabled,
+          status: document.getElementById('status').textContent
+        })""")
+        assert page.evaluate("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+    except Exception as error:
+        add_failure_diagnostics(error, page, "File loading diagnostics", """() => {
+          const context = window.MagicPlayer?.context();
+          const session = typeof ensemble === 'undefined' ? null : ensemble;
+          return {
+            url: location.href, visibility: document.visibilityState,
+            focused: document.hasFocus(), state: window.MagicPlayer?.state(),
+            audio: {state: context?.state, time: context?.currentTime,
+              resumeCalls: window.audioResumeCalls, resumeAllowed: window.audioResumeAllowed},
+            session: session && {role: session.role, generation: session.generation,
+              shared: session.shared, busy: session.busy,
+              downloading: !!session.downloadTask, preparing: session.preparing,
+              socket: session.ws?.readyState},
+            ui: Object.fromEntries(['status', 'sessionLive', 'sessionReadiness'].map(id =>
+              [id, document.getElementById(id)?.textContent.slice(0, 1000)]))
+          };
+        }""")
+        raise
 
 
 @pytest.mark.parametrize("kind", ["pdf", "wav_gp"])

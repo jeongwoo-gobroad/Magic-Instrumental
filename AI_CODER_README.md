@@ -262,7 +262,7 @@ Public tablet URL: https://jeongwoo-gobroad.github.io/Magic-Instrumental/ (GitHu
 
 Mobile metronome: the always-visible hint explains that standalone use requires clearing the linked checkbox. The header displays off, waiting for playback, standalone, linked playback, first-beat wait or zero-volume state. The default remains linked. Track whether the seek slider is actively being edited, not merely focused, so its thumb follows playback after a seek.
 
-CI uses `tools/run_tests.py` to isolate test modules into separate external-venv Python processes, with a bounded timeout and faulthandler diagnostics. This prevents native multimedia lifetime state from leaking between unrelated test modules and gives a visible failure if a native call stalls.
+CI uses `tools/run_tests.py` to isolate test modules into separate external-venv Python processes, with a bounded timeout and faulthandler diagnostics. This prevents native multimedia lifetime state from leaking between unrelated test modules and gives a visible failure if a native call stalls. Continue through all isolated modules after a failure or timeout, report the failed module names and return failure if any module failed; never skip later browser checks or turn a partial run into success.
 
 On macOS, browser test modules including `test_web_follow.py` add Playwright's `pw:browser` debug scope to their child process environment, preserving existing debug scopes. Native browser exits are recorded in CI logs so a `TargetClosedError` has process diagnostics. Assertions, time limits and failure handling remain the same; tests are not retried automatically. Keep centered-follow browser cases in their own module so existing audio, player and update lifecycle modules retain their per-module time bounds.
 
