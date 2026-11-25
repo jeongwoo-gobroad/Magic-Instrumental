@@ -210,7 +210,8 @@ def test_score_tools_keep_readable_rows_and_scroll_into_reach(
         if screenshots:
             directory = Path(screenshots)
             directory.mkdir(parents=True, exist_ok=True)
-            window.grab().save(str(directory / f"score-tools-{actual_size[0]}x{actual_size[1]}-{mode}.png"))
+            filename = f"score-tools-{actual_size[0]}x{actual_size[1]}-{mode}.png"
+            window.grab().save(str(directory / filename))
         before = panel.view.viewport().height()
         timeline = panel.timeline
         source_url, position = window.player.source(), window.player.position()
