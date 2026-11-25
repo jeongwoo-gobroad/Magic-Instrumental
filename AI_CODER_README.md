@@ -286,6 +286,8 @@ Validation includes `tests/test_relay.py` and opt-in Chromium/WebKit two-partici
 
 The landing/user guides must state that PNG/JPG/JPEG score files are not direct inputs, and image-only/scanned PDFs can be difficult or fail due to resolution, skew or blur. Do not describe arbitrary image score recognition as supported.
 
+The v3.0.2 landing guide distinguishes base-only multi-audio files (player 3.0.0 or later) from files containing a prepared combined removal (desktop/web 3.0.2 or later). Current update steps should ask users to verify 3.0.2 or later. Show the fixed Play row, preparation of the individual removals plus their combined track, and checking that combined entry in the export dialog. Adding a missing combination to an older file requires preparation from the original project and a new export, with existing reviewed score timing reused. Keep `docs/LANDING_PAGE.md` and the deployment branch README aligned with this guidance.
+
 
 Deployment management now uses dedicated `landing-page` and `serverside` branches, alongside `mobile-player`; see `docs/DEPLOYMENT_BRANCHES.md`. Keep branch/server/Raspberry Pi details in developer documents only. `main` retains integration copies for tests; synchronize reviewed subsets to their independent deployment branches. Public landing uses the hostname's ordinary HTTP/HTTPS ports; port 13579 exposes only Session `/api/*`. Invitations and Session links use GitHub Pages. The landing is served directly by Caddy from a separate static root, not through the Python relay. Post-release landing/documentation updates do not rewrite an immutable desktop release asset.
 
