@@ -1,12 +1,37 @@
 # SPDX-License-Identifier: GPL-3.0-only
+import base64
 import hashlib
+import re
 import shutil
 import stat
 import zipfile
 
 import pytest
 
+from practice_player import __version__
 from tools.build_release import ROOT, build, public_files
+
+
+def test_committed_web_version_and_integrity_match_release():
+    web = ROOT / "web_player"
+    template = (web / "template.html").read_text(encoding="utf-8")
+    html = (web / "index.html").read_bytes()
+    document = html.decode("utf-8")
+    worker = (web / "sw.js").read_text(encoding="utf-8")
+    marker = r'<meta name="magic-version" content="([^"]+)">'
+    for name, content in (("template.html", template), ("index.html", document)):
+        assert re.findall(marker, content) == [__version__], name
+    assert re.findall(r'<b id="appVersion">v([^<]+)</b>', document) == [__version__]
+    assert re.findall(r"^const VERSION = '([^']+)';$", worker, re.MULTILINE) == [__version__]
+    identities = re.findall(r'<meta name="magic-build" content="([a-f0-9]{64})">', document)
+    assert len(identities) == 1
+    identity = identities[0]
+    unstamped = document.replace(f'content="{identity}"', 'content="/*BUILD*/"', 1)
+    assert hashlib.sha256(unstamped.encode()).hexdigest() == identity
+    assert re.findall(r"^const BUILD = '([^']+)';$", worker, re.MULTILINE) == [identity]
+    digest = hashlib.sha256(html).digest()
+    assert f"./index.html?rev={digest.hex()[:16]}" in worker
+    assert f"integrity: 'sha256-{base64.b64encode(digest).decode()}'" in worker
 
 
 def test_public_bundle_excludes_media_settings_and_preserves_launch_modes(tmp_path):
