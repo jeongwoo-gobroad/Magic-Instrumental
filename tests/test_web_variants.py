@@ -464,8 +464,7 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     assert page.locator("#optionsSidebar").is_hidden()
     assert page.locator("#optionsToggle").evaluate("el => el === document.activeElement")
     # Complete the service-worker request before replacing its document in WebKit.
-    page.wait_for_function("navigator.serviceWorker.controller !== null")
-    page.wait_for_function("!document.getElementById('checkUpdate').disabled")
+    player_tests.wait_for_service_worker(page)
     page.reload()
     page.wait_for_function("typeof MagicPlayer !== 'undefined'")
     assert page.locator("#optionsSidebar").is_hidden()

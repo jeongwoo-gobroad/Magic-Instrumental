@@ -191,28 +191,7 @@ def wait_for_initial_install(page, build, server):
         assert build["version"] in page.locator("#appVersion").inner_text()
         assert page.locator("#appUpdate").is_hidden()
     except Exception as error:
-        player_tests.add_failure_diagnostics(
-            error, page, "Initial worker diagnostics", """async () => {
-          const worker = value => value && ({script: value.scriptURL, state: value.state});
-          const bounded = promise => Promise.race([
-            promise.catch(error => ({error: error.message})),
-            new Promise(resolve => setTimeout(() => resolve({pending: true}), 1000))
-          ]);
-          const service = navigator.serviceWorker;
-          const [registrations, cached] = await Promise.all([
-            bounded(service.getRegistrations().then(items => items.map(item => ({
-              scope: item.scope, installing: worker(item.installing),
-              waiting: worker(item.waiting), active: worker(item.active)
-            })))), bounded(caches.keys())
-          ]);
-          return {url: location.href, secure: window.isSecureContext,
-            readyState: document.readyState, visibility: document.visibilityState,
-            controller: worker(service.controller), registrations, cached,
-            documentBuild: document.querySelector('meta[name="magic-build"]')?.content,
-            checkDisabled: document.getElementById('checkUpdate')?.disabled,
-            ui: Object.fromEntries(['offline', 'updateStatus', 'appVersion'].map(id =>
-              [id, document.getElementById(id)?.textContent.slice(0, 1000)]))};
-        }""")
+        player_tests.add_worker_failure_diagnostics(error, page)
         with server.lock:
             details = {"expected": {"version": build["version"], "build": build["build"]},
                        "releases": dict(server.releases), "corrupt": sorted(server.corrupt),
