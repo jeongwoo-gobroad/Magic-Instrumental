@@ -96,18 +96,36 @@ def web_url():
 
 
 @pytest.fixture(params=["chromium", "webkit"])
-def page(request, web_url):
+def page(request, web_url, web_browser_pool):
+    browser = web_browser_pool(request.param)
+    # Storage, service workers and audio remain isolated in a fresh context per test.
+    context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
+    errors = []
+    try:
+        page = context.new_page()
+        page.on("pageerror", lambda e: errors.append(str(e)))
+        page.goto(web_url)
+        yield page
+    finally:
+        context.close()
+    assert errors == []
+
+
+@pytest.fixture(params=["chromium", "webkit"])
+def fresh_page(request, web_url):
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
         browser = getattr(playwright, request.param).launch()
-        context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
-        page = context.new_page()
         errors = []
-        page.on("pageerror", lambda e: errors.append(str(e)))
-        page.goto(web_url)
-        yield page
-        browser.close()
+        try:
+            context = browser.new_context(viewport={"width": 1180, "height": 820}, has_touch=True)
+            page = context.new_page()
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(web_url)
+            yield page
+        finally:
+            browser.close()
         assert errors == []
 
 

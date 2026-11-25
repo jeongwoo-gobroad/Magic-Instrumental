@@ -26,7 +26,7 @@ from tests.test_magic_variants import all_variant_study, variant_study
 from tests.test_web_audio import attach_music_probe, hold_resume_completion
 from tests.test_web_player import frequency, open_study
 
-page = player_tests.page
+page = player_tests.fresh_page
 web_url = player_tests.web_url
 relay_url = session_tests.relay_url
 
@@ -158,6 +158,8 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
     assert page.evaluate("window.decodeCalls") == 1
     assert page.locator("#audioChoice").is_visible()
     assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 2개"
+    assert page.locator("#audioVariant").is_enabled()
+    assert "저장된 음원만" in page.locator("#audioVariantHint").inner_text()
     assert page.locator("#audioVariant option").evaluate_all(
         "options => options.map(option => option.value)"
     ) == ["no_vocals", "guitar"]
@@ -447,6 +449,9 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 1개"
     assert page.locator("#audioVariant option").count() == 1
     assert page.locator("#audioVariant").input_value() == "guitar"
+    assert page.locator("#audioVariant").is_disabled()
+    assert page.locator("#play").is_enabled()
+    assert "저장된 음원이 1개" in page.locator("#audioVariantHint").inner_text()
     page.locator("#optionsToggle").focus()
     page.locator("#optionsToggle").press("Enter")
     assert page.locator("#optionsSidebar").is_hidden()
@@ -479,6 +484,69 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     page.locator("#optionsToggle").click()
     assert page.locator("#optionsSidebar").is_visible()
     assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
+    assert page.locator("#audioVariant").is_disabled()
+
+
+def test_audio_choices_follow_current_file_and_pending_selection(page, variant_files, tmp_path):
+    choices = page.locator("#audioVariant option")
+    assert page.locator("#audioChoice").is_hidden()
+    assert page.locator("#audioVariant").is_disabled()
+    assert choices.count() == 0
+    watch_decoding(page)
+    open_study(page, variant_files["pdf_wav"])
+    assert choices.evaluate_all("items => items.map(item => item.value)") == [
+        "no_vocals", "guitar",
+    ]
+    # An unprepared target cannot become a playable option or trigger decoding.
+    rejected = page.evaluate("""async () => {
+      try { await MagicPlayer.selectAudioVariant('no_guitar'); return false; }
+      catch (_) { return true; }
+    }""")
+    assert rejected
+    assert page.evaluate("window.decodeCalls") == 1
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "no_vocals"
+    page.evaluate("""() => {
+      MagicPlayer.seek(5, false);
+      const saved = MagicPlayer.archive(), read = saved.blob.bind(saved);
+      saved.blob = async path => {
+        if (path === 'audio/variants/guitar.wav') {
+          await new Promise(resolve => { window.releaseVariantRead = resolve; });
+        }
+        return read(path);
+      };
+    }""")
+    page.locator("#audioVariant").select_option("guitar")
+    page.wait_for_function("typeof window.releaseVariantRead === 'function'")
+    assert page.locator("#audioVariant").is_disabled()
+    assert page.locator("#audioChoice").get_attribute("aria-busy") == "true"
+    assert choices.count() == 2
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "no_vocals"
+    assert page.evaluate("window.decodeCalls") == 1
+    page.evaluate("window.releaseVariantRead()")
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert page.locator("#audioVariant").is_enabled()
+    assert page.locator("#audioChoice").get_attribute("aria-busy") == "false"
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "guitar"
+    assert page.evaluate("MagicPlayer.state().position") == 5
+    assert not page.evaluate("MagicPlayer.state().playing")
+    assert page.evaluate("window.decodeCalls") == 2
+
+    open_study(page, variant_files["single_guitar"])
+    assert choices.evaluate_all("items => items.map(item => item.value)") == ["guitar"]
+    assert page.locator("#audioVariant").is_disabled()
+    assert page.locator("#play").is_enabled()
+    broken = tmp_path / "unavailable.magic"
+    broken.write_bytes(b"not a practice archive")
+    page.locator("#file").set_input_files(broken)
+    page.wait_for_function("!MagicPlayer.state().loading")
+    assert page.locator("#audioChoice").is_hidden()
+    assert page.locator("#audioVariant").is_disabled()
+    assert choices.count() == 0
+    assert page.locator("#audioVariantCount").inner_text() == ""
+    assert page.locator("#audioVariantHint").inner_text() == ""
+    open_study(page, variant_files["pdf_wav"])
+    assert choices.count() == 2
+    assert page.locator("#audioVariant").is_enabled()
 
 
 def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
@@ -706,8 +774,12 @@ def test_session_shared_variants_keep_identity_and_require_fresh_ready(
         member.locator("#inviteCode").fill(leader.evaluate("MagicEnsemble.state().code"))
         member.locator("#memberMode").click()
         member.wait_for_function("!document.getElementById('getShared').disabled")
-        member.locator("#getShared").click()
-        member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+        with session_tests.readiness_diagnostics(
+            (("leader", leader), ("member", member)), engine, errors, "shared-variants-file",
+        ) as diagnostic:
+            member.locator("#getShared").click()
+            diagnostic["waiting_for"] = "member file ready"
+            member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
         assert member.locator("#audioChoice").is_visible()
         assert member.locator("#playerControls").is_hidden()
         member.locator("#partSelect").select_option("1")
@@ -784,8 +856,12 @@ def test_session_shares_combined_mix_and_requires_ready_after_switch(
         member.locator("#inviteCode").fill(leader.evaluate("MagicEnsemble.state().code"))
         member.locator("#memberMode").click()
         member.wait_for_function("!document.getElementById('getShared').disabled")
-        member.locator("#getShared").click()
-        member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
+        with session_tests.readiness_diagnostics(
+            (("leader", leader), ("member", member)), engine, errors, "shared-combined-file",
+        ) as diagnostic:
+            member.locator("#getShared").click()
+            diagnostic["waiting_for"] = "member file ready"
+            member.wait_for_function("MagicPlayer.state().ready && !MagicPlayer.state().loading")
         assert member.locator("#audioVariant").input_value() == "no_vocals_guitar"
         assert member.evaluate("MagicPlayer.archive().parts.length") == 2
         select_variant(member, "no_guitar")
