@@ -2,7 +2,7 @@
 
 Separate vocals, guitar, drums, bass or keyboards on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
 
-Current version: **3.0.2** · Mac / Windows / web player
+Current version: **3.0.3** · Mac / Windows / web player
 
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
@@ -12,7 +12,7 @@ The large **재생** (Play) button is on the left of the fixed transport row at 
 
 ## Install and open
 
-Download the [3.0.2 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.2/Magic-Instrumental-3.0.2.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [3.0.3 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.3/Magic-Instrumental-3.0.3.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -22,7 +22,7 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
-**3.0.2 restores a prominent fixed Play control and creates actual combinations with several parts removed.** Check two or more **없는 반주** (without this part) options to prepare the individual versions plus one combined backing track. For example, vocals and guitar also produce **보컬 + 기타 없는 반주**, selected initially. The combination is cached and can be included as one audio choice in a `.magic` file. Sequential separation needs extra processing the first time; a verified completed combination can be reused. Existing 2.4.x and 3.0.x installations use the regular updater below.
+**3.0.3 limits the playback selector to currently available saved audio and moves audio and score-analysis cache locations into a separate desktop details dialog.** Check two or more **없는 반주** (without this part) options to prepare the individual versions plus one combined backing track. For example, vocals and guitar also produce **보컬 + 기타 없는 반주**, selected initially. The combination is cached and can be included as one audio choice in a `.magic` file. Sequential separation needs extra processing the first time; a verified completed combination can be reused. Existing 2.4.x and 3.0.x installations use the regular updater below.
 
 Old recordings, scores, reviewed timings and `.magic` files stay usable. An older file containing only separate vocal-removed and guitar-removed versions has no jointly removed track. Prepare that combination from the original recording, then export a new `.magic` including it; score reanalysis is unnecessary. Files containing combined tracks require desktop/web player **3.0.2 or later**.
 
@@ -77,9 +77,9 @@ When the app falls back to PDF measure/BPM timing, it follows printed order unle
 
 On iPad, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari or Chrome; on Android, use Chrome. Open the web address first, tap **.magic 파일 열기** (open a .magic file), then choose the file saved on your computer. Other file types may also appear in the picker; an invalid file produces an error when opened.
 
-**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **3.0.0 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
+**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **3.0.3 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
 
-**If the song and score open but your iPad remains silent:** update the web player to **3.0.0 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
+**If the song and score open but your iPad remains silent:** update the web player to **3.0.3 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
 
 ### Home-screen installation and web updates
 
@@ -95,7 +95,7 @@ Connect to the internet for the first launch and wait for **오프라인 준비 
 
 **From 2.4.8**, the player checks at startup, on returning to the foreground and on reconnecting. You can also press **업데이트 확인** (check for updates). When a new screen is ready, **업데이트 적용 · 다시 열기** (apply update and reopen) appears; the current practice screen never reloads automatically. Finish file loading/audio preparation, stop playback, turn off the metronome, and leave Session before applying. **Select your .magic again after the screen reopens.** An update already downloaded can be applied offline. A failed or offline check does not mean that the app is up to date.
 
-**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **3.0.0 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
+**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **3.0.3 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
 
 **To use the mobile metronome alone, uncheck ‘반주와 함께’ (with accompaniment), then turn it on.** No song file is required. With that box checked, clicks wait until the accompaniment plays; the header shows the waiting state.
 
@@ -115,7 +115,9 @@ Own files must derive from the identical original recording bytes and duration, 
 
 Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. Checking both the vocal-free and guitar-free choices prepares both individual versions and one actual vocal-and-guitar-free backing track, selected initially. **전체 선택** checks all 15 base choices and also prepares their complete removal combination; **선택 해제** clears them. Each new combination removes targets from successive residuals, so it can require extra model runs. Verified completed choices and combinations are reused.
 
-To reopen a previously prepared recording, select it and press **저장된 음원 불러오기**. This verifies saved audio without running a model. **재생 음원** lists actual available cache entries, or the included choices when a `.magic` is open. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
+To reopen a previously prepared recording, select it and press **저장된 음원 불러오기**. This verifies saved audio without running a model. **재생 음원** lists only currently available cached entries for the working song, or choices actually stored in the open `.magic`. Checking a preparation option does not add it to this playback list. When the current choice is the only available item, its name remains visible with selection disabled. If that cache disappears but another item remains, you can select the remaining audio. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
+
+On desktop, open **상세 옵션** (details) directly below **처리 내역 보기** (processing history) to see the overall cache folder and current audio/score-analysis paths in a separate dialog. Use **복사** (copy) or **폴더 열기** (open folder) beside a path. The main practice view shows the preparation status without long cache paths.
 
 On desktop and web, **옵션 숨기기** collapses the left options sidebar to make room for the score. Playback and audio choice controls remain available. **옵션 펼치기** restores the sidebar; each app remembers its own preference.
 

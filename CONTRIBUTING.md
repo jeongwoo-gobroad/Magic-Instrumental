@@ -108,6 +108,8 @@ Session tests use `relay/requirements.txt` through the developer requirements; e
 
 With `MAGIC_RENDER_CHECK_DIR` set, the scheduled Session test saves `session-readiness-<engine>.json` on success or failure around the held-resume/background/foreground preparation sequence. It records both participants' before/after state, up to 160 recent audio/readiness/visibility events and samples, probe ages/RTTs, and page errors. A failure identifies the participant being awaited and summarizes both final states in the original exception; full history stays in the artifact. Invite codes, authentication and media identifiers are excluded. The observer preserves original action promises, clicks, readiness assertions and the 30-second wait; it does not retry or alter production audio, clock or cancellation policy.
 
+The same bounded observer records `session-readiness-<engine>-loop-count-play.json`, `-shared-variants-file.json` and `-shared-combined-file.json` for repeated-range playback and Session downloads. These include decoded frame counts, page preparation, loop/count settings and pending command timing. The original 7-second playback and 30-second file-ready waits remain unchanged, with no automatic retries.
+
 Deployment maintainers: [separate branch and routing ownership](docs/DEPLOYMENT_BRANCHES.md). Publish landing-page and serverside independently; keep this information out of beginner-facing pages.
 
 

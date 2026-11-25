@@ -9,7 +9,7 @@ from pathlib import Path
 
 os.environ.setdefault("QT_MEDIA_BACKEND", "ffmpeg")
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt, QTimer, QUrl
+from PySide6.QtCore import QProcess, QProcessEnvironment, QSettings, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -105,6 +106,105 @@ def export_variant_request(item):
             expected_frames=item["frames"],
         )
     return request
+
+
+def cached_audio_exists(item):
+    """Cheap availability check; the switching worker still verifies hashes and frames."""
+    try:
+        path = Path(item["path"])
+        return not path.is_symlink() and path.is_file() and path.stat().st_size > 0
+    except (KeyError, OSError, TypeError, ValueError):
+        return False
+
+
+class PlaybackVariantCombo(QComboBox):
+    opening = Signal()
+
+    def showPopup(self):
+        self.opening.emit()
+        if self.isEnabled() and self.count() > 0:
+            super().showPopup()
+
+
+class CacheLocationsDialog(QDialog):
+    def __init__(self, window):
+        super().__init__(window)
+        self.setObjectName("cacheLocationsDialog")
+        self.setWindowTitle("상세 옵션 · 캐시 저장 위치")
+        available = window.screen().availableGeometry()
+        self.resize(min(700, available.width() - 40), min(520, available.height() - 60))
+        layout = QVBoxLayout(self)
+        description = QLabel(
+            "다시 사용할 수 있도록 저장한 음원과 악보 분석 결과의 위치입니다. "
+            "경로를 복사하거나 해당 폴더를 열 수 있습니다."
+        )
+        description.setWordWrap(True)
+        layout.addWidget(description)
+        song = QLabel(window.source_name or "아직 연습할 곡을 열지 않았습니다.")
+        song.setTextFormat(Qt.TextFormat.PlainText)
+        song.setWordWrap(True)
+        song.setObjectName("cacheCurrentSong")
+        layout.addWidget(song)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget()
+        rows = QVBoxLayout(content)
+        rows.setContentsMargins(0, 6, 0, 6)
+        locations = [
+            ("cacheRoot", "전체 캐시 폴더", window.paths.processed, True, ""),
+            ("audioCache", "음원 캐시 파일", window.base_instrumental, False,
+             "아직 음원을 준비하지 않았습니다."),
+        ]
+        if window.output_path and window.output_path != window.base_instrumental:
+            locations.append((
+                "playbackCache", "키를 적용한 재생 파일", window.output_path, False, "",
+            ))
+        locations.append((
+            "scoreCache", "악보 분석 캐시", window.score_panel.timeline_path, False,
+            "아직 악보 분석 결과를 불러오지 않았습니다.",
+        ))
+        for name, title, path, folder, empty in locations:
+            label = QLabel(title)
+            field = QLineEdit(str(Path(path).absolute()) if path else "")
+            field.setObjectName(name + "Path")
+            field.setAccessibleName(title)
+            field.setReadOnly(True)
+            field.setPlaceholderText(empty)
+            field.setToolTip(field.text() or empty)
+            field.setCursorPosition(0)
+            label.setBuddy(field)
+            actions = QHBoxLayout()
+            actions.addWidget(label, 1)
+            copy = QPushButton("복사")
+            copy.setObjectName(name + "Copy")
+            copy.setAccessibleName(title + " 경로 복사")
+            copy.setEnabled(path is not None)
+            copy.clicked.connect(
+                lambda _checked=False, value=field.text(): QApplication.clipboard().setText(value)
+            )
+            actions.addWidget(copy)
+            directory = Path(path) if path and folder else Path(path).parent if path else None
+            open_folder = QPushButton("폴더 열기")
+            open_folder.setObjectName(name + "Open")
+            open_folder.setAccessibleName(title + " 폴더 열기")
+            open_folder.setEnabled(directory is not None and directory.is_dir())
+            open_folder.clicked.connect(
+                lambda _checked=False, target=directory: QDesktopServices.openUrl(
+                    QUrl.fromLocalFile(str(target.absolute()))
+                )
+            )
+            actions.addWidget(open_folder)
+            rows.addLayout(actions)
+            rows.addWidget(field)
+            rows.addSpacing(8)
+        rows.addStretch()
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
+        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.button(QDialogButtonBox.StandardButton.Close).setText("닫기")
+        close.rejected.connect(self.reject)
+        layout.addWidget(close)
 
 
 class Window(QMainWindow):
@@ -350,7 +450,7 @@ class Window(QMainWindow):
         self.current_track.setWordWrap(True)
         right.addWidget(self.separator())
         right.addWidget(self.current_track)
-        self.playback_variants = QComboBox()
+        self.playback_variants = PlaybackVariantCombo()
         self.playback_variants.setObjectName("playbackVariant")
         self.playback_variants.setAccessibleName("준비된 재생 음원 선택")
         self.playback_variants.setSizeAdjustPolicy(
@@ -359,6 +459,7 @@ class Window(QMainWindow):
         self.playback_variants.setMinimumContentsLength(10)
         self.playback_variants.setMaximumWidth(300)
         self.playback_variants.setPlaceholderText("준비된 음원 없음")
+        self.playback_variants.opening.connect(self.refresh_variant_choices)
         self.playback_variants.activated.connect(self.change_variant)
         self.variant_hint = QLabel(
             "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
@@ -495,11 +596,17 @@ class Window(QMainWindow):
         self.logs.setMaximumBlockCount(300)
         self.logs.setMaximumHeight(75)
         self.logs.setPlaceholderText("처리 로그")
-        logs_toggle = QPushButton("처리 내역 보기")
-        logs_toggle.setCheckable(True)
-        logs_toggle.toggled.connect(self.logs.setVisible)
-        layout.addWidget(logs_toggle)
+        self.logs_toggle = QPushButton("처리 내역 보기")
+        self.logs_toggle.setObjectName("processingHistory")
+        self.logs_toggle.setCheckable(True)
+        self.logs_toggle.toggled.connect(self.logs.setVisible)
+        layout.addWidget(self.logs_toggle)
         layout.addWidget(self.logs)
+        self.details_button = QPushButton("상세 옵션")
+        self.details_button.setObjectName("cacheDetails")
+        self.details_button.setToolTip("음원과 악보 분석 캐시의 저장 위치를 확인합니다.")
+        self.details_button.clicked.connect(self.show_cache_locations)
+        layout.addWidget(self.details_button)
         self.logs.setVisible(False)
         self.controller = QScrollArea()
         self.controller.setObjectName("optionsPanel")
@@ -582,6 +689,11 @@ class Window(QMainWindow):
         self.setCentralWidget(container)
         self.update_measure_controls()
         self.apply_theme()
+
+    def show_cache_locations(self):
+        dialog = CacheLocationsDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
 
     def save_splitter_layout(self, *_):
         if not self.controller.isHidden() and not self.score_panel.isHidden():
@@ -1069,6 +1181,12 @@ class Window(QMainWindow):
             self.set_busy(self.worker is not None)
 
     def refresh_variant_choices(self):
+        # Deleted cache entries must not remain selectable; never scan audio here.
+        self.prepared_variants = {
+            identifier: item for identifier, item in self.prepared_variants.items()
+            if identifier in ALL_VARIANTS and cached_audio_exists(item)
+        }
+        count = len(self.prepared_variants)
         self.playback_variants.blockSignals(True)
         self.playback_variants.clear()
         for identifier in ALL_VARIANTS:
@@ -1077,19 +1195,29 @@ class Window(QMainWindow):
                     self.prepared_variants[identifier]["label"], identifier
                 )
         self.playback_variants.setCurrentIndex(self.playback_variants.findData(self.selected_variant))
+        self.playback_variants.setPlaceholderText(
+            "재생할 음원을 선택하세요" if count else "준비된 음원 없음"
+        )
         self.playback_variants.blockSignals(False)
-        self.playback_variants.setEnabled(not self.worker and len(self.prepared_variants) > 1)
+        self.playback_variants.setEnabled(
+            not self.worker and count > 0
+            and (count > 1 or self.selected_variant not in self.prepared_variants)
+        )
         origin = ".magic에 저장된 음원" if self.imported_bundle else "캐시에 준비된 음원"
         source = ".magic" if self.imported_bundle else "캐시"
         self.available_variants.setText(
-            f"{source} {len(self.prepared_variants)}개"
-            if self.prepared_variants else "음원 없음"
+            f"{source} {count}개 · 준비된 음원만 선택" if count else "준비된 음원 없음"
         )
         self.available_variants.setToolTip(origin)
-        self.playback_variants.setToolTip(
-            f"{variant_label(self.selected_variant)}\n{self.source_name}\n{origin}만 표시합니다."
-            if self.selected_variant in self.prepared_variants else ""
-        )
+        self.playback_variants.setToolTip(f"{self.source_name}\n{origin}만 표시합니다.".strip())
+        self.update_export_controls()
+        if not count:
+            self.variant_hint.setText(
+                "사용할 수 있는 음원이 없습니다. .magic 파일을 다시 열어 주세요."
+                if self.imported_bundle else
+                "저장된 음원 불러오기로 캐시를 확인하거나, 필요한 음원을 체크해 준비하세요."
+            )
+            return
         base = (
             f"파일에 적용된 키 {self.base_pitch_semitones:+d}반음 · "
             if self.imported_bundle else ""
@@ -1105,7 +1233,16 @@ class Window(QMainWindow):
         elif self.selected_variant in {"keys", "no_keys"} or "keys" in targets:
             base += "키보드에는 피아노·오르간 등 건반 계열이 포함됩니다. "
         self.variant_hint.setText(
-            base + "음원을 바꾸면 같은 재생 위치에서 멈춥니다. 재생을 눌러 이어서 연습하세요."
+            base + (
+                "남은 음원을 선택해 재생하세요. 이전 캐시는 다시 불러오거나 준비할 수 있습니다."
+                if self.selected_variant not in self.prepared_variants else
+                "저장된 음원이 1개입니다. 다른 음원은 PC에서 준비해 .magic에 함께 저장하세요."
+                if count == 1 and self.imported_bundle else
+                "준비된 음원이 1개입니다. 다른 음원이 필요하면 체크해 준비하세요."
+                if count == 1 else
+                "준비된 음원만 고를 수 있습니다. 바꾸면 같은 재생 위치에서 멈춥니다. "
+                "재생을 눌러 이어서 연습하세요."
+            )
         )
 
     def capture_variant_position(self):
@@ -1116,6 +1253,12 @@ class Window(QMainWindow):
 
     def change_variant(self, _index):
         identifier = self.playback_variants.currentData()
+        self.refresh_variant_choices()
+        if identifier is not None and identifier not in self.prepared_variants:
+            self.status.setText(
+                "선택한 캐시 파일이 없습니다. 저장된 음원을 다시 불러오거나 준비해 주세요."
+            )
+            return
         if (not self.worker and identifier in self.prepared_variants
                 and identifier != self.selected_variant):
             self.begin_variant_switch(identifier)
@@ -1126,7 +1269,7 @@ class Window(QMainWindow):
             return
         item = candidates[identifier]
         # A cancelled model change must leave the old audio and its identity together.
-        self._pending_catalog = catalog
+        self._pending_catalog = dict(candidates)
         self._variant_restore = restore or self.capture_variant_position()
         self._pitch_position = self._variant_restore["position"]
         self._pending_variant = identifier
@@ -1174,7 +1317,9 @@ class Window(QMainWindow):
         ):
             widget.setEnabled(not busy)
         self.prepare_button.setEnabled(not busy and bool(self.checked_variants()))
-        self.playback_variants.setEnabled(not busy and len(self.prepared_variants) > 1)
+        self.refresh_variant_choices()
+        if busy:
+            self.playback_variants.setEnabled(False)
         self.cancel_button.setEnabled(busy)
         self.cancel_button.setVisible(busy)
         self.progress.setVisible(busy)

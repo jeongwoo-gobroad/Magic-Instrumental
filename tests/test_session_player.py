@@ -36,6 +36,10 @@ def install_readiness_trace(page, participant):
     page.evaluate("""participant => {
       const history = [], limit = 160;
       let discarded = 0, active = true;
+      const segmentState = value => value && ({
+        input: value.input, out: value.out, rate: value.rate, end: value.end,
+        until: value.until, countStart: value.countStart, countBeats: value.countBeats
+      });
       const snapshot = () => {
         const now = performance.now(), context = MagicPlayer.context();
         return {
@@ -45,11 +49,25 @@ def install_readiness_trace(page, participant):
           audio: {state: context?.state, time: context?.currentTime,
             pending: audioPending, generation: audioGeneration,
             task: !!audioTask, stretch: !!stretch,
+            decodedFrames: decodedAudio?.length || 0,
             resumeAllowed: window.audioResumeAllowed, resumeCalls: window.audioResumeCalls},
+          file: {archive: !!archive, version: archive?.manifest.version,
+            audioChoices: archive?.audioVariants.length || 0,
+            page: shownPage, pendingPage, pageLoads: pageLoads.size},
+          transport: {position, duration, latency, token,
+            segment: segmentState(segment), upcoming: segmentState(upcoming),
+            rate: $('speed').value, loop: $('loop').checked,
+            loopStart: $('loopStart').value, loopEnd: $('loopEnd').value,
+            loopCount: $('loopCount').checked, count: $('count').checked,
+            countBars: $('countBars').value},
           session: {role: ensemble.role, generation: ensemble.generation,
             preparing: ensemble.preparing, wantsReady: ensemble.wantsReady,
             prepared: ensemble.prepared, pending: !!ensemble.pending,
+            command: ensemble.pending && {action: ensemble.pending.data.action,
+              sequence: ensemble.pending.data.seq, at: ensemble.pending.at,
+              armed: ensemble.pending.armed, next: segmentState(ensemble.pending.next)},
             socket: ensemble.ws?.readyState, downloading: !!ensemble.downloadTask,
+            uploading: ensemble.uploading, shared: !!ensemble.shared, busy: ensemble.busy,
             peers: ensemble.peers.map(peer => ({leader: peer.leader,
               ready: peer.ready, connected: peer.connected})),
             samples: ensemble.recentSamples().map(sample => ({
@@ -59,6 +77,9 @@ def install_readiness_trace(page, participant):
             pressed: $('sessionPrepare').getAttribute('aria-pressed'),
             label: $('sessionPrepare').textContent, live: $('sessionLive').textContent,
             status: $('status').textContent,
+            playDisabled: $('play').disabled, playLabel: $('play').textContent,
+            fileStatus: $('sessionFileStatus').textContent,
+            downloadDisabled: $('getShared').disabled,
             fileError: $('status').classList.contains('file-error')}
         };
       };
@@ -69,11 +90,13 @@ def install_readiness_trace(page, participant):
           ...snapshot()});
       };
       const before = snapshot(), originals = new Map();
-      for (const name of ['prepare', 'error', 'unready', 'clearReady', 'syncReady']) {
+      for (const name of ['prepare', 'error', 'status', 'unready', 'clearReady', 'syncReady',
+                          'download', 'openShared', 'command', 'accept']) {
         const original = ensemble[name];
         originals.set(name, original);
         ensemble[name] = function (...args) {
-          record(name + ':start', name === 'error' ? args[0]?.message || args[0] : null);
+          record(name + ':start',
+            ['error', 'status'].includes(name) ? args[0]?.message || args[0] : null);
           let result;
           try { result = original.apply(this, args); }
           catch (error) { record(name + ':throw', error.message); throw error; }
@@ -112,10 +135,10 @@ def install_readiness_trace(page, participant):
 
 
 @contextmanager
-def readiness_diagnostics(participants, engine, errors):
+def readiness_diagnostics(participants, engine, errors, phase="prepare_after_foreground"):
     for participant, page in participants:
         install_readiness_trace(page, participant)
-    report = {"engine": engine, "phase": "prepare_after_foreground", "participants": []}
+    report = {"engine": engine, "phase": phase, "participants": []}
     failure = None
     try:
         yield report
@@ -135,7 +158,8 @@ def readiness_diagnostics(participants, engine, errors):
             try:
                 path = Path(destination)
                 path.mkdir(parents=True, exist_ok=True)
-                (path / f"session-readiness-{engine}.json").write_text(
+                suffix = "" if phase == "prepare_after_foreground" else f"-{phase}"
+                (path / f"session-readiness-{engine}{suffix}.json").write_text(
                     json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
             except OSError as error:
@@ -314,13 +338,15 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.wait_for_function("document.getElementById('ensembleStatus').textContent.includes('리더만')")
         assert not leader.evaluate("MagicPlayer.state().playing")
         # A repeated two-bar range with a count at each visit uses the same clock.
-        leader.locator("#loopStart").select_option("2")
-        leader.locator("#loopEnd").select_option("3")
-        leader.locator("#loop").check()
-        leader.locator("#loopCount").check()
-        leader.locator("#speed").fill("150")
-        leader.locator("#play").click()
-        leader.wait_for_function("MagicPlayer.state().playing", timeout=7000)
+        with readiness_diagnostics(participants, engine, errors, "loop-count-play") as diagnostic:
+            leader.locator("#loopStart").select_option("2")
+            leader.locator("#loopEnd").select_option("3")
+            leader.locator("#loop").check()
+            leader.locator("#loopCount").check()
+            leader.locator("#speed").fill("150")
+            leader.locator("#play").click()
+            diagnostic["waiting_for"] = "leader playing"
+            leader.wait_for_function("MagicPlayer.state().playing", timeout=7000)
         leader.wait_for_timeout(6000)
         assert leader.evaluate("MagicPlayer.state().playing")
         assert member.evaluate("MagicPlayer.state().playing")
