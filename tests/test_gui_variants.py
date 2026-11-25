@@ -691,6 +691,16 @@ def test_play_seek_and_clock_remain_reachable_with_options_scrolled_or_hidden(
     window.show()
     try:
         wait_until(app, lambda: window.player.isSeekable() and window.player.duration() > 0)
+        available = None
+        if app.platformName() not in {"offscreen", "minimal"}:
+            # Native CI desktops can be smaller than the requested notebook viewport.
+            available = window.screen().availableGeometry()
+            frame_size = window.frameGeometry().size() - window.size()
+            client_limit = available.size() - frame_size
+            size = (min(size[0], client_limit.width()), min(size[1], client_limit.height()))
+            assert size[0] >= 800 and size[1] >= 560
+            window.resize(*size)
+            window.move(available.topLeft())
         window.available_variants.setText(".magic 15개")
         window.playback_variants.addItem("보컬·기타·드럼 없는 반주 — 저장된 연습 음원")
         window.controller.verticalScrollBar().setValue(
@@ -709,6 +719,9 @@ def test_play_seek_and_clock_remain_reachable_with_options_scrolled_or_hidden(
                 assert window.rect().contains(rectangle), (name, rectangle, window.rect())
                 assert widget.visibleRegion().contains(widget.rect()), name
                 assert window.childAt(rectangle.center()) is widget, name
+                if available is not None:
+                    on_screen = QRect(widget.mapToGlobal(QPoint()), widget.size())
+                    assert available.contains(on_screen), (name, on_screen, available)
             play, seek = rectangles["play_button"], rectangles["seek"]
             assert play.right() < seek.left()
             assert play.top() <= seek.center().y() <= play.bottom()
