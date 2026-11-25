@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.1"><meta name="magic-build" content="e270f391b0be60d247452c0d3f3077ae42d150b97f4cf05f185e89bae02d7085"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
+<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.2"><meta name="magic-build" content="a2cd95f3b061e6a1e4bc7aa4931503d2bdad264dc393f88f50bcc143ede98dce"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
 :root{color-scheme:light;--bg:#f0f2ef;--card:#fff;--ink:#1b302d;--muted:#667872;--line:#d7dfd9;--accent:#206c56;--soft:#e4f1e9;--button:#edf2ef;--shadow:0 10px 30px #173e2910}
 :root[data-theme=dark]{color-scheme:dark;--bg:#101d1b;--card:#172824;--ink:#e6f0e9;--muted:#a1b4ac;--line:#344d44;--accent:#9cddbc;--soft:#2a4b3c;--button:#263b33;--shadow:0 10px 30px #0002}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{position:relative;overflow-anchor:none;height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:0 auto;min-height:100%;background:#fff}#paper.continuous{background:transparent}.score-page{position:relative;width:100%;margin-bottom:16px;background:#fff;box-shadow:0 3px 12px #0002;overflow:hidden}.score-page:last-child{margin-bottom:0}.score-image,#scoreImage{width:100%;height:100%;display:block}.score-image[hidden],#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
@@ -106,7 +106,7 @@ body[data-session=member] .focus-controls #status { align-self: center; }
 <main><aside id="optionsSidebar" aria-label="연습 옵션"><section id="sessionSong" class="card" hidden><span class="step">SESSION · 지금 함께 연습하는 곡</span><h2 id="sessionTitle"></h2><p id="sessionClock"></p><p id="sessionFileStatus" class="small" role="status"></p><div class="session-actions"><button id="shareFile" hidden>내 GP 전체 파트 파일 공유</button><button id="getShared" class="primary" hidden>리더 파일 받기</button><label id="sessionOpenFile" class="file-button">내 .magic 파일 선택<input id="sessionFile" type="file"></label></div><label id="sessionVolumeLabel">내 반주 음량<input id="sessionVolume" type="range" min="0" max="100" value="75"></label></section>
 <!-- iPad can filter out .magic files. Validate archive contents after selection. -->
 <section class="card" id="soloFile"><span class="step">01 · 연습 파일</span><h2 id="title">준비한 곡을 열어 주세요</h2><p id="part">파일 목록에서 컴퓨터로 만든 .magic 파일을 선택하세요.</p><label class="file-button">.magic 파일 열기<input id="file" type="file"></label><p id="status" role="status" aria-live="polite">파일은 이 기기 안에서만 읽습니다.</p></section>
-<section class="card audio-choice" id="audioChoice" hidden><div class="audio-choice-heading"><label for="audioVariant">재생 음원</label><span id="audioVariantCount" class="small"></span></div><select id="audioVariant" aria-describedby="audioVariantCount audioVariantHint"></select><p id="audioVariantHint" class="small">음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.</p></section>
+<section class="card audio-choice" id="audioChoice" hidden><div class="audio-choice-heading"><label for="audioVariant">재생 음원</label><span id="audioVariantCount" class="small"></span></div><select id="audioVariant" aria-describedby="audioVariantCount audioVariantHint audioCombinationNotice"></select><p id="audioVariantHint" class="small">음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.</p><p id="audioCombinationNotice" class="small" hidden>현재 파일에는 악기별 반주가 따로 저장되어 있습니다. 여러 악기를 함께 빼려면 PC에서 해당 항목을 함께 체크해 준비한 뒤 .magic을 다시 저장하세요.</p></section>
 <section class="card" id="playerControls"><span class="step">02 · 듣고 연습하기</span><div id="transportControls"><div class="transport"><button id="play" class="primary" disabled>▶ 재생</button><button id="home" disabled>처음으로</button><span id="clock">00:00 / 00:00</span></div><input id="seek" type="range" min="0" max="1" step=".01" value="0" aria-label="재생 위치" disabled></div><div class="row"><button id="back" disabled>← 이전</button><label><input id="step" type="number" min="1" max="10000" value="1"> 마디</label><button id="forward" disabled>다음 →</button></div><hr><div class="row"><label for="speed">재생 속도</label><strong id="speedText">1.00×</strong><button id="speedReset">원래 속도</button></div><input id="speed" type="range" min="25" max="200" value="100" aria-label="재생 속도"><div class="row"><label for="key">반주 키</label><select id="key"></select><span id="keyText">원곡</span></div><p class="small">속도를 바꿔도 음정은 유지됩니다. 키 변경은 반주에 적용됩니다.</p><label class="range-label">반주 음량<input id="volume" type="range" min="0" max="100" value="75"></label><hr><label><input id="count" type="checkbox"> 시작 전 드럼 카운트</label><label class="inline"> <select id="countBars"><option value="1">1마디</option><option value="2">2마디</option><option value="4">4마디</option></select></label></section>
 <section class="card" id="loopControls"><span class="step">03 · 어려운 구간 반복</span><label><input id="loop" type="checkbox" disabled> 마디 구간 반복</label><div class="range-pair"><label>시작 마디<select id="loopStart" disabled></select></label><label>끝 마디<select id="loopEnd" disabled></select></label></div><label><input id="loopCount" type="checkbox"> 반복할 때마다 드럼 카운트</label><p class="small">끝 마디까지 포함합니다. 도돌이표의 각 회차를 따로 고를 수 있습니다.</p></section>
 <details id="ensemblePanel" class="card ensemble"><summary>Session 모드 · 함께 연습하기</summary>
@@ -124,7 +124,7 @@ body[data-session=member] .focus-controls #status { align-self: center; }
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>컴퓨터에서 준비할 악보로는 Guitar Pro 원본(.gp3, .gp4, .gp5)을 권장합니다. 음표와 마디를 직접 읽고 연습할 파트를 고를 수 있습니다. 이 웹 재생기에서는 컴퓨터에서 저장한 .magic 파일을 여세요.</p><p>iPad의 Safari·Chrome 또는 Android의 Chrome에서 이 웹주소를 열고 ‘.magic 파일 열기’를 누르세요. 파일 이름을 바꾸거나 압축을 풀 필요가 없습니다.</p><p><b>홈 화면에서 앱처럼 열기</b><br>iPad Safari: 공유 → 홈 화면에 추가(필요하면 ‘더 보기’) → ‘웹 앱으로 열기’가 보이면 켜기 → 추가.<br>iPad Chrome: 공유 → 홈 화면에 추가 → 추가. 항목이 없으면 Safari에서 같은 주소를 여세요.<br>Android Chrome: 메뉴(⋮) → 설치 및 바로가기 만들기 → 설치. 버전에 따라 ‘앱 설치’ 또는 ‘홈 화면에 추가’로 표시됩니다.</p><p>홈 화면의 Magic Player를 온라인에서 한 번 열고 ‘오프라인 준비 완료’를 확인하세요. 그 뒤에는 기기에 저장한 .magic 파일을 인터넷 없이 열 수 있습니다. Session은 인터넷 연결이 필요합니다.</p><p>새 버전은 앱 실행·화면 복귀·온라인 복귀 때 확인합니다. 아래 ‘업데이트 확인’으로 직접 확인할 수도 있습니다. 새 버전 안내가 나오면 연습과 Session을 마친 뒤 ‘업데이트 적용 · 다시 열기’를 누르세요. 현재 파일은 다시 선택해야 합니다. 업데이트 때문에 재생 중에 자동으로 화면을 다시 열지는 않습니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
 <p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a></p>
 </aside><section class="score-area" id="scoreArea"><div id="focusControls" class="focus-controls" aria-label="빠른 재생" hidden></div><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label><input id="highlightEnabled" type="checkbox" checked> 마디 강조</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport" tabindex="0" aria-label="악보 · 직접 스크롤하면 자동 따라가기가 해제됩니다"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
-<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v3.0.1</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
+<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v3.0.2</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
 <footer class="support-footer">버그 및 개선 사항 제보: <a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a></footer>
 <script>
 var SignalsmithStretch = (() => {
@@ -585,6 +585,8 @@ if (typeof exports === 'object' && typeof module === 'object') {
 'use strict';
 const MAGIC_LIMIT = 1024 * 1024 * 1024;
 const AUDIO_LIMIT = 512 * 1024 * 1024;
+const COMBINED_AUDIO_LIMIT = 128;
+const REMOVAL_TARGETS = ['vocals', 'guitar', 'drums', 'bass', 'keys', 'piano', 'synth'];
 const AUDIO_VARIANT_SPECS = {
   no_vocals: ['without', 'vocals'], vocals: ['stem', 'vocals'],
   no_guitar: ['without', 'guitar'], guitar: ['stem', 'guitar'],
@@ -594,6 +596,17 @@ const AUDIO_VARIANT_SPECS = {
   no_keys: ['without', 'keys'], keys: ['stem', 'keys'],
   no_synth: ['without', 'synth'], synth: ['stem', 'synth'], original: ['original', null]
 };
+function combinedTargets(identifier) {
+  if (typeof identifier !== 'string' || !identifier.startsWith('no_')) return null;
+  const targets = identifier.slice(3).split('_');
+  if (targets.length < 2 || targets.length > REMOVAL_TARGETS.length) return null;
+  const ordered = REMOVAL_TARGETS.filter(target => targets.includes(target));
+  return targets.length === ordered.length && targets.every((target, index) => target === ordered[index]) ? targets : null;
+}
+function variantEntry(name) {
+  const match = /^audio\/variants\/([a-z_]+)\.(wav|mp3)$/.exec(name);
+  return match && (Object.hasOwn(AUDIO_VARIANT_SPECS, match[1]) || combinedTargets(match[1]));
+}
 const decoder = new TextDecoder('utf-8', {fatal: true});
 function requireMagic(test, message) { if (!test) throw new Error(message); }
 const crcTable = Uint32Array.from({length: 256}, (_, n) => {
@@ -673,7 +686,7 @@ class MagicArchive {
     requireMagic(end >= 0, '올바른 .magic 파일이 아닙니다. 데스크톱에서 다시 저장해 주세요.');
     const count = tail.getUint16(end + 10, true), size = tail.getUint32(end + 12, true), start = tail.getUint32(end + 16, true);
     const endOffset = file.size - tail.byteLength + end;
-    requireMagic(!tail.getUint16(end + 4, true) && !tail.getUint16(end + 6, true) && tail.getUint16(end + 8, true) === count && count >= 5 && count <= 1100 && size <= 300000 && start + size === endOffset, '지원하지 않거나 손상된 연습 파일입니다.');
+    requireMagic(!tail.getUint16(end + 4, true) && !tail.getUint16(end + 6, true) && tail.getUint16(end + 8, true) === count && count >= 5 && count <= 1200 && size <= 300000 && start + size === endOffset, '지원하지 않거나 손상된 연습 파일입니다.');
     const central = new DataView(await file.slice(start, start + size).arrayBuffer());
     let cursor = 0; const spans = [];
     for (let i = 0; i < count; i++) {
@@ -683,7 +696,7 @@ class MagicArchive {
       const names = central.getUint16(cursor + 28, true), extra = central.getUint16(cursor + 30, true), comment = central.getUint16(cursor + 32, true), offset = central.getUint32(cursor + 42, true);
       requireMagic((flags & ~0x800) === 0 && method === 0 && packed === bytes && bytes <= AUDIO_LIMIT && offset + 30 < start && cursor + 46 + names + extra + comment <= size && central.getUint16(cursor + 34, true) === 0, '압축·암호화·분할 파일은 지원하지 않습니다. .magic 저장으로 다시 만들어 주세요.');
       const name = decoder.decode(new Uint8Array(central.buffer, cursor + 46, names));
-      requireMagic(/^(manifest\.json|timeline\.json|audio\/instrumental\.(wav|mp3)|audio\/variants\/(no_vocals|vocals|no_guitar|guitar|no_drums|drums|no_bass|bass|no_piano|piano|no_keys|keys|no_synth|synth|original)\.(wav|mp3)|score\/source\.(pdf|gp3|gp4|gp5)|pages\/\d{4}\.png|parts\/\d{2}\/(timeline\.json|pages\/\d{4}\.png))$/.test(name) && !this.entries.has(name), '중복되거나 허용되지 않은 파일 이름입니다.');
+      requireMagic((/^(manifest\.json|timeline\.json|audio\/instrumental\.(wav|mp3)|score\/source\.(pdf|gp3|gp4|gp5)|pages\/\d{4}\.png|parts\/\d{2}\/(timeline\.json|pages\/\d{4}\.png))$/.test(name) || variantEntry(name)) && !this.entries.has(name), '중복되거나 허용되지 않은 파일 이름입니다.');
       const local = new DataView(await file.slice(offset, offset + 30).arrayBuffer());
       requireMagic(local.getUint32(0, true) === 0x04034b50 && local.getUint16(6, true) === flags && local.getUint16(8, true) === method && local.getUint32(14, true) === crc && local.getUint32(18, true) === bytes && local.getUint32(22, true) === bytes && local.getUint16(26, true) === names, '파일 정보가 일치하지 않습니다.');
       const from = offset + 30 + names + local.getUint16(28, true), to = from + bytes;
@@ -694,20 +707,23 @@ class MagicArchive {
     spans.sort((a, b) => a[0] - b[0]);
     requireMagic(cursor === size && spans.every((s, i) => !i || s[0] >= spans[i - 1][1]), '파일 영역이 겹치거나 손상되었습니다.');
     const manifest = await this.json('manifest.json', 1000000);
-    requireMagic(manifest.format === 'Magic-Instrumental' && [1, 2, 3, 4].includes(manifest.version), '이 .magic 버전은 지원하지 않습니다. 재생기를 업데이트해 주세요.');
+    requireMagic(manifest.format === 'Magic-Instrumental' && [1, 2, 3, 4, 5].includes(manifest.version), '이 .magic 버전은 지원하지 않습니다. 재생기를 업데이트해 주세요.');
     requireMagic(typeof manifest.title === 'string' && manifest.title.length <= 200 && Array.isArray(manifest.pages) && manifest.pages.length >= 1 && manifest.pages.length <= 200, '곡·악보 정보가 올바르지 않습니다.');
     const audio = manifest.audio, score = manifest.score;
     requireMagic(audio && Number.isFinite(audio.duration) && audio.duration > 0 && audio.duration <= 3600 && audio.channels === 2 && audio.sample_rate === 44100 && Number.isInteger(audio.pitch_semitones) && Math.abs(audio.pitch_semitones) <= 12 && manifest.timeline === 'timeline.json', '반주 정보가 올바르지 않습니다.');
-    if (manifest.version === 4) {
+    if ([4, 5].includes(manifest.version)) {
       requireMagic(Number.isFinite(manifest.audio_gain) && manifest.audio_gain > 0 && manifest.audio_gain <= 1, '음원 공통 음량 정보가 올바르지 않습니다.');
-      requireMagic(Array.isArray(manifest.audio_variants) && manifest.audio_variants.length >= 1 && manifest.audio_variants.length <= Object.keys(AUDIO_VARIANT_SPECS).length && typeof manifest.default_audio_variant === 'string', '저장된 재생 음원 목록이 올바르지 않습니다.');
+      requireMagic(Array.isArray(manifest.audio_variants) && manifest.audio_variants.length >= 1 && manifest.audio_variants.length <= (manifest.version === 5 ? COMBINED_AUDIO_LIMIT : Object.keys(AUDIO_VARIANT_SPECS).length) && typeof manifest.default_audio_variant === 'string', '저장된 재생 음원 목록이 올바르지 않습니다.');
       const identifiers = new Set(), shared = ['frames', 'sample_rate', 'channels', 'duration', 'pitch_semitones', 'source_sha256'];
       for (const variant of manifest.audio_variants) {
-        const spec = variant && Object.hasOwn(AUDIO_VARIANT_SPECS, variant.id) ? AUDIO_VARIANT_SPECS[variant.id] : null;
+        const targets = variant && manifest.version === 5 ? combinedTargets(variant.id) : null;
+        const spec = variant && Object.hasOwn(AUDIO_VARIANT_SPECS, variant.id) ? AUDIO_VARIANT_SPECS[variant.id] : targets ? ['without', null] : null;
         requireMagic(spec && typeof variant.id === 'string' && !identifiers.has(variant.id) && typeof variant.label === 'string' && variant.label.trim().length > 0 && [...variant.label].length <= 100 && variant.mode === spec[0] && Object.hasOwn(variant, 'target') && variant.target === spec[1], '재생 음원 이름·악기·분리 방식이 올바르지 않습니다.');
+        requireMagic(targets ? Array.isArray(variant.targets) && variant.targets.length === targets.length && variant.targets.every((target, index) => target === targets[index]) : !Object.hasOwn(variant, 'targets'), '함께 제거할 악기 조합이 올바르지 않습니다.');
         identifiers.add(variant.id); validateVariantAudio(variant.audio, variant.id);
         requireMagic(shared.every(key => variant.audio[key] === audio[key]), '재생 음원들의 원곡·길이·키가 일치하지 않습니다.');
       }
+      requireMagic(manifest.version !== 5 || manifest.audio_variants.some(variant => combinedTargets(variant.id)), '함께 제거한 음원이 없는 조합 파일입니다.');
       this.audioVariants = manifest.audio_variants;
       this.activeAudioVariant = this.audioVariants.find(item => item.id === manifest.default_audio_variant);
       requireMagic(this.activeAudioVariant && sameAudio(audio, this.activeAudioVariant.audio), '처음 재생할 음원이 목록과 일치하지 않습니다.');
@@ -718,7 +734,7 @@ class MagicArchive {
     } else {
       requireMagic(audio.path === 'audio/instrumental.wav' && audio.codec === undefined, '기존 연습 파일에는 WAV 반주가 필요합니다. 재생기를 업데이트하거나 파일을 다시 저장해 주세요.');
     }
-    if (manifest.version !== 4) {
+    if (![4, 5].includes(manifest.version)) {
       requireMagic(manifest.audio_variants === undefined && manifest.default_audio_variant === undefined, '여러 재생 음원은 새 .magic 형식이 필요합니다. 재생기를 업데이트해 주세요.');
       this.audioVariants = [{id: 'no_vocals', label: '보컬 제거', mode: 'without', target: 'vocals', audio}];
       this.activeAudioVariant = this.audioVariants[0];
@@ -734,7 +750,7 @@ class MagicArchive {
     };
     addPages(manifest.pages, 'pages');
     this.parts = [{track: score.track ?? 1, name: score.part || '악보', pages: manifest.pages, timeline: manifest.timeline}];
-    if (manifest.version === 2 || ([3, 4].includes(manifest.version) && score.kind === 'gp')) {
+    if (manifest.version === 2 || ([3, 4, 5].includes(manifest.version) && score.kind === 'gp')) {
       requireMagic(score.kind === 'gp' && Array.isArray(manifest.parts) && manifest.parts.length >= 1 && manifest.parts.length <= 64 && manifest.timing_basis?.shared === true && manifest.timing_basis.track === score.track, '전체 파트 정보가 올바르지 않습니다.');
       const tracks = new Set(); let total = 0;
       for (const part of manifest.parts) {
@@ -748,11 +764,11 @@ class MagicArchive {
       }
       requireMagic(tracks.has(score.track) && total <= 1000, '기준 파트가 없거나 전체 페이지가 너무 많습니다.');
       this.parts = manifest.parts;
-    } else if ([3, 4].includes(manifest.version)) {
+    } else if ([3, 4, 5].includes(manifest.version)) {
       requireMagic(manifest.parts === undefined && manifest.timing_basis === undefined, 'PDF 파트 정보가 올바르지 않습니다.');
     }
     requireMagic(expected.size === this.entries.size && [...expected].every(n => this.entries.has(n)), '연습 파일의 구성 요소가 빠졌습니다.');
-    if (manifest.version === 4) requireMagic(manifest.entries && Object.keys(manifest.entries).length === expected.size - 1, '재생 음원 파일 검증 목록이 올바르지 않습니다.');
+    if ([4, 5].includes(manifest.version)) requireMagic(manifest.entries && Object.keys(manifest.entries).length === expected.size - 1, '재생 음원 파일 검증 목록이 올바르지 않습니다.');
     for (const name of expected) if (name !== 'manifest.json') {
       const entry = manifest.entries?.[name];
       requireMagic(entry?.bytes === this.entries.get(name).bytes && /^[a-f0-9]{64}$/.test(entry.sha256), '파일 검증 정보가 올바르지 않습니다.');
@@ -1356,28 +1372,35 @@ async function decodeVariant(selected, variant) {
   const mp3 = audio.codec === 'mp3';
   const mp3Error = 'MP3 반주를 원본 길이로 재생할 수 없습니다. WAV로 저장한 파일을 사용하거나 브라우저를 업데이트해 주세요.';
   if (mp3) validateMp3(data, audio);
-  else if (selected.manifest.version === 4) validateWav(data, audio);
+  else if ([4, 5].includes(selected.manifest.version)) validateWav(data, audio);
   let decoded;
   try { decoded = await deadline(audioContext().decodeAudioData(data), 60000, '음원을 읽지 못했습니다. 다시 선택해 주세요.'); }
   catch (error) { if (mp3) throw new Error(mp3Error); throw error; }
-  if (mp3 || selected.manifest.version === 4) requireMagic(decoded.sampleRate === audio.sample_rate && decoded.length === audio.frames && decoded.numberOfChannels === 2, mp3 ? mp3Error : '음원의 원본 샘플 수·채널 정보가 일치하지 않습니다.');
+  if (mp3 || [4, 5].includes(selected.manifest.version)) requireMagic(decoded.sampleRate === audio.sample_rate && decoded.length === audio.frames && decoded.numberOfChannels === 2, mp3 ? mp3Error : '음원의 원본 샘플 수·채널 정보가 일치하지 않습니다.');
   else requireMagic(Math.abs(decoded.duration - audio.duration) < .05 && decoded.numberOfChannels === 2, '반주 길이·채널 정보가 일치하지 않습니다.');
   return decoded;
+}
+const AUDIO_TARGET_LABELS = {vocals: '보컬', guitar: '기타', drums: '드럼', bass: '베이스', keys: '키보드', piano: '피아노', synth: '신시사이저'};
+function audioChoiceLabel(variant) {
+  return variant.targets ? `${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')} 없는 반주` : variant.label;
 }
 function showAudioChoices() {
   $('audioVariant').replaceChildren(...(archive?.audioVariants || []).map(variant => {
     const option = document.createElement('option'); option.value = variant.id;
-    option.textContent = variant.label; return option;
+    option.textContent = audioChoiceLabel(variant); return option;
   }));
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
   $('audioChoice').hidden = !archive;
   $('audioVariantCount').textContent = archive ? `파일에 저장된 음원 ${archive.audioVariants.length}개` : '';
+  const choices = archive?.audioVariants || [];
+  $('audioCombinationNotice').hidden = choices.some(variant => variant.targets) || choices.filter(variant => variant.mode === 'without').length < 2;
   showAudioVariantHint();
 }
 function showAudioVariantHint() {
-  const target = archive?.activeAudioVariant.target;
-  const detail = target === 'keys' ? '키보드는 피아노·오르간 등 건반 계열입니다. ' :
-    target === 'synth' ? '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ' : '';
+  const selected = archive?.activeAudioVariant, targets = selected?.targets || [selected?.target];
+  let detail = selected?.targets ? `함께 제거한 파트: ${selected.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' · ')}. ` : '';
+  if (targets.includes('keys')) detail += '키보드는 피아노·오르간 등 건반 계열입니다. ';
+  if (targets.includes('synth')) detail += '실험적 분리: 신스 베이스·패드·전자 타악기 등이 함께 포함될 수 있습니다. ';
   $('audioVariantHint').textContent = detail + '음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.';
 }
 async function selectAudioVariant(identifier) {
@@ -1386,7 +1409,7 @@ async function selectAudioVariant(identifier) {
   const previous = selected.activeAudioVariant;
   audioGeneration++; ensemble?.unready(); pause(); cancelAudioTask();
   const saved = position;
-  loading = true; setAvailable(false); setStatus(`${variant.label} 음원을 준비하고 있습니다…`);
+  loading = true; setAvailable(false); setStatus(`${audioChoiceLabel(variant)} 음원을 준비하고 있습니다…`);
   try {
     const decoded = await decodeVariant(selected, variant);
     if (archive !== selected || generation !== selectionGeneration) return;
@@ -1395,7 +1418,7 @@ async function selectAudioVariant(identifier) {
     $('audioVariant').value = variant.id;
     duration = decoded.duration; position = clamp(saved, 0, duration); segment = upcoming = null;
     updateKey(); showPosition(); showAudioVariantHint();
-    setStatus(`${variant.label} · 현재 위치를 유지했습니다. ${ensemble?.role ? '합주 준비를 다시 눌러 주세요.' : '재생을 눌러 이어서 연습하세요.'}`);
+    setStatus(`${audioChoiceLabel(variant)} · 현재 위치를 유지했습니다. ${ensemble?.role ? '합주 준비를 다시 눌러 주세요.' : '재생을 눌러 이어서 연습하세요.'}`);
   } catch (error) {
     if (archive !== selected || generation !== selectionGeneration) return;
     selected.activeAudioVariant = previous; $('audioVariant').value = previous.id;
@@ -2018,7 +2041,7 @@ class Ensemble {
     this.update();
   }
   async share() {
-    requireMagic(this.role === 'leader' && [2, 3, 4].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
+    requireMagic(this.role === 'leader' && [2, 3, 4, 5].includes(archive?.manifest.version) && archive.manifest.score.kind === 'gp', '전체 GP 파트가 담긴 .magic 파일을 열어 주세요.');
     if (this.uploading) return;
     const generation = this.generation;
     this.uploading = true; this.update(); this.status('멤버에게 공유할 파일을 서버로 보내고 있습니다…');
@@ -2109,7 +2132,7 @@ class Ensemble {
     $('sessionPrepare').textContent = $('ensembleReady').textContent;
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
-    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
+    $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4, 5].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
     $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
