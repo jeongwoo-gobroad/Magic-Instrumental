@@ -118,9 +118,9 @@ def test_first_track_to_practice_bundle_and_reopen(tone, tmp_path, fake_engine, 
             assert manifest["version"] == 4
             assert manifest["default_audio_variant"] == "no_vocals"
             assert [item["id"] for item in manifest["audio_variants"]] == [
-                "no_vocals", "vocals", "original",
+                "original", "no_vocals", "vocals",
             ]
-            assert manifest["audio"] == manifest["audio_variants"][0]["audio"]
+            assert manifest["audio"] == manifest["audio_variants"][1]["audio"]
             assert manifest["audio"]["path"] == "audio/variants/no_vocals.mp3"
             assert manifest["audio"]["codec"] == "mp3"
             assert manifest["audio"]["bitrate_kbps"] == 256

@@ -12,12 +12,17 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 
-from .audio import inspect_audio, publish_export, run_ffmpeg
+from .audio import decode, inspect_audio, publish_export, run_ffmpeg
 from .cache import hash_file
 from .config import ROOT, Paths
 from .gp_collection import portable_timing, prepare_collection
 from .score import ScoreTimeline
-from .variants import MAX_PORTABLE_VARIANTS, is_combination, validate_variant_identity
+from .variants import (
+    MAX_PORTABLE_VARIANTS,
+    is_combination,
+    validate_variant_identity,
+    variant_label,
+)
 
 MAGIC_VERSION = 5
 MAX_AUDIO_BYTES = 512 * 1024 * 1024
@@ -42,14 +47,23 @@ def json_bytes(data):
 
 def variant_identity(item):
     """Only canonical single or combined IDs may become audio path components."""
-    return validate_variant_identity(item)
+    identity = validate_variant_identity(item)
+    if is_combination(identity["id"]):
+        identity["label"] = variant_label(identity["id"])
+    return identity
 
 
 def _requested_variants(request):
+    include_original = request.get("include_original", False)
+    if type(include_original) is not bool:
+        raise ValueError("원곡 포함 설정이 올바르지 않습니다.")
     if "audio_variants" not in request:
+        if include_original:
+            raise ValueError("원곡과 함께 저장할 음원 목록을 지정하세요.")
         return None
     supplied = request["audio_variants"]
-    if not isinstance(supplied, list) or not 1 <= len(supplied) <= MAX_PORTABLE_VARIANTS:
+    minimum = 0 if include_original else 1
+    if not isinstance(supplied, list) or not minimum <= len(supplied) <= MAX_PORTABLE_VARIANTS:
         raise ValueError(
             f"저장할 음원을 1개 이상 선택하세요. 최대 {MAX_PORTABLE_VARIANTS}개까지 지원합니다."
         )
@@ -77,9 +91,34 @@ def _requested_variants(request):
         ):
             raise ValueError("준비한 음원의 검증 정보가 올바르지 않습니다. 다시 준비하세요.")
         variants.append({**identity, "path": Path(path).resolve(strict=True), **verification})
+    if include_original:
+        identifiers.add("original")
+        if len(identifiers) > MAX_PORTABLE_VARIANTS:
+            raise ValueError(
+                f"원곡을 포함해 최대 {MAX_PORTABLE_VARIANTS}개까지 저장할 수 있습니다."
+            )
     if request.get("default_audio_variant") not in identifiers:
         raise ValueError("처음 재생할 음원을 저장 목록에서 선택하세요.")
     return variants
+
+
+def _include_original(variants, audio, scratch, inputs, report):
+    """Build the base version from the same source bytes that own the score timeline."""
+    report("기본 원곡을 함께 저장할 준비를 합니다…", None)
+    canonical = scratch / "source-original.wav"
+    decode(audio, canonical)
+    info = inspect_audio(canonical, scan=True)
+    if info["frames"] * 4 > MAX_AUDIO_BYTES:
+        raise ValueError("각 재생 음원은 최대 512 MB입니다. 곡을 짧게 나누어 준비하세요.")
+    previous = next((item for item in variants if item["id"] == "original"), None)
+    if previous and "expected_frames" in previous and previous["expected_frames"] != info["frames"]:
+        raise ValueError("준비한 원곡의 길이가 달라졌습니다. 곡을 다시 준비하세요.")
+    inputs[canonical] = hash_file(canonical)
+    original = {
+        "id": "original", "label": variant_label("original"), "mode": "original",
+        "target": None, "path": canonical, "expected_frames": info["frames"],
+    }
+    return [original, *(item for item in variants if item["id"] != "original")]
 
 
 def _measure_peak(source, scratch):
@@ -157,6 +196,7 @@ def export_magic(request, report=lambda *_: None):
         raise ValueError("저장할 파일 이름은 .magic으로 끝나야 합니다.")
     if output.exists() and not request.get("overwrite"):
         raise FileExistsError("같은 이름의 파일이 있습니다. 다른 이름으로 저장하세요.")
+    timeline_hash = hash_file(timeline_path)
     plan = ScoreTimeline.load(timeline_path)
     if plan.data["audio_sha256"] != hash_file(audio) or plan.data["pdf_sha256"] != hash_file(pdf):
         raise ValueError("현재 음원·악보와 분석 결과가 다릅니다. 다시 분석하세요.")
@@ -170,6 +210,13 @@ def export_magic(request, report=lambda *_: None):
         raise ValueError("GP 원본이 분석 이후 변경되었습니다. 다시 분석하세요.")
     audio_inputs = {item["path"] for item in variants} if variants is not None else {instrumental}
     inputs = {p: hash_file(p) for p in {audio, pdf, timeline_path, source, *audio_inputs}}
+    if (
+        inputs[audio] != plan.data["audio_sha256"]
+        or inputs[pdf] != plan.data["pdf_sha256"]
+        or inputs[timeline_path] != timeline_hash
+        or (gp and inputs[source] != gp["signature"]["source"])
+    ):
+        raise ValueError("저장 준비 중 원본 또는 악보 시간표가 변경되었습니다. 다시 시도해 주세요.")
     for item in variants or []:
         if "expected_sha256" in item and (
             inputs[item["path"]] != item["expected_sha256"]
@@ -223,6 +270,8 @@ def export_magic(request, report=lambda *_: None):
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".magic-", dir=output.parent) as scratch:
         scratch = Path(scratch)
+        if request.get("include_original", False):
+            variants = _include_original(variants, audio, scratch, inputs, report)
         audio_files, portable_variants, common_audio = [], [], None
         selected = (
             variants if variants is not None else [{"id": "instrumental", "path": instrumental}]

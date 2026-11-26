@@ -23,8 +23,12 @@ body { word-break: keep-all; overflow-wrap: anywhere; }
 aside, .card, .score-area, select { min-width: 0; }
 .audio-choice label { display: block; font-weight: 700; min-height: 0; margin-bottom: 8px; }
 .audio-choice select { width: 100%; max-width: 100%; }
+.audio-choice-row { display: flex; align-items: center; gap: 8px; }
+.audio-choice-row select { flex: 1; }
+.audio-choice-row button { flex: 0 0 auto; padding: 8px 10px; white-space: nowrap; }
 .audio-choice select:disabled { opacity: 1; color: var(--ink); -webkit-text-fill-color: var(--ink); cursor: default; }
 .audio-choice p { margin: 10px 0 0; }
+.audio-choice #audioBundleSummary { margin: 0 0 10px; }
 body[data-session] #audioChoice { order: -1; }
 .small, #status, .metro-help, .score-toolbar label, .score-toolbar select,
 .range-pair label, #clock, #effective { font-size: 13px; }
@@ -76,6 +80,7 @@ body[data-session] #audioChoice { order: -1; }
 .audio-choice details { margin-top: 10px; font-size: 13px; }
 .audio-choice details summary { min-height: 36px; color: var(--accent); }
 .audio-choice details p { margin: 4px 0 0; }
+.audio-choice #audioOriginalNotice { margin-top: 10px; }
 body.options-hidden main { grid-template-columns: minmax(0, 1fr); }
 .focus-controls { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 8px 24px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .focus-controls .audio-choice { grid-row: span 2; padding: 0; border: 0; border-radius: 0; box-shadow: none; }

@@ -45,10 +45,19 @@ def variant_files(tmp_path_factory):
             result[f"{kind}_{codec}"] = export_magic({
                 **request, "audio_format": codec, "output": str(root / f"{kind}-{codec}.magic"),
             })
+        result[f"{kind}_original"] = export_magic({
+            **request, "include_original": True, "audio_format": "mp3",
+            "output": str(root / f"{kind}-with-original.magic"),
+        })
         if kind == "pdf":
             result["single_guitar"] = export_magic({
                 **request, "audio_format": "wav", "audio_variants": request["audio_variants"][1:],
                 "default_audio_variant": "guitar", "output": str(root / "single-guitar.magic"),
+            })
+            result["single_original"] = export_magic({
+                **request, "include_original": True, "audio_variants": [],
+                "default_audio_variant": "original", "audio_format": "wav",
+                "output": str(root / "single-original.magic"),
             })
     return result
 
@@ -241,14 +250,20 @@ def test_select_audio_lazily_preserves_score_clock_and_settings(page, variant_fi
 @pytest.mark.parametrize("kind,codec", [("pdf", "mp3"), ("pdf", "wav"),
                                         ("gp", "mp3"), ("gp", "wav")])
 def test_combined_removals_play_one_actual_mix_and_preserve_practice(
-    page, combined_files, kind, codec,
+    page, combined_files, kind, codec, tmp_path,
 ):
+    legacy_label = tmp_path / "old-combination-label.magic"
+    # Older archives used the ambiguous label; the player derives its display from targets.
+    rewrite_bundle(
+        combined_files[f"{kind}_{codec}"], legacy_label,
+        lambda manifest: manifest["audio_variants"][2].update(label="보컬 + 기타 없는 반주"),
+    )
     watch_decoding(page)
-    open_study(page, combined_files[f"{kind}_{codec}"])
+    open_study(page, legacy_label)
     assert page.evaluate("MagicPlayer.archive().manifest.version") == 5
     assert page.locator("#audioVariant").input_value() == "no_vocals_guitar"
     assert page.locator('#audioVariant option[value="no_vocals_guitar"]').inner_text() == (
-        "보컬 + 기타 없는 반주"
+        "(보컬 + 기타) 없는 반주"
     )
     assert page.locator("#audioVariantCount").inner_text() == "파일에 저장된 음원 3개"
     assert page.locator("#audioCombinationNotice").is_hidden()
@@ -410,6 +425,21 @@ def test_combined_archive_reader_checks_real_export_payloads(combined_files):
     assert results[-1]["ids"] == ["no_vocals", "no_guitar"]
 
 
+def test_original_bundle_reader_accepts_shared_score_and_original_only(variant_files):
+    results = run_archive_reader([
+        variant_files["pdf_original"], variant_files["gp_original"],
+        variant_files["single_original"],
+    ])
+    assert all(item["ok"] for item in results), results
+    for item in results[:2]:
+        assert item["version"] == 4
+        assert item["ids"] == ["original", "no_vocals", "guitar"]
+        assert item["active"] == "no_vocals"
+    assert [item["parts"] for item in results] == [1, 2, 1]
+    assert results[-1]["ids"] == ["original"]
+    assert results[-1]["active"] == "original"
+
+
 def test_combined_archive_reader_rejects_ambiguous_or_inconsistent_targets(
     combined_files, tmp_path,
 ):
@@ -454,11 +484,14 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     assert page.locator("#audioVariant").input_value() == "guitar"
     assert page.locator("#audioVariant").is_disabled()
     assert page.locator("#play").is_enabled()
+    assert page.locator("#audioOriginal").is_hidden()
     assert "저장된 음원이 1개" in page.locator("#audioVariantScope").inner_text()
     assert "바로 재생" in page.locator("#audioVariantScope").inner_text()
     page.locator("#audioChoiceHelp summary").click()
     assert "체크한 음원 준비" in page.locator("#audioChoiceHelp p").inner_text()
     assert ".magic 저장" in page.locator("#audioChoiceHelp p").inner_text()
+    assert page.locator("#audioOriginalNotice").is_visible()
+    assert "이 파일에는 원곡이 없습니다" in page.locator("#audioOriginalNotice").inner_text()
     page.locator("#optionsToggle").focus()
     page.locator("#optionsToggle").press("Enter")
     assert page.locator("#optionsSidebar").is_hidden()
@@ -492,6 +525,15 @@ def test_single_available_audio_and_options_preference_survive_reload_and_blocke
     assert page.locator("#optionsSidebar").is_visible()
     assert page.locator("#optionsSidebar #audioVariant").input_value() == "guitar"
     assert page.locator("#audioVariant").is_disabled()
+    open_study(page, variant_files["single_original"])
+    assert page.locator("#audioVariant option").count() == 1
+    assert page.locator("#audioVariant").input_value() == "original"
+    assert page.locator("#audioVariant").is_disabled()
+    assert page.locator("#audioOriginal").is_visible()
+    assert page.locator("#audioOriginal").is_disabled()
+    assert page.locator("#audioOriginal").inner_text() == "원곡 선택됨"
+    assert page.locator("#audioBundleSummary").inner_text() == "원곡이 담긴 연습 파일입니다."
+    assert page.locator("#play").is_enabled()
 
 
 def test_audio_choices_follow_current_file_and_pending_selection(page, variant_files, tmp_path):
@@ -554,6 +596,9 @@ def test_audio_choices_follow_current_file_and_pending_selection(page, variant_f
     assert page.locator("#audioVariantCount").inner_text() == ""
     assert page.locator("#audioVariantScope").inner_text() == ""
     assert page.locator("#audioVariantHint").inner_text() == ""
+    assert page.locator("#audioBundleSummary").inner_text() == ""
+    assert page.locator("#audioOriginal").is_hidden()
+    assert page.locator("#audioOriginalNotice").is_hidden()
     open_study(page, variant_files["pdf_wav"])
     assert choices.count() == 2
     assert page.locator("#audioVariant").is_enabled()
@@ -566,6 +611,13 @@ def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
     watch_decoding(page)
     open_study(page, archive)
     assert page.locator("#audioVariant option").count() == 15
+    assert page.locator("#audioVariant optgroup").evaluate_all(
+        "groups => groups.map(group => group.label)"
+    ) == ["원곡", "악기 없는 반주", "악기만 듣기"]
+    assert page.locator("#audioVariant option").first.get_attribute("value") == "original"
+    assert "원곡 + 분리 음원 14개" in page.locator("#audioBundleSummary").inner_text()
+    assert page.locator("#audioOriginalNotice").is_hidden()
+    assert page.locator("#audioOriginal").is_enabled()
     assert page.evaluate("window.decodeCalls") == 1
     assert page.evaluate("MagicPlayer.state().audioVariant") == "keys"
     assert page.locator('#audioVariant option[value="keys"]').inner_text() == "키보드만 듣기"
@@ -592,6 +644,59 @@ def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
     page.set_viewport_size({"width": 360, "height": 780})
     assert page.locator("#audioVariant").is_visible()
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    position = page.evaluate("MagicPlayer.state().position")
+    page.locator("#optionsToggle").click()
+    original = page.locator("#focusControls #audioOriginal")
+    assert original.is_visible()
+    assert original.bounding_box()["height"] >= 44
+    original.evaluate("""button => {
+      const proof = {clicks: 0, refreshes: []};
+      const state = event => {
+        const rect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        return {disabled: button.disabled, children: button.childNodes.length,
+          rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+          hit: hit && {id: hit.id, tag: hit.tagName}};
+      };
+      const clicked = event => {
+        proof.clicks++; proof.trusted = event.isTrusted; proof.target = event.target.id;
+      };
+      button.addEventListener('click', clicked, true);
+      button.addEventListener('mousedown', event => {
+        const child = button.firstChild, refresh = {before: state(event)};
+        proof.refreshes.push(refresh);
+        try { ensemble.update(); }
+        finally {
+          refresh.after = state(event); refresh.sameTextChild = child === button.firstChild;
+        }
+      }, {capture: true, once: true});
+      window.originalClickProof = () => {
+        button.removeEventListener('click', clicked, true); return proof;
+      };
+    }""")
+    original.click()
+    page.wait_for_function("!MagicPlayer.state().loading")
+    pointer = page.evaluate("originalClickProof()")
+    assert pointer["clicks"] == 1 and pointer["trusted"], pointer
+    assert pointer["target"] == "audioOriginal", pointer
+    assert len(pointer["refreshes"]) == 1, pointer
+    refresh = pointer["refreshes"][0]
+    assert refresh["sameTextChild"], pointer
+    assert refresh["before"] == refresh["after"], pointer
+    assert not refresh["before"]["disabled"], pointer
+    assert refresh["before"]["hit"] == {"id": "audioOriginal", "tag": "BUTTON"}, pointer
+    assert page.evaluate("MagicPlayer.state().audioVariant") == "original"
+    assert page.evaluate("window.decodeCalls") == 7
+    assert page.evaluate("MagicPlayer.state().position") == pytest.approx(position, abs=.04)
+    assert not page.evaluate("MagicPlayer.state().playing")
+    assert original.is_disabled()
+    assert original.inner_text() == "원곡 선택됨"
+    assert page.evaluate("MagicPlayer.archive().manifest.default_audio_variant") == "keys"
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.locator("#play").click()
+    assert_tone(page, frequencies["original"])
+    page.evaluate("MagicPlayer.pause()")
+    capture_options(page, "original-and-separated")
 
 
 def rewrite_bundle(source, destination, change, payload=None):
@@ -776,7 +881,7 @@ def test_session_shared_variants_keep_identity_and_require_fresh_ready(
             participant.on("pageerror", lambda error: errors.append(str(error)))
             participant.goto(web_url + "#ensemble")
             participant.locator("#relayURL").evaluate("(e,v) => e.value=v", relay_url)
-        open_study(leader, variant_files["gp_mp3"])
+        open_study(leader, variant_files["gp_original"])
         leader.locator("#leaderMode").click()
         leader.wait_for_function("MagicEnsemble.state().role === 'leader'")
         leader.locator("#shareFile").click()
@@ -824,7 +929,9 @@ def test_session_shared_variants_keep_identity_and_require_fresh_ready(
             participant.wait_for_function("MagicPlayer.state().position > .3", timeout=10000)
         assert_tone(leader, 220)
         assert_tone(member, 440)
-        select_variant(member, "no_vocals")
+        member.locator("#audioOriginal").click()
+        member.wait_for_function("!MagicPlayer.state().loading")
+        assert member.evaluate("MagicPlayer.state().audioVariant") == "original"
         leader.wait_for_function("!MagicPlayer.state().playing")
         assert not member.evaluate("MagicEnsemble.state().prepared")
         assert leader.evaluate("MagicEnsemble.state().prepared")

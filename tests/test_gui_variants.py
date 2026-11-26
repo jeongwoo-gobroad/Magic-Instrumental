@@ -14,8 +14,10 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialogButtonBox,
     QFileDialog,
+    QLabel,
     QListWidget,
     QMessageBox,
+    QPushButton,
 )
 
 from practice_player.cache import hash_file
@@ -268,7 +270,7 @@ def test_renamed_original_reuses_same_song_state_and_exports_from_current_path(
     assert not source.exists() and hash_file(renamed) == source_hash
 
 
-def test_export_dialog_requires_a_selection_and_sends_subset_and_default(
+def test_export_dialog_keeps_original_and_sends_selected_splits_and_default(
     native_window, app, tmp_path, monkeypatch,
 ):
     window = native_window
@@ -287,19 +289,33 @@ def test_export_dialog_requires_a_selection_and_sends_subset_and_default(
             quality = dialog.findChild(QComboBox, "magicAudioQuality")
             choices = dialog.findChild(QListWidget, "magicAudioVariants")
             first = dialog.findChild(QComboBox, "magicDefaultVariant")
+            summary = dialog.findChild(QLabel, "magicBundleSummary")
             assert quality.currentData() == "mp3:256"
             assert first.currentData() == "no_guitar"
             assert choices.count() == len(window.prepared_variants)
-            for index in range(choices.count()):
-                choices.item(index).setCheckState(Qt.CheckState.Unchecked)
+            original = choices.item(0)
+            assert original.data(Qt.ItemDataRole.UserRole) == "original"
+            assert not original.flags() & Qt.ItemFlag.ItemIsUserCheckable
+            QTest.mouseClick(dialog.findChild(QPushButton, "magicClearVariants"),
+                             Qt.MouseButton.LeftButton)
+            assert first.count() == 1 and first.currentData() == "original"
+            assert summary.text() == "원곡 1개 + 분리 음원 0개 · .magic 파일 하나"
+            QTest.mouseClick(dialog.findChild(QPushButton, "magicSelectAllVariants"),
+                             Qt.MouseButton.LeftButton)
+            assert first.count() == len(window.prepared_variants)
+            QTest.mouseClick(dialog.findChild(QPushButton, "magicClearVariants"),
+                             Qt.MouseButton.LeftButton)
+            original.setCheckState(Qt.CheckState.Unchecked)
+            assert original.checkState() == Qt.CheckState.Checked
             save = dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save)
-            QTest.mouseClick(save, Qt.MouseButton.LeftButton)
-            assert dialog.isVisible() and first.count() == 0 and len(messages) == 1
             for index in range(choices.count()):
                 item = choices.item(index)
                 if item.data(Qt.ItemDataRole.UserRole) in {"vocals", "guitar"}:
                     item.setCheckState(Qt.CheckState.Checked)
-            assert {first.itemData(index) for index in range(first.count())} == {"vocals", "guitar"}
+            assert {first.itemData(index) for index in range(first.count())} == {
+                "original", "vocals", "guitar",
+            }
+            assert summary.text() == "원곡 1개 + 분리 음원 2개 · .magic 파일 하나"
             first.setCurrentIndex(first.findData("guitar"))
             QTest.mouseClick(save, Qt.MouseButton.LeftButton)
         except Exception as error:
@@ -308,12 +324,13 @@ def test_export_dialog_requires_a_selection_and_sends_subset_and_default(
 
     QTimer.singleShot(0, choose)
     QTest.mouseClick(window.magic_button, Qt.MouseButton.LeftButton)
-    assert not errors
+    assert not errors and not messages
     request_path = window.paths.processed / "magic-export-request.json"
     request = json.loads(request_path.read_text(encoding="utf-8"))
     assert jobs == [["magic-export", "--request", str(request_path), "--events"]]
+    assert request["include_original"] is True
     assert request["default_audio_variant"] == "guitar"
-    assert [item["id"] for item in request["audio_variants"]] == ["vocals", "guitar"]
+    assert [item["id"] for item in request["audio_variants"]] == ["original", "vocals", "guitar"]
     assert all(item["path"] == window.prepared_variants[item["id"]]["path"]
                for item in request["audio_variants"])
     for item in request["audio_variants"]:
@@ -329,8 +346,11 @@ def test_export_dialog_requires_a_selection_and_sends_subset_and_default(
     with zipfile.ZipFile(request["output"]) as archive:
         manifest = json.loads(archive.read("manifest.json"))
         assert manifest["version"] == 4 and manifest["default_audio_variant"] == "guitar"
-        assert [item["id"] for item in manifest["audio_variants"]] == ["vocals", "guitar"]
-        assert all(item["mode"] == "stem" and item["audio"]["pitch_semitones"] == 2
+        assert [item["id"] for item in manifest["audio_variants"]] == [
+            "original", "vocals", "guitar",
+        ]
+        assert all(item["mode"] == ("original" if item["id"] == "original" else "stem")
+                   and item["audio"]["pitch_semitones"] == 2
                    for item in manifest["audio_variants"])
         assert b"expected_" not in archive.read("manifest.json")
     imported_paths = Paths(tmp_path / "second-pc")
@@ -340,13 +360,54 @@ def test_export_dialog_requires_a_selection_and_sends_subset_and_default(
     assert bundle["default_audio_variant"] == "guitar"
     assert bundle["original_source_sha256"] == window.loaded_source_hash
     assert all(
-        item["mode"] == "stem" and item["pitch_semitones"] == 2
+        item["mode"] == ("original" if item["id"] == "original" else "stem")
+        and item["pitch_semitones"] == 2
         and item["frames"] == 8 * 44100 and item["sample_rate"] == 44100
         and item["source_sha256"] == window.loaded_source_hash
         for item in bundle["audio_variants"]
     )
     cached = import_magic(Path(request["output"]), imported_paths)
     assert cached == {**imported, "cached": True}
+
+
+def test_clearing_splits_exports_original_even_when_not_in_loaded_catalog(
+    native_window, app, tmp_path, monkeypatch,
+):
+    window = native_window
+    window.prepared_variants.pop("original")
+    window.refresh_variant_choices()
+    output = tmp_path / "original-only.magic"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *_: (str(output), "Magic"))
+    errors = []
+    before = hash_file(window.source_path), window.score_panel.timeline_path.read_bytes()
+
+    def choose():
+        dialog = app.activeModalWidget()
+        try:
+            choices = dialog.findChild(QListWidget, "magicAudioVariants")
+            assert choices.item(0).text() == "원곡 · 항상 포함"
+            QTest.mouseClick(dialog.findChild(QPushButton, "magicClearVariants"),
+                             Qt.MouseButton.LeftButton)
+            first = dialog.findChild(QComboBox, "magicDefaultVariant")
+            assert first.count() == 1 and first.currentData() == "original"
+            save = dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Save)
+            assert dialog.rect().contains(save.mapTo(dialog, save.rect().center()))
+            QTest.mouseClick(save, Qt.MouseButton.LeftButton)
+        except Exception as error:
+            errors.append(str(error))
+            dialog.reject()
+
+    QTimer.singleShot(0, choose)
+    QTest.mouseClick(window.magic_button, Qt.MouseButton.LeftButton)
+    assert not errors
+    finish(window, app)
+    with zipfile.ZipFile(output) as archive:
+        manifest = json.loads(archive.read("manifest.json"))
+    assert manifest["version"] == 4 and manifest["default_audio_variant"] == "original"
+    assert [item["id"] for item in manifest["audio_variants"]] == ["original"]
+    assert manifest["audio"]["source_sha256"] == before[0]
+    assert before == (hash_file(window.source_path), window.score_panel.timeline_path.read_bytes())
+    assert not window.player.isPlaying()
 
 
 def test_stale_cached_variant_export_fails_without_replacing_an_existing_bundle(
@@ -462,7 +523,7 @@ def test_checkbox_subset_and_empty_selection_have_one_prepare_action(
         QTest.mouseClick(checkbox, Qt.MouseButton.LeftButton)
     assert window.checked_variants() == ["no_guitar", "no_drums", "keys"]
     assert "3개" in window.selection_summary.text()
-    assert "기타 + 드럼 없는 반주" in window.selection_summary.text()
+    assert "(기타 + 드럼) 없는 반주" in window.selection_summary.text()
     assert "키보드" in window.separation_hint.text()
     QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app)
@@ -485,11 +546,11 @@ def test_combined_checkboxes_export_and_reopen_as_one_real_audio_choice(
     window.select_preparation_variants(False)
     window.variant_checks["no_vocals"].setChecked(True)
     window.variant_checks["no_guitar"].setChecked(True)
-    assert "보컬 + 기타 없는 반주" in window.selection_summary.text()
+    assert "(보컬 + 기타) 없는 반주" in window.selection_summary.text()
     QTest.mouseClick(window.prepare_button, Qt.MouseButton.LeftButton)
     finish(window, app)
     assert window.selected_variant == identifier
-    assert window.playback_variants.currentText() == "보컬 + 기타 없는 반주"
+    assert window.playback_variants.currentText() == "(보컬 + 기타) 없는 반주"
     assert window.active_variant["targets"] == ["vocals", "guitar"]
     assert_practice_state(window, position)
     QTest.mouseClick(window.cached_audio_button, Qt.MouseButton.LeftButton)
@@ -513,7 +574,7 @@ def test_combined_checkboxes_export_and_reopen_as_one_real_audio_choice(
                 item_id = item.data(Qt.ItemDataRole.UserRole)
                 if item_id == identifier:
                     found = True
-                    assert item.text() == "보컬 + 기타 없는 반주"
+                    assert item.text() == "(보컬 + 기타) 없는 반주"
                 item.setCheckState(
                     Qt.CheckState.Checked if item_id in {"no_vocals", "no_guitar", identifier}
                     else Qt.CheckState.Unchecked
@@ -550,8 +611,8 @@ def test_combined_checkboxes_export_and_reopen_as_one_real_audio_choice(
         reader.import_magic(output)
         finish(reader, app)
         assert reader.selected_variant == identifier
-        assert reader.playback_variants.count() == 3
-        assert reader.playback_variants.currentText() == "보컬 + 기타 없는 반주"
+        assert reader.playback_variants.count() == 4
+        assert reader.playback_variants.currentText() == "(보컬 + 기타) 없는 반주"
         assert reader.active_variant["targets"] == ["vocals", "guitar"]
         assert reader.base_pitch_semitones == 2 and reader.key.value() == 0
         assert not reader.player.isPlaying()

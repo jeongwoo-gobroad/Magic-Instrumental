@@ -1,8 +1,8 @@
 # Magic-Instrumental
 
-Separate vocals, guitar, drums, bass or keyboards on your computer, choose a score or Guitar Pro part, then practise at your own pace. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player for iPad and Android.
+Separate vocals, guitar, drums, bass or keyboards on your computer, choose a score or Guitar Pro part, then practise at your own pace. Save the original mix, several selected separated versions and the score in one `.magic` file, and choose what to hear on PC, iPad or Android. A Python desktop app for Apple Silicon macOS and Windows, with a separate offline tablet player.
 
-Current version: **3.0.4** · Mac / Windows / web player
+Current version: **3.0.5** · Mac / Windows / web player
 
 [한국어 / full beginner guide](README.md) · [Tablet guide](web_player/README.md) · [Changelog](CHANGELOG.md) · [Developer guide](CONTRIBUTING.md)
 
@@ -12,7 +12,7 @@ The large **재생** (Play) button is on the left of the fixed transport row at 
 
 ## Install and open
 
-Download the [3.0.4 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.4/Magic-Instrumental-3.0.4.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
+Download the [3.0.5 installation ZIP](https://github.com/jeongwoo-gobroad/Magic-Instrumental/releases/download/v3.0.5/Magic-Instrumental-3.0.5.zip) and fully extract it. Double-click `install.command` on Mac or `install.bat` on Windows. Wait for completion. For everyday use, double-click `start.command` or `start.bat`.
 
 **On first launch on Mac**, double-click `install.command`. If macOS blocks it because it cannot verify the developer, first confirm that the ZIP came from this project's official release. Open **Apple menu → System Settings → Privacy & Security**, scroll to **Security**, and choose **Open Anyway** for that file. Confirm when prompted. If macOS later blocks `start.command` on its first launch, repeat these steps for that file. [Apple's guide in Korean](https://support.apple.com/ko-kr/102445)
 
@@ -22,7 +22,9 @@ The installer prepares Python, dependencies, FFmpeg, Audiveris, Java, English OC
 
 ## Update without moving your songs
 
-**3.0.4 keeps the top playback selector limited to actual saved audio and lets you edit the audio and score-analysis cache folders separately in the desktop details dialog.** Your folder choices persist across restarts. Check two or more **없는 반주** (without this part) options to prepare the individual versions plus one combined backing track. For example, vocals and guitar also produce **보컬 + 기타 없는 반주**, selected initially. The combination is cached and can be included as one audio choice in a `.magic` file. Sequential separation needs extra processing the first time; a verified completed combination can be reused. Existing 2.4.x and 3.0.x installations use the regular updater below.
+**3.0.5 always includes the original mix when saving a `.magic` from the desktop, alongside the separated versions you select.** You do not need a different file for each instrument. The save dialog shows **원곡 1개 + 분리 음원 N개 · .magic 파일 하나** (one original mix plus N separated versions in one file). The web player's **원곡 선택** (select original) button makes comparison easy. The playback selector still lists only stored audio, and the separate audio/score cache-folder settings remain available. Existing 2.4.x and 3.0.x installations use the regular updater below.
+
+Check two or more **없는 반주** (without this part) options to prepare the individual versions plus one combined backing track. For example, vocals and guitar also produce **(보컬 + 기타) 없는 반주**, selected initially. The parentheses mean both parts are removed from the same track. Sequential separation needs extra processing the first time; a verified completed combination can be reused.
 
 Old recordings, scores, reviewed timings and `.magic` files stay usable. An older file containing only separate vocal-removed and guitar-removed versions has no jointly removed track. Prepare that combination from the original recording, then export a new `.magic` including it; score reanalysis is unnecessary. Files containing combined tracks require desktop/web player **3.0.2 or later**.
 
@@ -43,11 +45,11 @@ Recordings, scores, processed instrumentals, reviewed timings, models, `.magic` 
 3. Open a PDF or GP3/GP4/GP5 score. For GP, choose the instrument **by name**; no companion PDF is required.
 4. Choose score zoom and panel width, run score pre-analysis, then review the timing.
 5. Play at 0.25–2× speed, change the instrumental key by ±12 semitones, jump by measures or repeat a selected range. Optional drum counts and the independently adjustable metronome follow the original-media clock.
-6. Press **PC·태블릿으로 가져가기 · .magic 저장**, select included audio options, the initial option and audio quality, then press **저장 위치 선택…** (choose save location). Open the saved `.magic` in the tablet player. GP-derived files include every part's rendered pages and a shared timing reference, so mobile playback requires no score recognition or GP software.
+6. Press **PC·태블릿으로 가져가기 · .magic 저장**. The original mix is always included; select additional prepared audio versions, the initial option and audio quality, then press **저장 위치 선택…** (choose save location). Open the saved `.magic` in the tablet player. GP-derived files include every part's rendered pages and a shared timing reference, so mobile playback requires no score recognition or GP software.
 
-Applied desktop key changes are included in the exported audio. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
+Applied desktop key changes are included in every exported audio version, including the original mix. The embedded original is a playback copy encoded at the selected quality, not a byte-for-byte backup of the source file. The web player can add another ±12 semitones; the default is zero additional shift. Original printed notes/TAB are not transposed.
 
-**New exports use MP3 at 256 kbps by default.** The **연습 파일 음원과 음질** dialog also offers MP3 at 128, 192 or 320 kbps, and **WAV · 무손실** (lossless WAV). The desktop remembers your confirmed choice for the next export. MP3 reduces the embedded accompaniment size; the reduction in the whole `.magic` depends on the score pages and other contents. Playback still decodes the audio, so a smaller file does not guarantee lower memory use.
+**New exports use MP3 at 256 kbps by default.** In **한 곡을 .magic 파일 하나로 저장** (save one song in one .magic file), **원곡 · 항상 포함** marks the original mix. All prepared separated versions start checked under **함께 담을 분리 음원**; select-all and clear-selection affect only these additional versions. You can save just the original mix, or choose it as the initial audio. **음질** offers MP3 at 128, 192, 256 or 320 kbps, and **WAV · 무손실** (lossless WAV). The desktop remembers the confirmed quality and asks before replacing an existing export. MP3 reduces embedded audio size; the reduction in the whole `.magic` depends on the score pages and other contents. Playback still decodes the audio, so a smaller file does not guarantee lower memory use.
 
 Existing `.magic` files containing WAV remain playable and are never converted automatically. Use **web player 3.0.2 or later** for files containing combined removal tracks; older MP3/WAV formats remain supported. Follow the [web update steps below](#home-screen-installation-and-web-updates), then check the footer version before choosing your file.
 
@@ -77,9 +79,9 @@ When the app falls back to PDF measure/BPM timing, it follows printed order unle
 
 On iPad, [open Magic Player](https://jeongwoo-gobroad.github.io/Magic-Instrumental/) in Safari or Chrome; on Android, use Chrome. Open the web address first, tap **.magic 파일 열기** (open a .magic file), then choose the file saved on your computer. Other file types may also appear in the picker; an invalid file produces an error when opened.
 
-**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **3.0.4 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
+**If file opening stopped responding in iPad Chrome or the home-screen app:** follow the web update steps below and check that the footer shows **3.0.5 or later**. Selecting a file shows loading progress. Wait for the song title, duration and score, then press **재생** (Play). If audio preparation fails, the loaded song stays available so you can press Play again. Existing files need no rename or new export for this correction.
 
-**If the song and score open but your iPad remains silent:** update the web player to **3.0.4 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
+**If the song and score open but your iPad remains silent:** update the web player to **3.0.5 or later**. Supporting browsers receive an explicit music-playback audio-session request when you press Play, enable the metronome, or press Session Ready. The file-loading correction from 2.4.6 and the playback-session setup introduced in 2.4.7 remain in place. If sound preparation fails, press Play or Session Ready again without reopening the file; the selected part, playback position and practice settings stay in place. Returning from another app does not restart playback automatically. Check the device volume and selected audio output as well.
 
 ### Home-screen installation and web updates
 
@@ -95,7 +97,7 @@ Connect to the internet for the first launch and wait for **오프라인 준비 
 
 **From 2.4.8**, the player checks at startup, on returning to the foreground and on reconnecting. You can also press **업데이트 확인** (check for updates). When a new screen is ready, **업데이트 적용 · 다시 열기** (apply update and reopen) appears; the current practice screen never reloads automatically. Finish file loading/audio preparation, stop playback, turn off the metronome, and leave Session before applying. **Select your .magic again after the screen reopens.** An update already downloaded can be applied offline. A failed or offline check does not mean that the app is up to date.
 
-**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **3.0.4 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
+**For the first upgrade from 2.4.7 or earlier**, open the existing home-screen app online so it can receive the update, then refresh or fully close and reopen it. Confirm **3.0.5 or later** in the footer. If you use a browser tab, perform the same steps there. Older screens do not have the new update buttons; reinstalling the home-screen app is not required. [Web update steps (Korean)](docs/UPDATING.md#웹-재생기-업데이트)
 
 **To use the mobile metronome alone, uncheck ‘반주와 함께’ (with accompaniment), then turn it on.** No song file is required. With that box checked, clicks wait until the accompaniment plays; the header shows the waiting state.
 
@@ -113,7 +115,9 @@ Own files must derive from the identical original recording bytes and duration, 
 
 ## Audio choices and desktop import
 
-Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. Checking both the vocal-free and guitar-free choices prepares both individual versions and one actual vocal-and-guitar-free backing track, selected initially. **전체 선택** checks all 15 base choices and also prepares their complete removal combination; **선택 해제** clears them. Each new combination removes targets from successive residuals, so it can require extra model runs. Verified completed choices and combinations are reused.
+Check vocals, guitar, drums, bass or keyboards **alone**, the mix **without that instrument**, or the original recording. Piano and synthesizer outputs are also offered separately. Checking both the vocal-free and guitar-free choices prepares both individual versions and one actual vocal-and-guitar-free backing track, **(보컬 + 기타) 없는 반주**, selected initially. **전체 선택** checks all 15 base preparation choices and also prepares their complete removal combination; **선택 해제** clears them. Each new combination removes targets from successive residuals, so it can require extra model runs. Verified completed choices and combinations are reused.
+
+Versions prepared at different times are collected for the same original file. Preparing vocal removal today and isolated guitar later still lets you include both in one `.magic`, while their verified caches remain available. Identity follows the complete source-file contents: renaming or moving the file does not make it a new recording, but editing or re-encoding it does. Use **저장된 음원 불러오기** to refresh the available cache choices. Existing `.magic` files are unchanged; add missing audio by saving a new file from the original project.
 
 To reopen a previously prepared recording, select it and press **저장된 음원 불러오기**. This verifies saved audio without running a model. The top **재생 음원** selector lists only currently available cached entries for the working song, or choices actually stored in the open `.magic`. Checking a preparation option does not add it to this playback list. A model may save other parts during the same run; those actual cached outputs can appear even if their checkboxes are unchecked. When the current choice is the only available item, its name remains visible with selection disabled. If that cache disappears but another item remains, you can select the remaining audio. Switching pauses playback and retains original-media position, speed, applied key and measure-range settings; press Play explicitly to continue.
 

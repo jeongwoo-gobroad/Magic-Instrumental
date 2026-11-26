@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.4"><meta name="magic-build" content="945e16e329628fda002c6566be2938b3ede3147db7478bd2b3cda7cd49788553"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
+<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.5"><meta name="magic-build" content="aa0fcc727c31d37c4b58fa2a122f610999ed91d928ec92bf131eaf9fb562e4c8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
 :root{color-scheme:light;--bg:#f0f2ef;--card:#fff;--ink:#1b302d;--muted:#667872;--line:#d7dfd9;--accent:#206c56;--soft:#e4f1e9;--button:#edf2ef;--shadow:0 10px 30px #173e2910}
 :root[data-theme=dark]{color-scheme:dark;--bg:#101d1b;--card:#172824;--ink:#e6f0e9;--muted:#a1b4ac;--line:#344d44;--accent:#9cddbc;--soft:#2a4b3c;--button:#263b33;--shadow:0 10px 30px #0002}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{position:relative;overflow-anchor:none;height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:0 auto;min-height:100%;background:#fff}#paper.continuous{background:transparent}.score-page{position:relative;width:100%;margin-bottom:16px;background:#fff;box-shadow:0 3px 12px #0002;overflow:hidden}.score-page:last-child{margin-bottom:0}.score-image,#scoreImage{width:100%;height:100%;display:block}.score-image[hidden],#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
@@ -24,8 +24,12 @@ body { word-break: keep-all; overflow-wrap: anywhere; }
 aside, .card, .score-area, select { min-width: 0; }
 .audio-choice label { display: block; font-weight: 700; min-height: 0; margin-bottom: 8px; }
 .audio-choice select { width: 100%; max-width: 100%; }
+.audio-choice-row { display: flex; align-items: center; gap: 8px; }
+.audio-choice-row select { flex: 1; }
+.audio-choice-row button { flex: 0 0 auto; padding: 8px 10px; white-space: nowrap; }
 .audio-choice select:disabled { opacity: 1; color: var(--ink); -webkit-text-fill-color: var(--ink); cursor: default; }
 .audio-choice p { margin: 10px 0 0; }
+.audio-choice #audioBundleSummary { margin: 0 0 10px; }
 body[data-session] #audioChoice { order: -1; }
 .small, #status, .metro-help, .score-toolbar label, .score-toolbar select,
 .range-pair label, #clock, #effective { font-size: 13px; }
@@ -77,6 +81,7 @@ body[data-session] #audioChoice { order: -1; }
 .audio-choice details { margin-top: 10px; font-size: 13px; }
 .audio-choice details summary { min-height: 36px; color: var(--accent); }
 .audio-choice details p { margin: 4px 0 0; }
+.audio-choice #audioOriginalNotice { margin-top: 10px; }
 body.options-hidden main { grid-template-columns: minmax(0, 1fr); }
 .focus-controls { display: grid; grid-template-columns: minmax(240px, 360px) minmax(0, 1fr); gap: 8px 24px; padding: 16px 18px; border-bottom: 1px solid var(--line); }
 .focus-controls .audio-choice { grid-row: span 2; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
@@ -111,7 +116,14 @@ body[data-session=member] .focus-controls #status { align-self: center; }
 <main><aside id="optionsSidebar" aria-label="연습 옵션"><section id="sessionSong" class="card" hidden><span class="step">SESSION · 지금 함께 연습하는 곡</span><h2 id="sessionTitle"></h2><p id="sessionClock"></p><p id="sessionFileStatus" class="small" role="status"></p><div class="session-actions"><button id="shareFile" hidden>내 GP 전체 파트 파일 공유</button><button id="getShared" class="primary" hidden>리더 파일 받기</button><label id="sessionOpenFile" class="file-button">내 .magic 파일 선택<input id="sessionFile" type="file"></label></div><label id="sessionVolumeLabel">내 반주 음량<input id="sessionVolume" type="range" min="0" max="100" value="75"></label></section>
 <!-- iPad can filter out .magic files. Validate archive contents after selection. -->
 <section class="card" id="soloFile"><span class="step">01 · 연습 파일</span><h2 id="title">준비한 곡을 열어 주세요</h2><p id="part">파일 목록에서 컴퓨터로 만든 .magic 파일을 선택하세요.</p><label class="file-button">.magic 파일 열기<input id="file" type="file"></label><p id="status" role="status" aria-live="polite">파일은 이 기기 안에서만 읽습니다.</p></section>
-<section class="card audio-choice" id="audioChoice" aria-busy="false" hidden><div class="audio-choice-heading"><label for="audioVariant">재생 음원</label><span id="audioVariantCount" class="small"></span></div><select id="audioVariant" aria-label="저장된 재생 음원 선택" aria-describedby="audioVariantCount audioVariantScope audioVariantHint audioCombinationNotice" disabled></select><p id="audioVariantScope" class="small" role="status" aria-live="polite"></p><p id="audioVariantHint" class="small">음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.</p><p id="audioCombinationNotice" class="small" hidden>현재 파일에는 악기별 반주가 따로 저장되어 있습니다. 여러 악기를 함께 빼려면 PC에서 해당 항목을 함께 체크해 준비한 뒤 .magic을 다시 저장하세요.</p><details id="audioChoiceHelp"><summary>다른 음원을 추가하려면</summary><p>PC에서 원하는 항목을 체크하고 <b>체크한 음원 준비</b>를 누르세요. 준비가 끝나면 원하는 음원을 포함해 <b>.magic 저장</b>을 하고, 여기서 새 파일을 여세요.</p></details></section>
+<section class="card audio-choice" id="audioChoice" aria-busy="false" hidden>
+<div class="audio-choice-heading"><label for="audioVariant">재생 음원</label><span id="audioVariantCount" class="small"></span></div>
+<p id="audioBundleSummary" class="small"></p>
+<div class="audio-choice-row"><select id="audioVariant" aria-label="저장된 재생 음원 선택" aria-describedby="audioVariantCount audioBundleSummary audioVariantScope audioVariantHint audioCombinationNotice" disabled></select><button id="audioOriginal" aria-label="이 파일의 원곡 선택" hidden disabled>원곡 선택</button></div>
+<p id="audioVariantScope" class="small" role="status" aria-live="polite"></p><p id="audioVariantHint" class="small">음원을 바꾸면 현재 위치에서 일시정지합니다. 재생 또는 합주 준비를 다시 누르세요. 악보 파트는 아래 악보에서 따로 고릅니다.</p>
+<p id="audioCombinationNotice" class="small" hidden>현재 파일에는 악기별 반주가 따로 저장되어 있습니다. 여러 악기를 함께 빼려면 PC에서 해당 항목을 함께 체크해 준비한 뒤 .magic을 다시 저장하세요.</p>
+<details id="audioChoiceHelp"><summary>다른 음원을 추가하려면</summary><p>PC에서 같은 원본 곡을 열고, 원하는 항목을 체크해 <b>체크한 음원 준비</b>를 누르세요. <b>.magic 저장</b>에서 함께 담을 분리 음원을 고르면 원곡도 자동으로 포함됩니다. 이전에 준비한 음원과 새 음원을 파일 하나로 저장한 뒤 여기서 여세요.</p><div id="audioOriginalNotice" class="small" hidden>이 파일에는 원곡이 없습니다. PC 3.0.5 이상에서 원본 곡을 열고 다시 저장하면 원곡도 함께 담깁니다. 현재 파일은 그대로 재생할 수 있습니다.</div></details>
+</section>
 <section class="card" id="playerControls"><span class="step">02 · 듣고 연습하기</span><div id="transportControls"><div class="transport"><button id="play" class="primary" disabled>▶ 재생</button><button id="home" disabled>처음으로</button><span id="clock">00:00 / 00:00</span></div><input id="seek" type="range" min="0" max="1" step=".01" value="0" aria-label="재생 위치" disabled></div><div class="row"><button id="back" disabled>← 이전</button><label><input id="step" type="number" min="1" max="10000" value="1"> 마디</label><button id="forward" disabled>다음 →</button></div><hr><div class="row"><label for="speed">재생 속도</label><strong id="speedText">1.00×</strong><button id="speedReset">원래 속도</button></div><input id="speed" type="range" min="25" max="200" value="100" aria-label="재생 속도"><div class="row"><label for="key">반주 키</label><select id="key"></select><span id="keyText">원곡</span></div><p class="small">속도를 바꿔도 음정은 유지됩니다. 키 변경은 반주에 적용됩니다.</p><label class="range-label">반주 음량<input id="volume" type="range" min="0" max="100" value="75"></label><hr><label><input id="count" type="checkbox"> 시작 전 드럼 카운트</label><label class="inline"> <select id="countBars"><option value="1">1마디</option><option value="2">2마디</option><option value="4">4마디</option></select></label></section>
 <section class="card" id="loopControls"><span class="step">03 · 어려운 구간 반복</span><label><input id="loop" type="checkbox" disabled> 마디 구간 반복</label><div class="range-pair"><label>시작 마디<select id="loopStart" disabled></select></label><label>끝 마디<select id="loopEnd" disabled></select></label></div><label><input id="loopCount" type="checkbox"> 반복할 때마다 드럼 카운트</label><p class="small">끝 마디까지 포함합니다. 도돌이표의 각 회차를 따로 고를 수 있습니다.</p></section>
 <details id="ensemblePanel" class="card ensemble"><summary>Session 모드 · 함께 연습하기</summary>
@@ -129,7 +141,7 @@ body[data-session=member] .focus-controls #status { align-self: center; }
 <details class="help"><summary>처음 사용하시나요?</summary><p>컴퓨터의 Magic-Instrumental에서 반주와 악보 분석을 마친 뒤 ‘.magic 저장’을 누르세요. AirDrop·파일 전송으로 가져와 여기서 엽니다.</p><p>컴퓨터에서 준비할 악보로는 Guitar Pro 원본(.gp3, .gp4, .gp5)을 권장합니다. 음표와 마디를 직접 읽고 연습할 파트를 고를 수 있습니다. 이 웹 재생기에서는 컴퓨터에서 저장한 .magic 파일을 여세요.</p><p>iPad의 Safari·Chrome 또는 Android의 Chrome에서 이 웹주소를 열고 ‘.magic 파일 열기’를 누르세요. 파일 이름을 바꾸거나 압축을 풀 필요가 없습니다.</p><p><b>홈 화면에서 앱처럼 열기</b><br>iPad Safari: 공유 → 홈 화면에 추가(필요하면 ‘더 보기’) → ‘웹 앱으로 열기’가 보이면 켜기 → 추가.<br>iPad Chrome: 공유 → 홈 화면에 추가 → 추가. 항목이 없으면 Safari에서 같은 주소를 여세요.<br>Android Chrome: 메뉴(⋮) → 설치 및 바로가기 만들기 → 설치. 버전에 따라 ‘앱 설치’ 또는 ‘홈 화면에 추가’로 표시됩니다.</p><p>홈 화면의 Magic Player를 온라인에서 한 번 열고 ‘오프라인 준비 완료’를 확인하세요. 그 뒤에는 기기에 저장한 .magic 파일을 인터넷 없이 열 수 있습니다. Session은 인터넷 연결이 필요합니다.</p><p>새 버전은 앱 실행·화면 복귀·온라인 복귀 때 확인합니다. 아래 ‘업데이트 확인’으로 직접 확인할 수도 있습니다. 새 버전 안내가 나오면 연습과 Session을 마친 뒤 ‘업데이트 적용 · 다시 열기’를 누르세요. 현재 파일은 다시 선택해야 합니다. 업데이트 때문에 재생 중에 자동으로 화면을 다시 열지는 않습니다.</p><p>연습 중에는 이 화면을 켜 두세요. 다른 앱으로 이동하면 일시정지됩니다. 음원과 악보는 정당한 권한을 가진 자료를 직접 준비해 주세요.</p></details>
 <p id="offline" class="small">오프라인 준비 상태 확인 중…</p><p class="small"><a href="LICENSE">GPL-3.0</a> · <a href="THIRD_PARTY_NOTICES.md">오픈소스 안내</a></p>
 </aside><section class="score-area" id="scoreArea"><div id="focusControls" class="focus-controls" aria-label="빠른 재생" hidden></div><div class="score-toolbar"><label id="partChoice" hidden>연주할 파트 <select id="partSelect"></select></label><div><span class="step">나의 악보</span><strong id="measure">—</strong></div><label><input id="follow" type="checkbox" checked> 자동 따라가기</label><label><input id="highlightEnabled" type="checkbox" checked> 마디 강조</label><label>확대 <select id="zoom"><option value="1">너비 맞춤</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option><option value="2.5">250%</option><option value="3">300%</option></select></label><div class="page-controls"><button id="prevPage" aria-label="이전 악보 페이지">‹</button><span id="pageText">0 / 0</span><button id="nextPage" aria-label="다음 악보 페이지">›</button></div></div><div id="viewport" tabindex="0" aria-label="악보 · 직접 스크롤하면 자동 따라가기가 해제됩니다"><div id="paper"><div id="empty"><span>♪</span><h2>연주할 파트가 여기 펼쳐집니다</h2><p>PDF 악보도, GP에서 고른 파트도<br>같은 .magic 파일로 가져오세요.</p></div><img id="scoreImage" alt="선택한 악보 페이지" hidden><div id="highlight" hidden></div></div></div></section></main>
-<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v3.0.4</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
+<section class="app-version" aria-label="현재 버전과 업데이트"><span>현재 버전 <b id="appVersion">v3.0.5</b></span><button id="checkUpdate">업데이트 확인</button><span id="updateStatus" role="status" aria-live="polite">업데이트 확인 중…</span></section>
 <footer class="support-footer">버그 및 개선 사항 제보: <a href="mailto:pps.jeongwoo@gmail.com">pps.jeongwoo@gmail.com</a></footer>
 <script>
 var SignalsmithStretch = (() => {
@@ -837,6 +849,10 @@ class MagicArchive {
 </script><script>/* SPDX-License-Identifier: GPL-3.0-only */
 'use strict';
 const $ = id => document.getElementById(id);
+function setText(element, text) {
+  // Keep the pressed label's text node until WebKit can dispatch its click.
+  if (element.textContent !== text) element.textContent = text;
+}
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const number = (id, lo, hi, fallback) => {
   const v = Number($(id).value); return Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
@@ -1387,12 +1403,17 @@ async function decodeVariant(selected, variant) {
 }
 const AUDIO_TARGET_LABELS = {vocals: '보컬', guitar: '기타', drums: '드럼', bass: '베이스', keys: '키보드', piano: '피아노', synth: '신시사이저'};
 function audioChoiceLabel(variant) {
-  return variant.targets ? `${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')} 없는 반주` : variant.label;
+  return variant.targets ? `(${variant.targets.map(target => AUDIO_TARGET_LABELS[target]).join(' + ')}) 없는 반주` : variant.label;
 }
 function updateAudioChoiceState(available = ready) {
   const count = archive?.audioVariants.length || 0;
   const busy = loading || !!ensemble?.busy || !!ensemble?.downloadTask;
   $('audioVariant').disabled = !available || busy || count < 2;
+  const hasOriginal = archive?.audioVariants.some(variant => variant.id === 'original');
+  const isOriginal = archive?.activeAudioVariant.id === 'original';
+  $('audioOriginal').hidden = !hasOriginal;
+  $('audioOriginal').disabled = !available || busy || isOriginal;
+  setText($('audioOriginal'), isOriginal ? '원곡 선택됨' : '원곡 선택');
   $('audioChoice').setAttribute('aria-busy', String(busy));
   const single = ensemble?.role ? '저장된 음원이 1개입니다. 이 음원으로 합주합니다.' :
     '저장된 음원이 1개입니다. 바로 재생할 수 있습니다.';
@@ -1404,13 +1425,26 @@ function updateAudioChoiceState(available = ready) {
 }
 function showAudioChoices() {
   const choices = archive?.audioVariants || [];
-  $('audioVariant').replaceChildren(...choices.map(variant => {
-    const option = document.createElement('option'); option.value = variant.id;
-    option.textContent = audioChoiceLabel(variant); return option;
-  }));
+  const groups = [];
+  for (const [mode, label] of [['original', '원곡'], ['without', '악기 없는 반주'], ['stem', '악기만 듣기']]) {
+    const variants = choices.filter(variant => variant.mode === mode);
+    if (!variants.length) continue;
+    const group = document.createElement('optgroup'); group.label = label;
+    for (const variant of variants) {
+      const option = document.createElement('option'); option.value = variant.id;
+      option.textContent = audioChoiceLabel(variant); group.append(option);
+    }
+    groups.push(group);
+  }
+  $('audioVariant').replaceChildren(...groups);
   if (archive) $('audioVariant').value = archive.activeAudioVariant.id;
   $('audioChoice').hidden = choices.length === 0;
   $('audioVariantCount').textContent = choices.length ? `파일에 저장된 음원 ${choices.length}개` : '';
+  const hasOriginal = choices.some(variant => variant.id === 'original');
+  $('audioBundleSummary').textContent = !choices.length ? '' : hasOriginal ? choices.length > 1 ?
+    `원곡 + 분리 음원 ${choices.length - 1}개 · 한 파일에 함께 담겨 있습니다.` :
+    '원곡이 담긴 연습 파일입니다.' : '분리 음원이 담긴 연습 파일입니다.';
+  $('audioOriginalNotice').hidden = !choices.length || hasOriginal;
   $('audioChoiceHelp').open = false;
   $('audioCombinationNotice').hidden = choices.some(variant => variant.targets) || choices.filter(variant => variant.mode === 'without').length < 2;
   showAudioVariantHint(); updateAudioChoiceState();
@@ -1531,6 +1565,7 @@ for (let n = -12; n <= 12; n++) { const option = document.createElement('option'
 $('key').value = 0;
 for (const id of ['file', 'sessionFile']) $(id).onchange = event => openFile(event.target.files[0]);
 $('audioVariant').onchange = () => selectAudioVariant($('audioVariant').value).catch(fail);
+$('audioOriginal').onclick = () => selectAudioVariant('original').catch(fail);
 $('play').onclick = () => playing ? pause() : play().catch(fail);
 $('home').onclick = () => seek(0).catch(fail);
 $('seek').oninput = () => { seeking = true; };
@@ -2121,7 +2156,7 @@ class Ensemble {
     if (active) document.body.dataset.session = this.role; else delete document.body.dataset.session;
     $('playerControls').querySelector('.step').textContent = leader ? 'SESSION · 팀 전체 재생 조작' : '02 · 듣고 연습하기';
     $('loopControls').querySelector('.step').textContent = leader ? 'SESSION · 함께 반복 연습' : '03 · 어려운 구간 반복';
-    document.querySelector('.metronome summary').textContent = member ? '내 메트로놈 음량' : '박자 설정';
+    setText(document.querySelector('.metronome summary'), member ? '내 메트로놈 음량' : '박자 설정');
     $('sessionBanner').hidden = !active; $('sessionSong').hidden = !active;
     $('sessionRole').textContent = `Session · ${leader ? '리더' : '멤버'} 활성 · ${this.code}`;
     $('appHeading').textContent = active ? (leader ? '우리의 합주를 이끄는 화면' : '나의 파트에 집중하는 화면') : '나의 속도로, 한 마디씩.';
@@ -2135,8 +2170,8 @@ class Ensemble {
     $('sessionFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
     $('sessionVolumeLabel').hidden = !member;
     if (active) $('ensemblePanel').open = true;
-    $('leaderMode').textContent = leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기';
-    $('memberMode').textContent = member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기';
+    setText($('leaderMode'), leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기');
+    setText($('memberMode'), member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기');
     $('leaderMode').setAttribute('aria-pressed',String(leader)); $('memberMode').setAttribute('aria-pressed',String(member));
     $('leaderMode').disabled = this.busy || member; $('memberMode').disabled = this.busy || leader;
     $('relayURL').disabled = active || this.busy; $('memberName').disabled = active || this.busy; $('inviteCode').disabled = active || this.busy;
@@ -2149,14 +2184,14 @@ class Ensemble {
     else if (this.wantsReady) label = '연결 확인 중 · 준비 취소';
     else if (this.preparing) label = '준비 처리 중';
     else if (canReceive && (!ready || this.downloadTask)) label = '리더 파일 받고 준비';
-    $('ensembleReady').textContent = label;
+    setText($('ensembleReady'), label);
     $('ensembleReady').setAttribute('aria-pressed',String(this.wantsReady));
-    $('sessionPrepare').textContent = $('ensembleReady').textContent;
+    setText($('sessionPrepare'), label);
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
     $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4, 5].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
-    $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
+    setText($('getShared'), this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중');
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
     updateAudioChoiceState();
     $('linked').disabled = active;

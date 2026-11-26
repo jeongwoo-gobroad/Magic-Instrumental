@@ -7,6 +7,7 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import pytest
 from aiohttp import web
@@ -32,10 +33,31 @@ pytestmark = pytest.mark.skipif(os.environ.get("RUN_WEB_TESTS") != "1",
                                 reason="RUN_WEB_TESTS=1 and browser runtimes required")
 
 
-def install_readiness_trace(page, participant):
-    page.evaluate("""participant => {
+def install_readiness_trace(page, participant, shared_receive=False):
+    page.evaluate("""({participant, sharedReceive}) => {
       const history = [], limit = 160;
       let discarded = 0, active = true;
+      const sharedInput = sharedReceive ? {
+        events: [], refreshes: [], calls: {download: 0, openShared: 0}
+      } : null;
+      const pointerEvents = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+      const targetName = target => target && ({id: target.id || '', tag: target.tagName || ''});
+      const controlState = event => {
+        const button = $('getShared'), rect = button.getBoundingClientRect();
+        return {disabled: button.disabled, children: button.childNodes.length,
+          rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+          hit: targetName(document.elementFromPoint(event.clientX, event.clientY))};
+      };
+      const pointerEvent = event => {
+        if (sharedInput.events.length === 32) sharedInput.events.shift();
+        sharedInput.events.push({event: event.type, trusted: event.isTrusted,
+          target: targetName(event.target), x: event.clientX, y: event.clientY,
+          button: event.button, control: controlState(event)});
+      };
+      let refreshControl = null, refreshOnPress = null;
+      if (sharedInput) {
+        for (const event of pointerEvents) document.addEventListener(event, pointerEvent, true);
+      }
       const segmentState = value => value && ({
         input: value.input, out: value.out, rate: value.rate, end: value.end,
         until: value.until, countStart: value.countStart, countBeats: value.countBeats
@@ -96,6 +118,7 @@ def install_readiness_trace(page, participant):
         const original = ensemble[name];
         originals.set(name, original);
         ensemble[name] = function (...args) {
+          if (sharedInput && ['download', 'openShared'].includes(name)) sharedInput.calls[name]++;
           record(name + ':start',
             ['error', 'status'].includes(name) ? args[0]?.message || args[0] : null);
           let result;
@@ -120,7 +143,22 @@ def install_readiness_trace(page, participant):
       window.addEventListener('pageshow', pageShown);
       record('phase:before');
       const timer = setInterval(() => record('sample'), 500);
-      window.sessionReadinessTrace = {finish: () => {
+      window.sessionReadinessTrace = {sharedInput, armSharedUpdate: () => {
+        if (!sharedInput || refreshControl) throw Error('Shared pointer observer already armed');
+        refreshControl = $('getShared');
+        refreshOnPress = event => {
+          const child = refreshControl.firstChild;
+          const refresh = {before: controlState(event)};
+          sharedInput.refreshes.push(refresh);
+          // Put the normal periodic refresh between the native press and release.
+          try { ensemble.update(); }
+          finally {
+            refresh.after = controlState(event);
+            refresh.sameTextChild = child === refreshControl.firstChild;
+          }
+        };
+        refreshControl.addEventListener('mousedown', refreshOnPress, {capture: true, once: true});
+      }, finish: () => {
         record('phase:after');
         const after = snapshot();
         active = false; clearInterval(timer);
@@ -129,17 +167,47 @@ def install_readiness_trace(page, participant):
         document.removeEventListener('visibilitychange', visibilityChanged);
         window.removeEventListener('pagehide', pageHidden);
         window.removeEventListener('pageshow', pageShown);
+        if (sharedInput) {
+          for (const event of pointerEvents) {
+            document.removeEventListener(event, pointerEvent, true);
+          }
+          refreshControl?.removeEventListener('mousedown', refreshOnPress, true);
+        }
         return {participant, before, after, history, discarded,
+          ...(sharedInput ? {shared_input: sharedInput} : {}),
           audioSessionEvents: (window.audioSessionEvents || []).slice(-32)};
       }};
-    }""", participant)
+    }""", {"participant": participant, "sharedReceive": shared_receive})
 
 
 @contextmanager
 def readiness_diagnostics(participants, engine, errors, phase="prepare_after_foreground"):
-    for participant, page in participants:
-        install_readiness_trace(page, participant)
+    shared_receive = phase == "shared-file-receive"
     report = {"engine": engine, "phase": phase, "participants": []}
+    listeners = []
+
+    def is_shared_get(request):
+        path = urlsplit(request.url).path
+        return (request.method == "GET" and path.startswith("/api/rooms/")
+                and path.endswith("/file") and len(path.split("/")) == 5)
+
+    for participant, page in participants:
+        install_readiness_trace(page, participant, shared_receive)
+        if shared_receive:
+            transfer = {"requests": 0, "statuses": []}
+            report.setdefault("shared_files", {})[participant] = transfer
+
+            def requested(request, transfer=transfer):
+                if is_shared_get(request):
+                    transfer["requests"] += 1
+
+            def responded(response, transfer=transfer):
+                if is_shared_get(response.request) and len(transfer["statuses"]) < 8:
+                    transfer["statuses"].append(response.status)
+
+            for event, callback in (("request", requested), ("response", responded)):
+                page.on(event, callback)
+                listeners.append((page, event, callback))
     failure = None
     try:
         yield report
@@ -147,6 +215,8 @@ def readiness_diagnostics(participants, engine, errors, phase="prepare_after_for
         failure = error
         raise
     finally:
+        for page, event, callback in listeners:
+            page.remove_listener(event, callback)
         report.update(passed=failure is None, pageerrors=errors[-20:])
         for participant, page in participants:
             try:
@@ -171,7 +241,8 @@ def readiness_diagnostics(participants, engine, errors, phase="prepare_after_for
             summary = {key: value for key, value in report.items() if key != "participants"}
             summary["participants"] = [
                 {**{key: value for key, value in participant.items()
-                    if key in {"participant", "after", "capture_error", "discarded"}},
+                    if key in {"participant", "after", "capture_error", "discarded",
+                               "shared_input"}},
                  "errors": [{key: event[key] for key in ("at", "event", "message")}
                             for event in participant.get("history", []) if "message" in event][-8:]}
                 for participant in report["participants"]
@@ -243,14 +314,32 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
         member.locator("#sessionRoom").click()
         assert member.locator("#ensemblePanel").is_hidden()
         assert member.locator("#getShared").is_visible()
-        if engine == "webkit":
-            assert member.locator("#getShared").is_disabled()
-            assert member.locator("#sessionPrepare").is_disabled()
-            leader.locator("#shareFile").click()
-        member.wait_for_function("!document.getElementById('getShared').disabled")
-        hold_audio_resume(member)
-        member.locator("#getShared").click()
-        wait_for_file_without_audio(member)
+        with readiness_diagnostics(
+            participants, engine, errors, "shared-file-receive"
+        ) as diagnostic:
+            if engine == "webkit":
+                assert member.locator("#getShared").is_disabled()
+                assert member.locator("#sessionPrepare").is_disabled()
+                leader.locator("#shareFile").click()
+            member.wait_for_function("!document.getElementById('getShared').disabled")
+            hold_audio_resume(member)
+            member.evaluate("sessionReadinessTrace.armSharedUpdate()")
+            member.locator("#getShared").click()
+            wait_for_file_without_audio(member)
+            pointer = member.evaluate("sessionReadinessTrace.sharedInput")
+            assert len(pointer["refreshes"]) == 1, pointer
+            refresh = pointer["refreshes"][0]
+            assert refresh["sameTextChild"], pointer
+            assert refresh["before"] == refresh["after"], pointer
+            assert not refresh["before"]["disabled"], pointer
+            assert refresh["before"]["hit"] == {"id": "getShared", "tag": "BUTTON"}, pointer
+            for event in ("pointerdown", "mousedown", "pointerup", "mouseup", "click"):
+                received = [item for item in pointer["events"] if item["event"] == event]
+                assert len(received) == 1, pointer
+                assert received[0]["trusted"], pointer
+                assert received[0]["target"]["id"] == "getShared", pointer
+            assert pointer["calls"] == {"download": 1, "openShared": 1}, pointer
+            assert diagnostic["shared_files"]["member"] == {"requests": 1, "statuses": [200]}
         assert not leader.evaluate("MagicEnsemble.state().prepared")
         assert "준비가 해제" not in leader.locator("#sessionLive").inner_text()
         member.evaluate("MagicPlayer.context().suspend()")

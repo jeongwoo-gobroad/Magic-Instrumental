@@ -71,7 +71,7 @@ def test_canonical_identity_is_ordered_and_does_not_change_base_choices():
     )
     assert canonical_combination(["vocals", "guitar", "no_guitar", "original"]) is None
     assert removal_targets("no_vocals_guitar") == ("vocals", "guitar")
-    assert variant_label("no_vocals_guitar") == "보컬 + 기타 없는 반주"
+    assert variant_label("no_vocals_guitar") == "(보컬 + 기타) 없는 반주"
     with pytest.raises(ValueError):
         removal_targets("no_guitar_vocals")
     args = parser().parse_args([
