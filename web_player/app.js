@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 'use strict';
 const $ = id => document.getElementById(id);
+function setText(element, text) {
+  // Keep the pressed label's text node until WebKit can dispatch its click.
+  if (element.textContent !== text) element.textContent = text;
+}
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const number = (id, lo, hi, fallback) => {
   const v = Number($(id).value); return Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
@@ -561,7 +565,7 @@ function updateAudioChoiceState(available = ready) {
   const isOriginal = archive?.activeAudioVariant.id === 'original';
   $('audioOriginal').hidden = !hasOriginal;
   $('audioOriginal').disabled = !available || busy || isOriginal;
-  $('audioOriginal').textContent = isOriginal ? '원곡 선택됨' : '원곡 선택';
+  setText($('audioOriginal'), isOriginal ? '원곡 선택됨' : '원곡 선택');
   $('audioChoice').setAttribute('aria-busy', String(busy));
   const single = ensemble?.role ? '저장된 음원이 1개입니다. 이 음원으로 합주합니다.' :
     '저장된 음원이 1개입니다. 바로 재생할 수 있습니다.';

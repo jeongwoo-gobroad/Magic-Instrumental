@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.5"><meta name="magic-build" content="37dd6541ea0788e51f4b299fb516ba90f5d6a8a56cf09b6f7fe057f6d238fe61"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
+<html lang="ko"><head><meta charset="utf-8"><meta name="magic-version" content="3.0.5"><meta name="magic-build" content="aa0fcc727c31d37c4b58fa2a122f610999ed91d928ec92bf131eaf9fb562e4c8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#132c29"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Magic Player"><link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icon-192.png"><title>Magic Player · 연습 재생기</title><style>/* SPDX-License-Identifier: GPL-3.0-only */
 :root{color-scheme:light;--bg:#f0f2ef;--card:#fff;--ink:#1b302d;--muted:#667872;--line:#d7dfd9;--accent:#206c56;--soft:#e4f1e9;--button:#edf2ef;--shadow:0 10px 30px #173e2910}
 :root[data-theme=dark]{color-scheme:dark;--bg:#101d1b;--card:#172824;--ink:#e6f0e9;--muted:#a1b4ac;--line:#344d44;--accent:#9cddbc;--soft:#2a4b3c;--button:#263b33;--shadow:0 10px 30px #0002}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}button,input,select{font:inherit}button,select{min-height:44px;border:1px solid var(--line);border-radius:10px;background:var(--button);color:var(--ink);padding:8px 13px;cursor:pointer}button:hover{filter:brightness(.96)}button:disabled{opacity:.45;cursor:default}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:3px}button.primary,.file-button{background:var(--accent);color:var(--card);font-weight:700}.primary{min-width:110px}input[type=checkbox]{width:23px;height:23px;margin:0 8px 0 0;accent-color:var(--accent);vertical-align:middle}input[type=number]{width:74px;min-height:44px;padding:7px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}input[type=range]{width:100%;height:35px;accent-color:var(--accent);cursor:pointer}label{display:inline-flex;align-items:center;gap:4px;min-height:44px}header{padding:24px 30px 20px;display:flex;align-items:center;justify-content:space-between;gap:20px}.eyebrow,.step{font-size:11px;letter-spacing:.12em;font-weight:750;color:var(--muted)}h1{font-size:28px;letter-spacing:-.05em;margin:2px 0 0}h2{font-size:21px;margin:10px 0 4px;line-height:1.4}p{margin:7px 0 15px;color:var(--muted)}.small{font-size:12px}a{color:var(--accent)}.metronome{margin:0 24px 18px;padding:9px 14px;border:1px solid var(--line);border-radius:14px;background:var(--card);display:flex;align-items:center;flex-wrap:wrap;gap:12px}.metronome details{position:relative;margin-left:auto}.metro-settings{position:absolute;right:0;top:40px;z-index:5;width:310px;padding:18px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}.metro-settings label{display:flex;justify-content:space-between;gap:10px}#dots{display:flex;flex-wrap:wrap;gap:6px;max-width:230px}.dot{width:13px;height:13px;border-radius:50%;border:2px solid var(--muted)}.dot.on{background:var(--accent);border-color:var(--accent);transform:scale(1.18)}#effective{font-size:12px;font-variant-numeric:tabular-nums}main{display:grid;grid-template-columns:minmax(325px,360px) minmax(0,1fr);gap:20px;padding:0 24px 24px;align-items:start}aside{display:grid;gap:14px}.card{padding:19px;background:var(--card);border:1px solid var(--line);border-radius:17px;box-shadow:var(--shadow)}.file-button{display:flex;position:relative;justify-content:center;padding:13px;border-radius:10px;cursor:pointer;margin-top:18px;overflow:hidden}.file-button input{position:absolute;inset:0;opacity:0;width:100%;height:100%;cursor:pointer}#status{font-size:12px;min-height:20px;margin:12px 0 0;overflow-wrap:anywhere}#title,#part{overflow-wrap:anywhere}.transport,.row{display:flex;align-items:center;gap:10px;justify-content:space-between}.transport{margin-top:13px;flex-wrap:wrap}#clock{font:12px ui-monospace,monospace;color:var(--muted)}#speedText{font-size:27px;color:var(--accent)}.range-label{display:flex;gap:14px;white-space:nowrap}.range-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:8px 0}.range-pair label{display:grid;min-width:0;font-size:12px}.range-pair select{width:100%}hr{border:0;border-top:1px solid var(--line);margin:18px 0}.help{padding:6px 12px;font-size:13px}.help p{margin-top:10px}summary{cursor:pointer;min-height:36px;display:list-item;align-content:center}.score-area{position:sticky;top:12px;border:1px solid var(--line);border-radius:17px;overflow:hidden;background:var(--card);box-shadow:var(--shadow)}.score-toolbar{padding:13px 18px;display:flex;align-items:center;flex-wrap:wrap;gap:10px;border-bottom:1px solid var(--line)}.score-toolbar>div:first-child{display:grid;margin-right:auto;min-width:90px}.score-toolbar label{font-size:12px}.score-toolbar select{font-size:12px}.page-controls{display:flex;align-items:center;gap:8px;font-size:12px}#viewport{position:relative;overflow-anchor:none;height:calc(100dvh - 265px);min-height:380px;overflow:auto;overscroll-behavior:contain;background:#aebbb04a;touch-action:pan-x pan-y;scrollbar-gutter:stable}#paper{position:relative;margin:0 auto;min-height:100%;background:#fff}#paper.continuous{background:transparent}.score-page{position:relative;width:100%;margin-bottom:16px;background:#fff;box-shadow:0 3px 12px #0002;overflow:hidden}.score-page:last-child{margin-bottom:0}.score-image,#scoreImage{width:100%;height:100%;display:block}.score-image[hidden],#scoreImage[hidden]{display:none}#empty{text-align:center;padding:80px 25px;color:#305746}#empty span{font-size:64px;font-family:serif}#empty p{color:#6b8277}#highlight{position:absolute;border:2px solid #169873;border-radius:4px;background:#50daa91c;pointer-events:none}#measure{font-size:15px}#offline{margin:0 12px}.inline{display:inline-flex}#key{max-width:100px}
@@ -849,6 +849,10 @@ class MagicArchive {
 </script><script>/* SPDX-License-Identifier: GPL-3.0-only */
 'use strict';
 const $ = id => document.getElementById(id);
+function setText(element, text) {
+  // Keep the pressed label's text node until WebKit can dispatch its click.
+  if (element.textContent !== text) element.textContent = text;
+}
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const number = (id, lo, hi, fallback) => {
   const v = Number($(id).value); return Number.isFinite(v) ? clamp(v, lo, hi) : fallback;
@@ -1409,7 +1413,7 @@ function updateAudioChoiceState(available = ready) {
   const isOriginal = archive?.activeAudioVariant.id === 'original';
   $('audioOriginal').hidden = !hasOriginal;
   $('audioOriginal').disabled = !available || busy || isOriginal;
-  $('audioOriginal').textContent = isOriginal ? '원곡 선택됨' : '원곡 선택';
+  setText($('audioOriginal'), isOriginal ? '원곡 선택됨' : '원곡 선택');
   $('audioChoice').setAttribute('aria-busy', String(busy));
   const single = ensemble?.role ? '저장된 음원이 1개입니다. 이 음원으로 합주합니다.' :
     '저장된 음원이 1개입니다. 바로 재생할 수 있습니다.';
@@ -2152,7 +2156,7 @@ class Ensemble {
     if (active) document.body.dataset.session = this.role; else delete document.body.dataset.session;
     $('playerControls').querySelector('.step').textContent = leader ? 'SESSION · 팀 전체 재생 조작' : '02 · 듣고 연습하기';
     $('loopControls').querySelector('.step').textContent = leader ? 'SESSION · 함께 반복 연습' : '03 · 어려운 구간 반복';
-    document.querySelector('.metronome summary').textContent = member ? '내 메트로놈 음량' : '박자 설정';
+    setText(document.querySelector('.metronome summary'), member ? '내 메트로놈 음량' : '박자 설정');
     $('sessionBanner').hidden = !active; $('sessionSong').hidden = !active;
     $('sessionRole').textContent = `Session · ${leader ? '리더' : '멤버'} 활성 · ${this.code}`;
     $('appHeading').textContent = active ? (leader ? '우리의 합주를 이끄는 화면' : '나의 파트에 집중하는 화면') : '나의 속도로, 한 마디씩.';
@@ -2166,8 +2170,8 @@ class Ensemble {
     $('sessionFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
     $('sessionVolumeLabel').hidden = !member;
     if (active) $('ensemblePanel').open = true;
-    $('leaderMode').textContent = leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기';
-    $('memberMode').textContent = member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기';
+    setText($('leaderMode'), leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기');
+    setText($('memberMode'), member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기');
     $('leaderMode').setAttribute('aria-pressed',String(leader)); $('memberMode').setAttribute('aria-pressed',String(member));
     $('leaderMode').disabled = this.busy || member; $('memberMode').disabled = this.busy || leader;
     $('relayURL').disabled = active || this.busy; $('memberName').disabled = active || this.busy; $('inviteCode').disabled = active || this.busy;
@@ -2180,14 +2184,14 @@ class Ensemble {
     else if (this.wantsReady) label = '연결 확인 중 · 준비 취소';
     else if (this.preparing) label = '준비 처리 중';
     else if (canReceive && (!ready || this.downloadTask)) label = '리더 파일 받고 준비';
-    $('ensembleReady').textContent = label;
+    setText($('ensembleReady'), label);
     $('ensembleReady').setAttribute('aria-pressed',String(this.wantsReady));
-    $('sessionPrepare').textContent = $('ensembleReady').textContent;
+    setText($('sessionPrepare'), label);
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
     $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4, 5].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
-    $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
+    setText($('getShared'), this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중');
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
     updateAudioChoiceState();
     $('linked').disabled = active;

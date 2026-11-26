@@ -649,8 +649,42 @@ def test_fifteen_options_keep_piano_keys_and_synth_distinct_and_decode_lazily(
     original = page.locator("#focusControls #audioOriginal")
     assert original.is_visible()
     assert original.bounding_box()["height"] >= 44
+    original.evaluate("""button => {
+      const proof = {clicks: 0, refreshes: []};
+      const state = event => {
+        const rect = button.getBoundingClientRect();
+        const hit = document.elementFromPoint(event.clientX, event.clientY);
+        return {disabled: button.disabled, children: button.childNodes.length,
+          rect: {x: rect.x, y: rect.y, width: rect.width, height: rect.height},
+          hit: hit && {id: hit.id, tag: hit.tagName}};
+      };
+      const clicked = event => {
+        proof.clicks++; proof.trusted = event.isTrusted; proof.target = event.target.id;
+      };
+      button.addEventListener('click', clicked, true);
+      button.addEventListener('mousedown', event => {
+        const child = button.firstChild, refresh = {before: state(event)};
+        proof.refreshes.push(refresh);
+        try { ensemble.update(); }
+        finally {
+          refresh.after = state(event); refresh.sameTextChild = child === button.firstChild;
+        }
+      }, {capture: true, once: true});
+      window.originalClickProof = () => {
+        button.removeEventListener('click', clicked, true); return proof;
+      };
+    }""")
     original.click()
     page.wait_for_function("!MagicPlayer.state().loading")
+    pointer = page.evaluate("originalClickProof()")
+    assert pointer["clicks"] == 1 and pointer["trusted"], pointer
+    assert pointer["target"] == "audioOriginal", pointer
+    assert len(pointer["refreshes"]) == 1, pointer
+    refresh = pointer["refreshes"][0]
+    assert refresh["sameTextChild"], pointer
+    assert refresh["before"] == refresh["after"], pointer
+    assert not refresh["before"]["disabled"], pointer
+    assert refresh["before"]["hit"] == {"id": "audioOriginal", "tag": "BUTTON"}, pointer
     assert page.evaluate("MagicPlayer.state().audioVariant") == "original"
     assert page.evaluate("window.decodeCalls") == 7
     assert page.evaluate("MagicPlayer.state().position") == pytest.approx(position, abs=.04)

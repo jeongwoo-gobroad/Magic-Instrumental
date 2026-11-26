@@ -328,6 +328,11 @@ def test_session_scheduled_transport_parts_and_share(engine, web_url, relay_url,
             wait_for_file_without_audio(member)
             pointer = member.evaluate("sessionReadinessTrace.sharedInput")
             assert len(pointer["refreshes"]) == 1, pointer
+            refresh = pointer["refreshes"][0]
+            assert refresh["sameTextChild"], pointer
+            assert refresh["before"] == refresh["after"], pointer
+            assert not refresh["before"]["disabled"], pointer
+            assert refresh["before"]["hit"] == {"id": "getShared", "tag": "BUTTON"}, pointer
             for event in ("pointerdown", "mousedown", "pointerup", "mouseup", "click"):
                 received = [item for item in pointer["events"] if item["event"] == event]
                 assert len(received) == 1, pointer
