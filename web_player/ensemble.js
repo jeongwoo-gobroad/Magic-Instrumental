@@ -312,7 +312,7 @@ class Ensemble {
     if (active) document.body.dataset.session = this.role; else delete document.body.dataset.session;
     $('playerControls').querySelector('.step').textContent = leader ? 'SESSION · 팀 전체 재생 조작' : '02 · 듣고 연습하기';
     $('loopControls').querySelector('.step').textContent = leader ? 'SESSION · 함께 반복 연습' : '03 · 어려운 구간 반복';
-    document.querySelector('.metronome summary').textContent = member ? '내 메트로놈 음량' : '박자 설정';
+    setText(document.querySelector('.metronome summary'), member ? '내 메트로놈 음량' : '박자 설정');
     $('sessionBanner').hidden = !active; $('sessionSong').hidden = !active;
     $('sessionRole').textContent = `Session · ${leader ? '리더' : '멤버'} 활성 · ${this.code}`;
     $('appHeading').textContent = active ? (leader ? '우리의 합주를 이끄는 화면' : '나의 파트에 집중하는 화면') : '나의 속도로, 한 마디씩.';
@@ -326,8 +326,8 @@ class Ensemble {
     $('sessionFile').disabled = this.busy || !!this.downloadTask || this.preparing || loading;
     $('sessionVolumeLabel').hidden = !member;
     if (active) $('ensemblePanel').open = true;
-    $('leaderMode').textContent = leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기';
-    $('memberMode').textContent = member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기';
+    setText($('leaderMode'), leader ? '리더 켜짐 · 끄기' : '리더 모드 켜기');
+    setText($('memberMode'), member ? '멤버 켜짐 · 끄기' : '멤버 모드 켜기');
     $('leaderMode').setAttribute('aria-pressed',String(leader)); $('memberMode').setAttribute('aria-pressed',String(member));
     $('leaderMode').disabled = this.busy || member; $('memberMode').disabled = this.busy || leader;
     $('relayURL').disabled = active || this.busy; $('memberName').disabled = active || this.busy; $('inviteCode').disabled = active || this.busy;
@@ -340,14 +340,14 @@ class Ensemble {
     else if (this.wantsReady) label = '연결 확인 중 · 준비 취소';
     else if (this.preparing) label = '준비 처리 중';
     else if (canReceive && (!ready || this.downloadTask)) label = '리더 파일 받고 준비';
-    $('ensembleReady').textContent = label;
+    setText($('ensembleReady'), label);
     $('ensembleReady').setAttribute('aria-pressed',String(this.wantsReady));
-    $('sessionPrepare').textContent = $('ensembleReady').textContent;
+    setText($('sessionPrepare'), label);
     $('sessionPrepare').disabled = $('ensembleReady').disabled;
     $('sessionPrepare').setAttribute('aria-pressed',String(this.wantsReady));
     $('shareFile').hidden = !leader; $('shareFile').disabled = this.uploading || ![2, 3, 4, 5].includes(archive?.manifest.version) || archive?.manifest.score.kind !== 'gp';
     $('getShared').hidden = !member; $('getShared').disabled = !this.shared || !!this.downloadTask || this.preparing || loading;
-    $('getShared').textContent = this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중';
+    setText($('getShared'), this.shared ? '리더 파일 받기' : '리더 파일 공유 대기 중');
     $('file').disabled = loading || this.busy || !!this.downloadTask || this.preparing || leader;
     updateAudioChoiceState();
     $('linked').disabled = active;
